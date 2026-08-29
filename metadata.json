@@ -1,0 +1,6 @@
+{
+  "name": "寺院檀家名簿・法要受付管理システム",
+  "description": "長３封筒・はがき印刷、家紋・過去帳登録、法要案内・履歴、布施会計連動、兼務寺院管理、お盆棚経巡回計画・GoogleMap経路出力・QRコード帳票印刷を備えた総合寺院檀家管理システム",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

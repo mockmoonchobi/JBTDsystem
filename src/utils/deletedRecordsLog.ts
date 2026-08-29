@@ -1,0 +1,189 @@
+import { DeletedRecordEntry, DeletedEntityType } from '../types';
+import { safeStorage, saveJsonState, loadJsonState } from './storageUtils';
+
+export const MAX_DELETED_LOG_LENGTH = 1000;
+const STORAGE_KEY = 'temple_deleted_records_log';
+
+/**
+ * Loads deleted records log from localStorage
+ */
+export function loadDeletedRecordsLog(): DeletedRecordEntry[] {
+  const loaded = loadJsonState<DeletedRecordEntry[]>(STORAGE_KEY, []);
+  if (!Array.isArray(loaded)) return [];
+  return loaded.filter((entry) => entry && entry.id && (entry.deletedTimestamp > 0 || !!entry.deletedAt));
+}
+
+/**
+ * Saves deleted records log to localStorage (capped at MAX_DELETED_LOG_LENGTH)
+ */
+export function saveDeletedRecordsLog(entries: DeletedRecordEntry[]): void {
+  const clean = entries
+    .filter((entry) => entry && entry.id && (entry.deletedTimestamp > 0 || !!entry.deletedAt))
+    .map((entry) => ({
+      ...entry,
+      id: entry.id.trim(),
+      deletedTimestamp: entry.deletedTimestamp > 0
+        ? entry.deletedTimestamp
+        : (entry.deletedAt ? new Date(entry.deletedAt).getTime() : Date.now()) || Date.now(),
+    }))
+    .sort((a, b) => b.deletedTimestamp - a.deletedTimestamp)
+    .slice(0, MAX_DELETED_LOG_LENGTH);
+  saveJsonState(STORAGE_KEY, clean);
+}
+
+/**
+ * Clears the deleted records log
+ */
+export function clearDeletedRecordsLog(): void {
+  saveJsonState(STORAGE_KEY, []);
+}
+
+/**
+ * Records a deleted record entry and returns the updated log
+ */
+export function recordDeletedRecord(
+  id: string,
+  entityType: DeletedEntityType,
+  label?: string,
+  templeId?: string,
+  actionType: 'delete' | 'undo' | 'batch_delete' | 'wipe' = 'delete'
+): DeletedRecordEntry[] {
+  if (!id || !id.trim()) return loadDeletedRecordsLog();
+  const cleanId = id.trim();
+  const currentLogs = loadDeletedRecordsLog();
+  const now = new Date();
+
+  const newEntry: DeletedRecordEntry = {
+    id: cleanId,
+    entityType,
+    deletedAt: now.toISOString(),
+    deletedTimestamp: now.getTime(),
+    label: label || `${entityType}:${cleanId}`,
+    templeId,
+    actionType,
+  };
+
+  // Remove existing entry for same ID if any, then prepend new entry
+  const filtered = currentLogs.filter((entry) => entry.id.trim() !== cleanId);
+  const updated = [newEntry, ...filtered].slice(0, MAX_DELETED_LOG_LENGTH);
+  saveDeletedRecordsLog(updated);
+  return updated;
+}
+
+/**
+ * Records multiple deleted records in batch
+ */
+export function recordDeletedRecordsBatch(
+  items: { id: string; entityType: DeletedEntityType; label?: string; templeId?: string }[]
+): DeletedRecordEntry[] {
+  if (!items || items.length === 0) return loadDeletedRecordsLog();
+  const currentLogs = loadDeletedRecordsLog();
+  const now = new Date();
+  const nowMs = now.getTime();
+  const nowIso = now.toISOString();
+
+  const newIds = new Set(items.map((i) => i.id.trim()));
+  const newEntries: DeletedRecordEntry[] = items.map((i) => ({
+    id: i.id.trim(),
+    entityType: i.entityType,
+    deletedAt: nowIso,
+    deletedTimestamp: nowMs,
+    label: i.label || `${i.entityType}:${i.id}`,
+    templeId: i.templeId,
+    actionType: 'batch_delete',
+  }));
+
+  const filtered = currentLogs.filter((entry) => !newIds.has(entry.id.trim()));
+  const updated = [...newEntries, ...filtered].slice(0, MAX_DELETED_LOG_LENGTH);
+  saveDeletedRecordsLog(updated);
+  return updated;
+}
+
+/**
+ * Unrecords a deleted record (used during Undo to restore)
+ */
+export function unrecordDeletedRecord(id: string): DeletedRecordEntry[] {
+  if (!id) return loadDeletedRecordsLog();
+  const cleanId = id.trim();
+  const currentLogs = loadDeletedRecordsLog();
+  const updated = currentLogs.filter((entry) => entry.id.trim() !== cleanId);
+  saveDeletedRecordsLog(updated);
+  return updated;
+}
+
+/**
+ * Merges local and remote deleted records logs, keeping the latest 1000 entries
+ */
+export function mergeDeletedRecordsLogs(
+  local: DeletedRecordEntry[] = [],
+  remote: DeletedRecordEntry[] = []
+): DeletedRecordEntry[] {
+  const map = new Map<string, DeletedRecordEntry>();
+
+  const processEntry = (entry: DeletedRecordEntry) => {
+    if (!entry || !entry.id) return;
+    const cleanId = entry.id.trim();
+    const entryTs = entry.deletedTimestamp > 0
+      ? entry.deletedTimestamp
+      : (entry.deletedAt ? new Date(entry.deletedAt).getTime() : 0);
+    const existing = map.get(cleanId);
+    if (!existing || entryTs > existing.deletedTimestamp) {
+      map.set(cleanId, {
+        ...entry,
+        id: cleanId,
+        deletedTimestamp: entryTs > 0 ? entryTs : Date.now(),
+      });
+    }
+  };
+
+  local.forEach(processEntry);
+  remote.forEach(processEntry);
+
+  const merged = Array.from(map.values())
+    .sort((a, b) => b.deletedTimestamp - a.deletedTimestamp)
+    .slice(0, MAX_DELETED_LOG_LENGTH);
+
+  saveDeletedRecordsLog(merged);
+  return merged;
+}
+
+/**
+ * Builds a lookup map of { [recordId]: deletedTimestampMs }
+ */
+export function buildDeletedTimestampMap(entries: DeletedRecordEntry[]): Map<string, number> {
+  const map = new Map<string, number>();
+  entries.forEach((e) => {
+    if (e && e.id) {
+      const cleanId = e.id.trim();
+      const ts = e.deletedTimestamp > 0
+        ? e.deletedTimestamp
+        : (e.deletedAt ? new Date(e.deletedAt).getTime() : 0);
+      if (ts > 0) {
+        const existing = map.get(cleanId);
+        if (existing === undefined || ts > existing) {
+          map.set(cleanId, ts);
+        }
+      }
+    }
+  });
+  return map;
+}
+
+/**
+ * Checks if a remote record should be skipped/suppressed because it was deleted locally or remotely
+ */
+export function isSuppressedByDeletion(
+  recordId: string,
+  recordAuditTimestampMs: number,
+  deletedMap?: Map<string, number>
+): boolean {
+  if (!deletedMap || !recordId) return false;
+  const cleanId = recordId.trim();
+  const deletedTime = deletedMap.get(cleanId);
+  if (deletedTime === undefined || deletedTime <= 0) return false;
+
+  // If the record has no valid timestamp or was deleted at/after its modification, suppress it.
+  // 2-second margin (2000ms) handles slight clock drift between creation and deletion calls.
+  if (recordAuditTimestampMs <= 0) return true;
+  return deletedTime >= (recordAuditTimestampMs - 2000);
+}

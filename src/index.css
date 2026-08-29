@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --font-sans: "Noto Sans JP", "BIZ UDPGothic", "Yu Gothic", "YuGothic", "Hiragino Sans", "Meiryo", sans-serif;
+}
+
+.font-serif {
+  font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+}
+
+/* Hide print-only container on normal screen view, but keep structure for print engine */
+@media screen {
+  .print-only {
+    position: absolute !important;
+    left: -9999px !important;
+    top: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+}
+
+/* Print Mode Styling */
+@media print {
+  /* Hide all UI elements that shouldn't be printed */
+  .no-print,
+  header,
+  nav,
+  aside,
+  footer,
+  button,
+  footer *,
+  .no-print * {
+    display: none !important;
+  }
+
+  /* Reset body and page background */
+  html, body, #root, #root > div, main {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Show only the print container */
+  .print-only {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Each Envelope or Postcard printable page */
+  .printable-page {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 auto !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    position: relative !important;
+    background-color: #ffffff !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Prevent trailing blank page after the last envelope/postcard */
+  .printable-page.printable-page-last,
+  .printable-page:last-child,
+  .printable-page:last-of-type {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-before: auto !important;
+  }
+
+  /* Prevent default browser print margins from overflowing envelope paper dimensions */
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  /* Single A4 page fit rule for financial reports and summary statements */
+  .a4-single-page {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    max-height: 270mm !important;
+  }
+
+  /* When Segaki Modal is active during print, completely hide root application to prevent page 1 duplicates */
+  body.segaki-modal-open > #root,
+  body.segaki-modal-open header,
+  body.segaki-modal-open nav,
+  body.segaki-modal-open main {
+    display: none !important;
+  }
+
+  body.segaki-modal-open {
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .segaki-modal-portal {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Reset modal overlays during printing so they start on page 1 cleanly */
+  .fixed.inset-0:not(.segaki-modal-portal) {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    max-height: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    display: block !important;
+  }
+
+  /* Ink Saver / Print Optimization for Ledgers and Financial Reports */
+  .print-ink-saver,
+  .print-ink-saver * {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Clean monochrome form inputs in printed receipts / forms */
+  .print-ink-saver input,
+  .print-ink-saver select,
+  .print-ink-saver textarea {
+    border: none !important;
+    border-bottom: 1px solid #000000 !important;
+    background: transparent !important;
+    color: #000000 !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    padding: 0 !important;
+  }
+
+  /* Ensure sharp borders for tables and dividers in printed ledger */
+  .print-ink-saver table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  .print-ink-saver border,
+  .print-ink-saver th,
+  .print-ink-saver td {
+    border-color: #000000 !important;
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+    line-height: 1.25 !important;
+  }
+}
+
+/* Scrollbar on Left side for list tables when records > 10 */
+.scrollbar-left {
+  direction: rtl;
+}
+.scrollbar-left > * {
+  direction: ltr;
+}
+
+/* Custom styled left scrollbar for elegant temple aesthetics */
+.scrollbar-left::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scrollbar-left::-webkit-scrollbar-track {
+  background: #f4f1ea;
+  border-right: 1px solid #d1cec7;
+}
+.scrollbar-left::-webkit-scrollbar-thumb {
+  background: #a8a29e;
+  border-radius: 4px;
+}
+.scrollbar-left::-webkit-scrollbar-thumb:hover {
+  background: #78716c;
+}
+
