@@ -38,12 +38,13 @@ interface PostcardTemplateModalProps {
 }
 
 export const POSTCARD_NOTICE_TAGS = [
-  { tag: '{世帯主}', description: '世帯主のお名前（例: 山田太郎様）' },
-  { tag: '{施主名}', description: '施主のお名前（指定ある場合は施主、なければ世帯主）' },
-  { tag: '{法要期}', description: '法要期・発送区分（例: 令和八年 秋彼岸）' },
+  { tag: '{施主名}', description: '施主名（「様」無し）' },
+  { tag: '{彼岸}', description: '直近の彼岸（「秋彼岸」または「春彼岸」・年無し）' },
+  { tag: '{次彼岸}', description: '直近の彼岸の次（「春彼岸」または「秋彼岸」・年無し）' },
+  { tag: '{本年}', description: '今年（例: 「令和八年」）' },
+  { tag: '{次年}', description: '次の年（例: 「令和九年」）' },
+  { tag: '{故人名}', description: '対象故人の俗名（「様」無し）' },
   { tag: '{精霊一覧}', description: '該当精霊一覧（九月二十三日　戒名　霊位　五十回忌）' },
-  { tag: '{精霊文章}', description: '該当精霊の案内文章（〇月〇日には〜五十回忌を...）' },
-  { tag: '{故人名}', description: '対象故人の戒名・法名（例: 慈光院釈道修居士）' },
   { tag: '{寺院名}', description: '寺院名（例: 光明寺）' },
   { tag: '{山号}', description: '寺院の山号（例: 補陀落山）' },
   { tag: '{集金項目１}', description: '集金項目1（例: 護持会費　一金、三，〇〇〇円也）' },
@@ -154,7 +155,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
       name: `新規はがき案内文 ${postcardTemplates.length + 1}`,
       type: 'postcard',
       category: 'custom',
-      content: `謹啓　時下、{施主名}におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。\n　さて、本年（{法要期}）は、下記精霊の年回忌法要の正当年に当たっております。\n{精霊一覧}\n　つきましては、万障お繰り合わせの上、ご参列賜りますよう謹んでご案内申し上げます。\n　\n合掌`,
+      content: `謹啓　時下、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。\n　さて、{本年}は、下記精霊の年回忌法要の正当年に当たっております。\n{精霊一覧}\n　つきましては、万障お繰り合わせの上、ご参列賜りますよう謹んでご案内申し上げます。\n　\n合掌`,
       isDefault: false,
     };
     const updated = [...allTemplates, newTpl];
@@ -548,12 +549,12 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
                   minWidth: '100mm',
                   minHeight: '148mm',
                   boxSizing: 'border-box',
-                  padding: '8mm',
+                  padding: '0',
                 }}
               >
                 {/* Main Body (Vertical Writing) */}
                 <div
-                  className="absolute top-[8mm] right-[8mm] bottom-[8mm] left-[20mm] font-serif text-stone-950 overflow-hidden flex flex-col justify-between"
+                  className="absolute top-[8mm] right-[8mm] bottom-[8mm] left-[22mm] font-serif text-stone-950 overflow-hidden flex flex-col justify-between"
                   style={{
                     writingMode: 'vertical-rl',
                     textOrientation: 'upright',
@@ -581,7 +582,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
                 </div>
 
                 {/* Sender Temple Block */}
-                <div className="absolute bottom-[8mm] left-[4mm]">
+                <div className="absolute bottom-[8mm] left-[5mm]">
                   <div
                     className="text-stone-900 font-serif flex flex-col items-end gap-2"
                     style={{
@@ -603,7 +604,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
                       {postalDigits && (
                         <span>
                           <span>〒</span>
-                          <span style={{ fontSize: '7.5pt' }}>{postalDigits}</span>
+                          <span style={{ fontSize: '70%' }}>{postalDigits}</span>
                           <span>　</span>
                         </span>
                       )}
@@ -611,7 +612,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
                       {shouldIncludePhone && (
                         <span>
                           <span>　電話</span>
-                          <span style={{ fontSize: '7.5pt' }}>{phoneDigits}</span>
+                          <span style={{ fontSize: '70%' }}>{phoneDigits}</span>
                         </span>
                       )}
                     </div>

@@ -675,9 +675,9 @@ export function formatMonthDayOnly(dateStr: string): string {
 
 export interface HiganPeriodOption {
   id: string;
-  label: string; // e.g. '令和8年 春彼岸', '令和8年 新盆', '令和8年 秋彼岸'
-  periodText: string; // e.g. '9月〜翌3月', '前年〜本年7・8月'
-  type: 'spring' | 'bon' | 'autumn';
+  label: string; // e.g. '令和8年 正月', '令和8年 春彼岸', '令和8年 新盆', '令和8年 秋彼岸'
+  periodText: string; // e.g. '1/1〜12/31', '9月〜翌3月', '前年〜本年7・8月'
+  type: 'shogatsu' | 'spring' | 'bon' | 'autumn';
   year: number;
   startDate: string;
   endDate: string;
@@ -685,97 +685,84 @@ export interface HiganPeriodOption {
 
 /**
  * Generates mailing period options in exact chronological order:
- * 1. Current Year Niibon (e.g. 令和8年 新盆)
- * 2. Current Year Autumn Higan (e.g. 令和8年 秋彼岸)
- * 3. Next Year Spring Higan (e.g. 令和9年 春彼岸)
- * 4. Next Year Niibon (e.g. 令和9年 新盆)
- * 5. Next Year Autumn Higan (e.g. 令和9年 秋彼岸)
+ * Displays exactly 5 periods around the current upcoming target (次回発送対象):
+ * - 1 period before (前1つ)
+ * - 1 current upcoming target (次回発送対象)
+ * - 3 periods after (後3つ)
+ * Total: 5 periods.
  */
-/**
- * Generates options for Higan / Niibon mailing periods:
- * 1. Current Year Niibon (Kept during August so temple can check Niibon spirits)
- * 2. Current Year Autumn Higan
- * 3. Next Year Spring Higan
- * 4. Next Year Niibon
- * 5. Next Year Autumn Higan
- */
-export function generateHiganPeriods(currentYear: number, bonSeason: string = '8月盆'): HiganPeriodOption[] {
+export function generateHiganPeriods(
+  currentYear: number,
+  bonSeason: string = '8月盆',
+  now: Date = new Date()
+): HiganPeriodOption[] {
   const isJulyBon = bonSeason === '7月盆';
   const bonLabelSuffix = isJulyBon ? '7月盆' : '8月盆';
 
-  const eraCurrent = getJapaneseEra(currentYear);
-  const eraNext = getJapaneseEra(currentYear + 1);
+  // Build a continuous stream of sequential periods across several years
+  const allPeriods: HiganPeriodOption[] = [];
+  const startYear = currentYear - 2;
+  const endYear = currentYear + 4;
 
-  const periods: HiganPeriodOption[] = [
-    // 0. 本年 春彼岸（一つ前の彼岸: 期限は過ぎていても閲覧・確認できるように表示）
-    {
-      id: `${currentYear}-spring`,
-      label: `${eraCurrent} 春彼岸`,
-      periodText: `${eraCurrent}春分(3/21)〜${eraCurrent}秋分(9/22)の年忌`,
+  for (let y = startYear; y <= endYear; y++) {
+    const eraY = getJapaneseEra(y);
+    const eraNext = getJapaneseEra(y + 1);
+
+    // 1. 正月 (1/1〜12/31の年忌)
+    allPeriods.push({
+      id: `${y}-shogatsu`,
+      label: `${eraY} 正月`,
+      periodText: `${eraY}1/1〜12/31の年忌`,
+      type: 'shogatsu',
+      year: y,
+      startDate: `${y}/01/01`,
+      endDate: `${y}/12/31`,
+    });
+
+    // 2. 春彼岸 (春分(3/21)〜秋分(9/22)の年忌)
+    allPeriods.push({
+      id: `${y}-spring`,
+      label: `${eraY} 春彼岸`,
+      periodText: `${eraY}春分(3/21)〜${eraY}秋分(9/22)の年忌`,
       type: 'spring',
-      year: currentYear,
-      startDate: `${currentYear}/03/21`,
-      endDate: `${currentYear}/09/22`,
-    },
+      year: y,
+      startDate: `${y}/03/21`,
+      endDate: `${y}/09/22`,
+    });
 
-    // 1. 本年 新盆 (8月盆: 前年6月26日〜本年6月25日没 / 7月盆: 前年5月26日〜本年5月25日没)
-    // 8月中はお盆期間中の精霊確認のためタブとして保持
-    {
-      id: `${currentYear}-bon`,
-      label: `${eraCurrent} 新盆 (${bonLabelSuffix})`,
+    // 3. 新盆
+    allPeriods.push({
+      id: `${y}-bon`,
+      label: `${eraY} 新盆 (${bonLabelSuffix})`,
       periodText: isJulyBon ? '前年5月26日〜本年5月25日の没者' : '前年6月26日〜本年6月25日の没者',
       type: 'bon',
-      year: currentYear,
-      startDate: isJulyBon ? `${currentYear - 1}/05/26` : `${currentYear - 1}/06/26`,
-      endDate: isJulyBon ? `${currentYear}/05/25` : `${currentYear}/06/25`,
-    },
+      year: y,
+      startDate: isJulyBon ? `${y - 1}/05/26` : `${y - 1}/06/26`,
+      endDate: isJulyBon ? `${y}/05/25` : `${y}/06/25`,
+    });
 
-    // 2. 本年 秋彼岸 (秋分(9/23)〜翌春分(3/21)の年忌)
-    {
-      id: `${currentYear}-autumn`,
-      label: `${eraCurrent} 秋彼岸`,
-      periodText: `${eraCurrent}秋分(9/23)〜${eraNext}春分(3/21)の年忌`,
+    // 4. 秋彼岸 (秋分(9/23)〜翌春分(3/21)の年忌)
+    allPeriods.push({
+      id: `${y}-autumn`,
+      label: `${eraY} 秋彼岸`,
+      periodText: `${eraY}秋分(9/23)〜${eraNext}春分(3/21)の年忌`,
       type: 'autumn',
-      year: currentYear,
-      startDate: `${currentYear}/09/23`,
-      endDate: `${currentYear + 1}/03/21`,
-    },
+      year: y,
+      startDate: `${y}/09/23`,
+      endDate: `${y + 1}/03/21`,
+    });
+  }
 
-    // 3. 翌年 春彼岸 (春分(3/22)〜秋分(9/23)の年忌)
-    {
-      id: `${currentYear + 1}-spring`,
-      label: `${eraNext} 春彼岸`,
-      periodText: `${eraNext}春分(3/22)〜${eraNext}秋分(9/23)の年忌`,
-      type: 'spring',
-      year: currentYear + 1,
-      startDate: `${currentYear + 1}/03/22`,
-      endDate: `${currentYear + 1}/09/23`,
-    },
+  const upcomingId = getUpcomingMailingPeriodId(currentYear, bonSeason, now);
+  const upcomingIndex = allPeriods.findIndex((p) => p.id === upcomingId);
 
-    // 4. 翌年 新盆
-    {
-      id: `${currentYear + 1}-bon`,
-      label: `${eraNext} 新盆 (${bonLabelSuffix})`,
-      periodText: isJulyBon ? '本年5月26日〜翌年5月25日の没者' : '本年6月26日〜翌年6月25日の没者',
-      type: 'bon',
-      year: currentYear + 1,
-      startDate: isJulyBon ? `${currentYear}/05/26` : `${currentYear}/06/26`,
-      endDate: isJulyBon ? `${currentYear + 1}/05/25` : `${currentYear + 1}/06/25`,
-    },
+  if (upcomingIndex >= 1 && upcomingIndex + 3 < allPeriods.length) {
+    // 1 before, 1 upcoming, 3 after (Total 5 periods)
+    return allPeriods.slice(upcomingIndex - 1, upcomingIndex + 4);
+  }
 
-    // 5. 翌年 秋彼岸
-    {
-      id: `${currentYear + 1}-autumn`,
-      label: `${eraNext} 秋彼岸`,
-      periodText: `${eraNext}秋分(9/24)〜${getJapaneseEra(currentYear + 2)}春分(3/20)の年忌`,
-      type: 'autumn',
-      year: currentYear + 1,
-      startDate: `${currentYear + 1}/09/24`,
-      endDate: `${currentYear + 2}/03/20`,
-    },
-  ];
-
-  return periods;
+  // Fallback if not found
+  return allPeriods.slice(0, 5);
 }
 
 /**
@@ -848,11 +835,13 @@ export function isRelevantNiibon(
 
 /**
  * Calculates the ID of the upcoming mailing target period (次回発送対象).
- * Rules:
- * - 8月盆の場合: 新盆の案内発送は8月12日までに完了しているべきであるため、
- *   8月12日以降は「次回発送対象」ボタンを新盆から【本年 秋彼岸】へ切り替える。
- * - 7月盆の場合: 同様に7月12日以降は秋彼岸へ切り替える。
- * - お盆期間中（8月中）は新盆の精霊確認を行えるよう、新盆タブ自体はそのまま残す。
+ * 周期順: 正月 → 春彼岸 → 新盆 → 秋彼岸 → 翌年正月 ...
+ * 切り替え基準:
+ * - 1/1〜1/15: 本年 正月
+ * - 1/16〜春分(3/21): 本年 春彼岸
+ * - 3/22〜お盆発送期限(7月盆: 7/12、8月盆: 8/12): 本年 新盆
+ * - お盆明け(7/13または8/13)〜秋分(9/23): 本年 秋彼岸
+ * - 秋分明け(9/24)〜12/31: 翌年 正月
  */
 export function getUpcomingMailingPeriodId(
   currentYear: number,
@@ -864,21 +853,29 @@ export function getUpcomingMailingPeriodId(
   const date = now.getDate();
 
   if (isJulyBon) {
-    if (month < 7 || (month === 7 && date < 12)) {
+    if (month === 1 && date <= 15) {
+      return `${currentYear}-shogatsu`;
+    } else if (month < 3 || (month === 3 && date <= 21)) {
+      return `${currentYear}-spring`;
+    } else if (month < 7 || (month === 7 && date < 12)) {
       return `${currentYear}-bon`;
-    } else if (month < 10) {
+    } else if (month < 9 || (month === 9 && date <= 23)) {
       return `${currentYear}-autumn`;
     } else {
-      return `${currentYear + 1}-spring`;
+      return `${currentYear + 1}-shogatsu`;
     }
   } else {
     // 8月盆
-    if (month < 8 || (month === 8 && date < 12)) {
+    if (month === 1 && date <= 15) {
+      return `${currentYear}-shogatsu`;
+    } else if (month < 3 || (month === 3 && date <= 21)) {
+      return `${currentYear}-spring`;
+    } else if (month < 8 || (month === 8 && date < 12)) {
       return `${currentYear}-bon`;
-    } else if (month < 10 || (month === 10 && date <= 15)) {
+    } else if (month < 9 || (month === 9 && date <= 23)) {
       return `${currentYear}-autumn`;
     } else {
-      return `${currentYear + 1}-spring`;
+      return `${currentYear + 1}-shogatsu`;
     }
   }
 }
@@ -1025,46 +1022,69 @@ export function getHouseholdNiibonAndPastInfo(
 }
 
 /**
- * Typography metrics calculation for authentic Japanese vertical postcard back
+ * Typography metrics calculation for authentic Japanese vertical postcard back.
+ * Postcard back dimensions: 100mm width x 148mm height.
+ * Notice text area: top 8mm, right 8mm, bottom 8mm, left 22mm (70mm width x 132mm height).
  */
-export function getPostcardBackTypography(message: string, offset: number = 0): { fontSize: string; lineHeight: string; letterSpacing: string } {
+export function getPostcardBackTypography(
+  message: string,
+  offset: number = 0
+): { fontSize: string; lineHeight: string; letterSpacing: string } {
   if (!message) {
-    const basePt = 10;
-    const effectivePt = Math.max(6, Math.min(18, basePt + offset));
-    return { fontSize: `${effectivePt.toFixed(1)}pt`, lineHeight: '1.6', letterSpacing: '0.04em' };
+    const basePt = 9.5;
+    const effectivePt = Math.max(6, Math.min(16, basePt + offset));
+    return { fontSize: `${effectivePt.toFixed(1)}pt`, lineHeight: '1.55', letterSpacing: '0.035em' };
   }
+
   const clean = message.replace(/[\s\n]*合掌\s*$/, '').trim();
-  const lines = clean.split('\n');
-  const maxLineLen = Math.max(...lines.map((l) => l.length), 0);
-  const lineCount = lines.length;
-  const totalLength = clean.length;
+  const rawLines = clean.split('\n');
 
-  let basePt = 8.5;
-  let lineHeight = '1.45';
-  let letterSpacing = '0.02em';
+  // Available space in pt (70mm width x 132mm height)
+  const availableWidthPt = 70 * (72 / 25.4); // ~198.4pt
+  const availableHeightPt = 132 * (72 / 25.4); // ~374.17pt
 
-  // 余裕がある場合（文字数200文字以下、9行以下、1行あたり32文字以内）は最大10pt
-  if (totalLength <= 200 && lineCount <= 9 && maxLineLen <= 32) {
-    basePt = 10;
-    lineHeight = '1.6';
-    letterSpacing = '0.04em';
-  } else if (totalLength <= 270 && lineCount <= 11 && maxLineLen <= 35) {
-    // 少し多めの場合（文字数270文字以下、11行以下、1行あたり35文字以内）は9.5pt
-    basePt = 9.5;
-    lineHeight = '1.55';
-    letterSpacing = '0.035em';
-  } else if (totalLength <= 350 && lineCount <= 13) {
-    // 中程度の場合（文字数350文字以下、13行以下）は9pt
-    basePt = 9;
-    lineHeight = '1.5';
-    letterSpacing = '0.03em';
+  // Candidate base configurations (from largest to smallest)
+  const candidates = [
+    { pt: 10.0, lineHeightNum: 1.6, lineHeight: '1.6', letterSpacing: '0.04em' },
+    { pt: 9.5, lineHeightNum: 1.55, lineHeight: '1.55', letterSpacing: '0.035em' },
+    { pt: 9.0, lineHeightNum: 1.5, lineHeight: '1.5', letterSpacing: '0.03em' },
+    { pt: 8.5, lineHeightNum: 1.45, lineHeight: '1.45', letterSpacing: '0.025em' },
+    { pt: 8.0, lineHeightNum: 1.4, lineHeight: '1.4', letterSpacing: '0.02em' },
+    { pt: 7.5, lineHeightNum: 1.35, lineHeight: '1.35', letterSpacing: '0.015em' },
+    { pt: 7.0, lineHeightNum: 1.3, lineHeight: '1.3', letterSpacing: '0.01em' },
+  ];
+
+  let selectedCandidate = candidates[candidates.length - 1];
+
+  for (const c of candidates) {
+    // Height per character in vertical writing (pt per char)
+    const charHeightPt = c.pt * 1.18;
+    const maxCharsPerCol = Math.max(15, Math.floor(availableHeightPt / charHeightPt));
+
+    // Calculate total visual columns
+    let totalCols = 0;
+    for (const line of rawLines) {
+      if (line.length === 0) {
+        totalCols += 1;
+      } else {
+        totalCols += Math.ceil(line.length / maxCharsPerCol);
+      }
+    }
+    // Add 1 extra column buffer for "合掌" or breathing space
+    totalCols += 1;
+
+    const neededWidthPt = totalCols * (c.pt * c.lineHeightNum);
+    if (neededWidthPt <= availableWidthPt) {
+      selectedCandidate = c;
+      break;
+    }
   }
 
-  const effectivePt = Math.max(6, Math.min(18, basePt + offset));
+  const effectivePt = Math.max(6, Math.min(16, selectedCandidate.pt + offset));
   return {
     fontSize: `${effectivePt.toFixed(1)}pt`,
-    lineHeight,
-    letterSpacing,
+    lineHeight: selectedCandidate.lineHeight,
+    letterSpacing: selectedCandidate.letterSpacing,
   };
 }
 
@@ -1121,24 +1141,24 @@ export interface NoticeTemplateItem {
   isDefault?: boolean;
 }
 
-export const DEFAULT_HIGAN_TEMPLATE = `謹啓　時下、{施主名}におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
-　さて、{法要期}の時期が近づいてまいりました。次の法要期までに、
-{精霊文章}
+export const DEFAULT_HIGAN_TEMPLATE = `謹啓　時下、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
+　さて、{彼岸}の時期が近づいてまいりました。{次彼岸}までに下記精霊の年回忌法要をお迎えになります。
+{精霊一覧}
 　つきましては、法要のご予約・お申込みは準備の都合上、ご希望日の二ヶ月前頃までにご連絡くださいますようお願い申し上げます。なお、お塔婆のみご希望の場合は受取の一週間前までにご連絡ください。
 　また、彼岸法要時の合同供養も合わせてお申込みいただけます。
 　時節柄、皆様のご健勝とご多幸を心よりお祈り申し上げます。
 　
 合掌`;
 
-export const DEFAULT_NIIBON_TEMPLATE = `謹啓　盛夏の候、{施主名}におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
-　さて、夏のお盆が近づいてまいりました。本年新盆にあたり、つきましては新盆合同法要（盆法要）を開催いたします。
-　本年は故 {故人名} の「新盆（初盆）」をお迎えのこととお察し申し上げます。
+export const DEFAULT_NIIBON_TEMPLATE = `謹啓　盛夏の候、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
+　さて、夏のお盆が近づいてまいりました。本年新盆にあたり、新盆合同法要（盆法要）を開催いたします。
+　{本年}は故 {故人名} 様の「新盆（初盆）」をお迎えのこととお察し申し上げます。
 　つきましては、万障お繰り合わせの上、ご遺族・ご親族皆様お揃いでご参列賜りますよう謹んでご案内申し上げます。
 
 記
 
 一、法要名：新盆（初盆）合同供養法要
-一、期日：{法要期}
+一、期日：{本年} お盆法要
 一、場所：当山 本堂
 一、該当精霊：
 {精霊一覧}
@@ -1147,24 +1167,23 @@ export const DEFAULT_NIIBON_TEMPLATE = `謹啓　盛夏の候、{施主名}に�
 　
 合掌`;
 
-export const DEFAULT_MEMORIAL_POSTCARD_TEMPLATE = `謹啓　時下、{施主名}におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
-　さて、本年（{法要期}）は、下記精霊の年回忌法要の正当年に当たっております。
+export const DEFAULT_MEMORIAL_POSTCARD_TEMPLATE = `謹啓　時下、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
+　さて、{本年}は、下記精霊の年回忌法要の正当年に当たっております。
 {精霊一覧}
 　つきましては、ご遺族・ご親族皆様お揃いでご参列賜り、追善供養の誠を捧げられますよう謹んでご案内申し上げます。
 　なお、法要日程・お塔婆供養のお申込みにつきましては、お早めに寺務所までご連絡賜りますようお願い申し上げます。
 　
 合掌`;
 
-export const DEFAULT_A4_MEMORIAL_TEMPLATE = `謹啓　時下、{施主名}におかれましては益々ご清祥のこととお慶び申し上げます。
+export const DEFAULT_A4_MEMORIAL_TEMPLATE = `謹啓　時下、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。
 日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
-　さて、本年（{法要期}）は、下記精霊の年回忌法要の正当年に当たっております。
+　さて、{本年}は、下記精霊の年回忌法要の正当年に当たっております。
 
 記
 
 一、対象精霊：
 {精霊一覧}
 
-一、法要期：{法要期}
 一、会場：当山 本堂（またはご自宅・墓前）
 一、護持会・志納金等：
 　　{集金項目１}
@@ -1177,14 +1196,14 @@ export const DEFAULT_A4_MEMORIAL_TEMPLATE = `謹啓　時下、{施主名}にお
 
 合掌`;
 
-export const DEFAULT_A4_GENERAL_TEMPLATE = `謹啓　時下、{施主名}におかれましては益々ご清祥のこととお慶び申し上げます。
+export const DEFAULT_A4_GENERAL_TEMPLATE = `謹啓　時下、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。
 平素は{山号} {寺院名}の護持発展に格段のご理解とご協力を賜り、心より御礼申し上げます。
 　さて、本年も恒例の法要行事を下記の通り厳修いたします。
 　ご先祖様への報恩感謝と追善供養のため、皆様お揃いでご参拝賜りますようご案内申し上げます。
 
 記
 
-一、行事名：{法要期} 合同供養法要
+一、行事名：{彼岸} 合同供養法要
 一、場所：当山 本堂
 一、該当精霊：
 {精霊一覧}
@@ -1317,6 +1336,93 @@ export interface MemorialNoticeTarget {
   secularName?: string;
   memorialType: string;
   scheduledDateStr: string;
+}
+
+/**
+ * Calculates a map of household ID / key -> list of MemorialNoticeTarget spirits for a given shipping period.
+ * This is used for temporary storage when printing notice postcards and A4 notices.
+ */
+export function calculateHouseholdMilestoneTargetsMap(
+  pastRecords: PastRecord[],
+  period?: HiganPeriodOption | null,
+  nenkiSettings?: NenkiFilterSettings,
+  templeInfo?: { bonSeason?: string }
+): Record<string, MemorialNoticeTarget[]> {
+  if (!pastRecords || pastRecords.length === 0 || !period) return {};
+
+  const effectiveNenkiSettings = nenkiSettings || DEFAULT_NENKI_FILTER_SETTINGS;
+  const bonSeason = templeInfo?.bonSeason || '8月盆';
+
+  const map: Record<string, MemorialNoticeTarget[]> = {};
+
+  pastRecords.forEach((record) => {
+    if (!record || !record.deathDate || record.deathDate.trim() === '') return;
+
+    if (period.type === 'bon' || period.id.endsWith('-bon')) {
+      const normalizedDeathDate = normalizeDateInput(record.deathDate);
+      if (!normalizedDeathDate) return;
+
+      const targetNiibonTag = `${getJapaneseEra(period.year)}新盆`;
+      const recordNiibon = record.niibon && record.niibon.trim() !== ''
+        ? record.niibon.trim()
+        : calculateNiibonFromDeathDate(record.deathDate, bonSeason);
+
+      const isMatch = recordNiibon === targetNiibonTag || recordNiibon.includes(targetNiibonTag) || (
+        normalizedDeathDate >= period.startDate && normalizedDeathDate <= period.endDate
+      );
+
+      if (isMatch) {
+        const isJulyBon = bonSeason === '7月盆';
+        const bonScheduledDate = `${period.year}/${isJulyBon ? '07/15' : '08/15'}`;
+
+        const target: MemorialNoticeTarget = {
+          dharmaName: record.dharmaName || '',
+          secularName: record.secularName || '',
+          memorialType: '新盆',
+          scheduledDateStr: bonScheduledDate,
+        };
+
+        const keys = [record.householdId, record.householdHeadName, record.id].filter(Boolean) as string[];
+        keys.forEach((key) => {
+          if (!map[key]) map[key] = [];
+          if (!map[key].some((t) => t.dharmaName === target.dharmaName && t.scheduledDateStr === target.scheduledDateStr && t.memorialType === target.memorialType)) {
+            map[key].push(target);
+          }
+        });
+      }
+    } else {
+      const milestones = calculateMemorialMilestones(record.deathDate);
+      const matched = milestones.filter((m) => {
+        const inPeriod = m.scheduledDate >= period.startDate && m.scheduledDate <= period.endDate;
+        if (!inPeriod) return false;
+        return isSpiritMatchingNenkiSettings({ memorialType: m.type, yearNumber: m.yearNumber } as any, effectiveNenkiSettings);
+      });
+
+      matched.forEach((m) => {
+        const target: MemorialNoticeTarget = {
+          dharmaName: record.dharmaName || '',
+          secularName: record.secularName || '',
+          memorialType: m.type,
+          scheduledDateStr: m.scheduledDate,
+        };
+
+        const keys = [record.householdId, record.householdHeadName, record.id].filter(Boolean) as string[];
+        keys.forEach((key) => {
+          if (!map[key]) map[key] = [];
+          if (!map[key].some((t) => t.dharmaName === target.dharmaName && t.scheduledDateStr === target.scheduledDateStr && t.memorialType === target.memorialType)) {
+            map[key].push(target);
+          }
+        });
+      });
+    }
+  });
+
+  // Sort each household's targets by scheduledDate ascending
+  Object.keys(map).forEach((key) => {
+    map[key].sort((a, b) => a.scheduledDateStr.localeCompare(b.scheduledDateStr));
+  });
+
+  return map;
 }
 
 export function formatDharmaNameForNotice(dharmaName?: string, secularName?: string): string {
@@ -1495,14 +1601,15 @@ export function getHouseholdFamilyHeadName(household?: Household | null): string
 /**
  * Applies placeholders to a template string.
  * Supported tags:
- * - {世帯主} / {世帯主名} : 世帯主の氏名（例: 佐藤 謙一様）
- * - {施主} / {施主名} / {檀信徒名} : 施主の氏名（家族構成で施主指定された人物、なければ世帯主。例: 佐藤 太郎様）
- * - {法要期} / {発送区分}
- * - {精霊文章}
+ * - {施主名} / ｛施主名｝ : 施主名（「様」無し、家族構成で施主指定された人物、なければ世帯主名。例: 佐藤 太郎）
+ * - {彼岸} / ｛彼岸｝ : 直近の彼岸（例: 「秋彼岸」または「春彼岸」・年無し）
+ * - {次彼岸} / ｛次彼岸｝ : 直近の彼岸の次（例: 「春彼岸」または「秋彼岸」・年無し）
+ * - {本年} / ｛本年｝ : 今年（例: 「令和八年」）
+ * - {次年} / ｛次年｝ : 次の年（例: 「令和九年」）
+ * - {故人名} / ｛故人名｝ : 俗名（「様」無し）
  * - {精霊一覧} / ｛精霊一覧｝ : 月日　戒名　霊位　年忌（例: 九月二十三日　釋清純信士　霊位　五十回忌）
- * - {故人名} / ｛故人名｝
- * - {寺院名} / ｛寺院名｝
- * - {山号} / ｛山号｝
+ * - {寺院名} / ｛寺院名｝ : 寺院名（例: 光明寺）
+ * - {山号} / ｛山号｝ : 寺院の山号（例: 補陀落山）
  * - {集金項目１} / {集金項目２} / {集金項目３}
  * - {檀信徒QRコード} / {寺院サイトQRコード}
  */
@@ -1519,19 +1626,68 @@ export function applyNoticeTemplate(
 
   let cleanHead = householdHeadName ? householdHeadName.trim() : (household?.familyHead || '').trim();
   cleanHead = cleanHead.replace(/[\s　]*(様|殿|御中)[\s　]*$/, '').trim();
-  const headFormatted = cleanHead !== ''
-    ? `${cleanHead}様`
-    : '檀信徒の皆様';
 
   let cleanSponsor = sponsorName ? sponsorName.trim() : '';
   cleanSponsor = cleanSponsor.replace(/[\s　]*(様|殿|御中)[\s　]*$/, '').trim();
-  const sponsorFormatted = cleanSponsor !== ''
-    ? `${cleanSponsor}様`
-    : headFormatted;
 
-  // Format {法要期} / {発送区分} with era year in Kanji (e.g. 令和8年 秋彼岸 -> 令和八年 秋彼岸)
-  const cleanPeriod = (higanPeriodLabel || '').replace(/\s*\([78]月盆\)/g, '').trim();
-  const periodFormatted = formatEraYearNumberToKanji(cleanPeriod || higanPeriodLabel || '');
+  // ｛施主名｝施主名（「様」無し）: 指定施主名、なければ世帯主名、なければ「檀信徒」
+  const sponsorWithoutHonorific = cleanSponsor !== ''
+    ? cleanSponsor
+    : (cleanHead !== '' ? cleanHead : '檀信徒');
+
+  // ｛彼岸｝＝直近の彼岸　「秋彼岸」or「春彼岸」（年無し）
+  // ｛次彼岸｝＝直近の彼岸の次　「春彼岸」or「秋彼岸」（年無し）
+  let higanCurrent = '秋彼岸';
+  let higanNext = '春彼岸';
+
+  if (higanPeriodLabel && (higanPeriodLabel.includes('春彼岸') || higanPeriodLabel.includes('春'))) {
+    higanCurrent = '春彼岸';
+    higanNext = '秋彼岸';
+  } else if (higanPeriodLabel && (higanPeriodLabel.includes('秋彼岸') || higanPeriodLabel.includes('秋'))) {
+    higanCurrent = '秋彼岸';
+    higanNext = '春彼岸';
+  } else {
+    const now = new Date();
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    // 春分(3/21)〜秋分(9/23)の期間は直近彼岸が「秋彼岸」、それ以外は「春彼岸」
+    if ((m === 3 && d >= 22) || (m > 3 && m < 9) || (m === 9 && d <= 23)) {
+      higanCurrent = '秋彼岸';
+      higanNext = '春彼岸';
+    } else {
+      higanCurrent = '春彼岸';
+      higanNext = '秋彼岸';
+    }
+  }
+
+  // ｛本年｝＝今年（例　「令和八年」）
+  // ｛次年｝＝次の年　（例　「令和九年」）
+  let baseYear = new Date().getFullYear();
+  if (higanPeriodLabel) {
+    const yearMatch = higanPeriodLabel.match(/(20\d\d)/);
+    if (yearMatch) {
+      baseYear = parseInt(yearMatch[1], 10);
+    } else {
+      const eraMatch = higanPeriodLabel.match(/(令和|平成|昭和|大正|明治)?\s*([0-9０-９元一二三四五六七八九十]+)\s*年/);
+      if (eraMatch) {
+        const numStr = eraMatch[2];
+        if (eraMatch[1] === '令和' || !eraMatch[1]) {
+          let rNum = 8;
+          if (numStr === '元' || numStr === '一' || numStr === '1' || numStr === '１') rNum = 1;
+          else {
+            const parsedNum = parseInt(numStr.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0)), 10);
+            if (!isNaN(parsedNum)) rNum = parsedNum;
+          }
+          baseYear = 2018 + rNum;
+        }
+      }
+    }
+  }
+  const currentEraStr = getJapaneseEra(baseYear);
+  const honnenFormatted = formatEraYearNumberToKanji(currentEraStr);
+
+  const nextEraStr = getJapaneseEra(baseYear + 1);
+  const jinenFormatted = formatEraYearNumberToKanji(nextEraStr);
 
   // Format Deceased List (Bullet list) - 「月日　戒名　霊位　年忌」
   const deceasedList = targets.map((t) => {
@@ -1559,35 +1715,19 @@ export function applyNoticeTemplate(
     return `　　・${partsArr.join('　')}`;
   }).join('\n');
 
-  // Format Spirits Prose Sentence
-  const spiritPhrases = targets.map((t, idx) => {
-    const normalized = normalizeDateInput(t.scheduledDateStr);
-    const parts = normalized.split('/');
-    const m = parseInt(parts[1], 10);
-    const d = parseInt(parts[2], 10);
-
-    const monthKanji = !isNaN(m) ? toKanjiNumber(m) : '';
-    const dayKanji = !isNaN(d) ? toKanjiNumber(d) : '';
-    const dateKanjiStr = (monthKanji && dayKanji) ? `${monthKanji}月${dayKanji}日` : convertArabicToKanjiInString(t.scheduledDateStr);
-
-    const nameWithReii = formatDharmaNameForNotice(t.dharmaName, t.secularName);
-    const memorialTypeKanji = convertArabicToKanjiInString(t.memorialType);
-
-    if (idx === 0) {
-      return `${dateKanjiStr}には${nameWithReii}の${memorialTypeKanji}を`;
-    } else {
-      return `、更に${dateKanjiStr}には${nameWithReii}の${memorialTypeKanji}を`;
+  // ｛故人名｝＝俗名（「様」無し）
+  let deceasedSecularName = '';
+  if (targets.length > 0) {
+    const t = targets[0];
+    if (t.secularName && t.secularName.trim() !== '') {
+      deceasedSecularName = t.secularName.replace(/[\s　]*(様|殿|御中)[\s　]*$/, '').trim();
+    } else if (t.dharmaName && t.dharmaName.trim() !== '' && t.dharmaName !== '（未登録）') {
+      deceasedSecularName = t.dharmaName.replace(/[\s　]*(霊位|様|殿)[\s　]*$/, '').trim();
     }
-  });
-
-  const spiritsSentence = spiritPhrases.length > 0
-    ? `${spiritPhrases.join('')}お迎えすることになります。`
-    : '';
-
-  // Primary deceased name (for {故人名})
-  const primaryDeceasedName = targets.length > 0
-    ? formatDharmaNameForNotice(targets[0].dharmaName, targets[0].secularName)
-    : '故人霊位';
+  }
+  if (!deceasedSecularName) {
+    deceasedSecularName = '故人';
+  }
 
   // Fee tag values
   const fee1Formatted = formatFeeTag(1, templeInfo, household);
@@ -1596,12 +1736,24 @@ export function applyNoticeTemplate(
 
   // Replace all tags (supports both half-width {...} and full-width ｛...｝)
   let result = templateStr;
-  result = result.replace(/\{世帯主名\}|\{世帯主\}|｛世帯主名｝|｛世帯主｝/g, headFormatted);
-  result = result.replace(/\{施主名\}|\{施主\}|\{檀信徒名\}|｛施主名｝|｛施主｝|｛檀信徒名｝/g, sponsorFormatted);
-  result = result.replace(/\{法要期\}|\{発送区分\}|｛法要期｝|｛発送区分｝/g, periodFormatted);
-  result = result.replace(/\{精霊文章\}|｛精霊文章｝/g, spiritsSentence);
+  // 施主名（様無し）
+  result = result.replace(/\{施主名\}|\{施主\}|\{檀信徒名\}|｛施主名｝|｛施主｝|｛檀信徒名｝/g, sponsorWithoutHonorific);
+  // 彼岸（直近の彼岸 「秋彼岸」or「春彼岸」年無し）
+  result = result.replace(/\{彼岸\}|｛彼岸｝/g, higanCurrent);
+  // 次彼岸（直近の彼岸の次 「春彼岸」or「秋彼岸」年無し）
+  result = result.replace(/\{次彼岸\}|｛次彼岸｝/g, higanNext);
+  // 本年（今年 例 「令和八年」）
+  result = result.replace(/\{本年\}|｛本年｝/g, honnenFormatted);
+  // 次年（次の年 例 「令和九年」）
+  result = result.replace(/\{次年\}|｛次年｝/g, jinenFormatted);
+  // 故人名（俗名 「様」無し）
+  result = result.replace(/\{故人名\}|｛故人名｝/g, deceasedSecularName);
+  // 廃止タグのクリア
+  result = result.replace(/\{世帯主名\}|\{世帯主\}|｛世帯主名｝|｛世帯主｝/g, '');
+  result = result.replace(/\{法要期\}|\{発送区分\}|｛法要期｝|｛発送区分｝/g, '');
+  result = result.replace(/\{精霊文章\}|｛精霊文章｝|\{精霊文書\}|｛精霊文書｝/g, '');
+  // その他の継続タグ
   result = result.replace(/\{精霊一覧\}|｛精霊一覧｝/g, deceasedList);
-  result = result.replace(/\{故人名\}|｛故人名｝/g, primaryDeceasedName);
   result = result.replace(/\{寺院名\}|｛寺院名｝/g, templeInfo?.name || '当寺');
   result = result.replace(/\{山号\}|｛山号｝/g, templeInfo?.mountainName || '当山');
   result = result.replace(/\{集金項目１\}|\{集金項目1\}|｛集金項目１｝|｛集金項目1｝/g, fee1Formatted);

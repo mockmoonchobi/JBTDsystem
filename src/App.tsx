@@ -58,7 +58,18 @@ import {
   DeletedRecordEntry,
   BatchAccountingData
 } from './types';
-import { getSavedNoticeTemplates, saveNoticeTemplates, calculateNiibonFromDeathDate, sortHouseholds, normalizeDateInput, NoticeTemplateItem } from './utils/memorialCalculator';
+import {
+  getSavedNoticeTemplates,
+  saveNoticeTemplates,
+  calculateNiibonFromDeathDate,
+  sortHouseholds,
+  normalizeDateInput,
+  NoticeTemplateItem,
+  MemorialNoticeTarget,
+  generateHiganPeriods,
+  getUpcomingMailingPeriodId,
+  calculateHouseholdMilestoneTargetsMap,
+} from './utils/memorialCalculator';
 import { stripAutoCarryoverTransactions } from './utils/fiscalYearUtils';
 import { withCreationAudit, withUpdateAudit, getCurrentAuditFields } from './utils/auditUtils';
 import { migrateAllDankaIds } from './utils/dankaIdUtils';
@@ -183,6 +194,33 @@ export default function App() {
   // Cross-tab states for Print Engine & List Sorting / Excluding
   const [selectedIdsForPrint, setSelectedIdsForPrint] = useState<string[]>([]);
   const [customPrintMessage, setCustomPrintMessage] = useState<string>('');
+  const [milestoneTargetsMap, setMilestoneTargetsMap] = useState<Record<string, MemorialNoticeTarget[]>>({});
+  const [milestonePeriodLabel, setMilestonePeriodLabel] = useState<string>('');
+
+  // Default initialize milestone targets for upcoming mailing period if not set
+  useEffect(() => {
+    if (pastRecords.length === 0) return;
+    if (!milestonePeriodLabel) {
+      const currentYear = new Date().getFullYear();
+      const bonSeason = templeInfo?.bonSeason || '8月盆';
+      const periods = generateHiganPeriods(currentYear, bonSeason);
+      const upcomingId = getUpcomingMailingPeriodId(currentYear, bonSeason);
+      const defaultPeriod = periods.find((p) => p.id === upcomingId) || periods[0];
+      if (defaultPeriod) {
+        const initialMap = calculateHouseholdMilestoneTargetsMap(pastRecords, defaultPeriod, undefined, templeInfo);
+        setMilestoneTargetsMap(initialMap);
+        setMilestonePeriodLabel(defaultPeriod.label);
+      }
+    }
+  }, [pastRecords.length, templeInfo?.bonSeason, milestonePeriodLabel]);
+
+  const handleUpdateMilestoneTargets = useCallback(
+    (targetsMap: Record<string, MemorialNoticeTarget[]>, periodLabel: string) => {
+      setMilestoneTargetsMap(targetsMap);
+      setMilestonePeriodLabel(periodLabel);
+    },
+    []
+  );
 
   const [householdSortKey, setHouseholdSortKey] = useState<string>(() => {
     return safeStorage.getItem('household_sort_key') || 'id';
@@ -2729,6 +2767,14 @@ export default function App() {
             onAddTodo={handleAddTodo}
             onSaveNoticeTemplates={handleSaveNoticeTemplates}
             onOpenImportModal={(target) => handleOpenImportModal(target || 'past_record')}
+            setSelectedIdsForPrint={setSelectedIdsForPrint}
+            onUpdateMilestoneTargets={handleUpdateMilestoneTargets}
+            onNavigateToPrint={(selectedIds) => {
+              if (selectedIds && selectedIds.length > 0) {
+                setSelectedIdsForPrint(selectedIds);
+              }
+              setActiveTab('print');
+            }}
           />
         )}
 
@@ -2773,6 +2819,8 @@ export default function App() {
             initialSelectedHouseholdIds={selectedIdsForPrint}
             initialCustomMessage={customPrintMessage}
             onSaveNoticeTemplates={handleSaveNoticeTemplates}
+            milestoneTargetsMap={milestoneTargetsMap}
+            milestonePeriodLabel={milestonePeriodLabel}
           />
         )}
 

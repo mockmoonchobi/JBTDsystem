@@ -37,12 +37,13 @@ interface A4TemplateModalProps {
 }
 
 export const A4_NOTICE_TAGS = [
-  { tag: '{世帯主}', description: '世帯主のお名前（例: 山田太郎様）' },
-  { tag: '{施主名}', description: '施主のお名前（指定ある場合は施主、なければ世帯主）' },
-  { tag: '{法要期}', description: '法要期・発送区分（例: 令和八年 秋彼岸）' },
+  { tag: '{施主名}', description: '施主名（「様」無し）' },
+  { tag: '{彼岸}', description: '直近の彼岸（「秋彼岸」または「春彼岸」・年無し）' },
+  { tag: '{次彼岸}', description: '直近の彼岸の次（「春彼岸」または「秋彼岸」・年無し）' },
+  { tag: '{本年}', description: '今年（例: 「令和八年」）' },
+  { tag: '{次年}', description: '次の年（例: 「令和九年」）' },
+  { tag: '{故人名}', description: '対象故人の俗名（「様」無し）' },
   { tag: '{精霊一覧}', description: '該当精霊一覧（九月二十三日　戒名　霊位　五十回忌）' },
-  { tag: '{精霊文章}', description: '該当精霊の案内文章（〇月〇日には〜五十回忌を...）' },
-  { tag: '{故人名}', description: '対象故人の戒名・法名（例: 慈光院釈道修居士）' },
   { tag: '{寺院名}', description: '寺院名（例: 光明寺）' },
   { tag: '{山号}', description: '寺院の山号（例: 補陀落山）' },
   { tag: '{集金項目１}', description: '集金項目1（例: 護持会費　一金、三，〇〇〇円也）' },

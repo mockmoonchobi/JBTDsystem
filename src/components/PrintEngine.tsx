@@ -23,7 +23,8 @@ import {
   DEFAULT_HIGAN_TEMPLATE,
   DEFAULT_A4_MEMORIAL_TEMPLATE,
   DEFAULT_A4_GENERAL_TEMPLATE,
-  NoticeTemplateItem
+  NoticeTemplateItem,
+  MemorialNoticeTarget,
 } from '../utils/memorialCalculator';
 import { safeStorage } from '../utils/storageUtils';
 import { PostcardTemplateModal } from './PostcardTemplateModal';
@@ -38,6 +39,8 @@ interface PrintEngineProps {
   initialSelectedHouseholdIds?: string[];
   initialCustomMessage?: string;
   onSaveNoticeTemplates?: (templates?: NoticeTemplateItem[]) => void;
+  milestoneTargetsMap?: Record<string, MemorialNoticeTarget[]>;
+  milestonePeriodLabel?: string;
 }
 
 const DEFAULT_STANDARD_POSTCARD_MESSAGE = `謹啓　時下、檀信徒の皆様におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
@@ -55,6 +58,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
   initialSelectedHouseholdIds = [],
   initialCustomMessage = '',
   onSaveNoticeTemplates,
+  milestoneTargetsMap,
+  milestonePeriodLabel,
 }) => {
   const [searchFilter, setSearchFilter] = useState<string>('');
 
@@ -895,6 +900,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                     fontSizeOffset={a4FontSizeOffset}
                     showTempleQrCode={showTempleQrCode}
                     showHouseholdQrCode={showHouseholdQrCode}
+                    milestoneTargetsMap={milestoneTargetsMap}
+                    milestonePeriodLabel={milestonePeriodLabel}
                   />
                 </div>
               ) : docType === 'postcard' && postcardTab === 'both' ? (
@@ -913,6 +920,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                       fontSizeOffset={fontSizeOffset}
                       showTempleQrCode={showTempleQrCode}
                       showHouseholdQrCode={showHouseholdQrCode}
+                      milestoneTargetsMap={milestoneTargetsMap}
+                      milestonePeriodLabel={milestonePeriodLabel}
                     />
                   </div>
                   <div className="flex flex-col items-center gap-2">
@@ -929,6 +938,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                       fontSizeOffset={fontSizeOffset}
                       showTempleQrCode={showTempleQrCode}
                       showHouseholdQrCode={showHouseholdQrCode}
+                      milestoneTargetsMap={milestoneTargetsMap}
+                      milestonePeriodLabel={milestonePeriodLabel}
                     />
                   </div>
                 </div>
@@ -944,6 +955,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   fontSizeOffset={docType === 'envelope' ? a4FontSizeOffset : fontSizeOffset}
                   showTempleQrCode={showTempleQrCode}
                   showHouseholdQrCode={showHouseholdQrCode}
+                  milestoneTargetsMap={milestoneTargetsMap}
+                  milestonePeriodLabel={milestonePeriodLabel}
                 />
               )
             ) : (
@@ -974,6 +987,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               showHouseholdQrCode={showHouseholdQrCode}
               isPrint
               isLast={index === printItems.length - 1}
+              milestoneTargetsMap={milestoneTargetsMap}
+              milestonePeriodLabel={milestonePeriodLabel}
             />
           );
         })}
@@ -1028,6 +1043,8 @@ interface PreviewCanvasProps {
   showHouseholdQrCode?: boolean;
   isPrint?: boolean;
   isLast?: boolean;
+  milestoneTargetsMap?: Record<string, MemorialNoticeTarget[]>;
+  milestonePeriodLabel?: string;
 }
 
 function convertNumberToKanji(nStr: string): string {
@@ -1144,10 +1161,6 @@ const TempleEnvelopeSenderBlock: React.FC<{
   const phoneDigits = formatVerticalDigitsAndHyphens(templeInfo.phone || '0495-24-2290');
   const faxDigits = formatVerticalDigitsAndHyphens(templeInfo.fax || '0495-23-1576');
 
-  // 1列目 (右側): 郵便番号 〒 & 住所 (1行連結)
-  const postalFormatted = postalDigits ? `〒${postalDigits}` : '';
-  const fullAddressLine = [postalFormatted, addrText].filter(Boolean).join('　');
-
   // 2列目 (中央): 山号 寺院名 (全角1文字分近づけ、文字を少し大きく 19pt、文字間 letter-spacing: 0.52em)
   const mName = (templeInfo.mountainName || '西光山').trim();
   const tName = (templeInfo.name || '宥勝寺').trim();
@@ -1165,7 +1178,7 @@ const TempleEnvelopeSenderBlock: React.FC<{
     >
       {/* 3列の縦書きテキスト (隙間は最小限の 1.5mm) */}
       <div className="flex flex-row-reverse items-start justify-center gap-[1.5mm]">
-        {/* 1列目 (右側): 郵便番号・住所 */}
+        {/* 1列目 (右側): 郵便番号・住所 (郵便番号の数字とハイフンのみフォントを30%縮小) */}
         <div
           className="text-stone-900 whitespace-nowrap select-none"
           style={{
@@ -1176,7 +1189,14 @@ const TempleEnvelopeSenderBlock: React.FC<{
             letterSpacing: '0.08em',
           }}
         >
-          {fullAddressLine}
+          {postalDigits && (
+            <span>
+              <span>〒</span>
+              <span style={{ fontSize: '70%' }}>{postalDigits}</span>
+              <span>　</span>
+            </span>
+          )}
+          <span>{addrText}</span>
         </div>
 
         {/* 2列目 (中央): 山号 寺院名 */}
@@ -1273,7 +1293,7 @@ const TempleSenderVerticalBlock: React.FC<{
         {postalDigits && (
           <span>
             <span>〒</span>
-            <span style={{ fontSize: variant === 'postcard' ? '7.5pt' : '8.5pt' }}>{postalDigits}</span>
+            <span style={{ fontSize: '70%' }}>{postalDigits}</span>
             <span>　</span>
           </span>
         )}
@@ -1281,7 +1301,7 @@ const TempleSenderVerticalBlock: React.FC<{
         {shouldIncludePhone && (
           <span>
             <span>　電話</span>
-            <span style={{ fontSize: variant === 'postcard' ? '7.5pt' : '8.5pt' }}>{phoneDigits}</span>
+            <span style={{ fontSize: '70%' }}>{phoneDigits}</span>
           </span>
         )}
       </div>
@@ -1302,12 +1322,19 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   showHouseholdQrCode = true,
   isPrint = false,
   isLast = false,
+  milestoneTargetsMap,
+  milestonePeriodLabel,
 }) => {
   const zipDigits = formatPostalCodeFullWidthDigits(household.postalCode || '1050011');
 
   const isA4 = docType === 'a4_notice';
   const canvasWidth = isA4 ? '297mm' : docType === 'envelope' ? '120mm' : '100mm';
   const canvasHeight = isA4 ? '210mm' : docType === 'envelope' ? '235mm' : '148mm';
+
+  // Resolved milestone spirit targets for this specific household
+  const householdTargets = (milestoneTargetsMap && household)
+    ? (milestoneTargetsMap[household.id] || milestoneTargetsMap[household.familyHead] || [])
+    : [];
 
   return (
     <div
@@ -1320,7 +1347,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         minWidth: canvasWidth,
         minHeight: canvasHeight,
         boxSizing: 'border-box',
-        padding: isA4 ? '18mm 20mm' : '8mm',
+        padding: isA4 ? '18mm 20mm' : docType === 'postcard' && postcardTab === 'back' ? '0' : '8mm',
         userSelect: 'none',
         ...(isA4 && !isPrint
           ? {
@@ -1569,8 +1596,8 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
 
         const personalizedMessage = applyNoticeTemplate(
           customMessage || '',
-          [],
-          '',
+          householdTargets,
+          milestonePeriodLabel || '',
           headName,
           templeInfo,
           sponsorName,
@@ -1581,7 +1608,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         return (
           <div className="w-full h-full relative text-stone-900 font-serif">
             <div
-              className="absolute top-[8mm] right-[8mm] bottom-[8mm] left-[20mm] font-serif text-stone-950 overflow-hidden flex flex-col justify-between"
+              className="absolute top-[8mm] right-[8mm] bottom-[8mm] left-[22mm] font-serif text-stone-950 overflow-hidden flex flex-col justify-between"
               style={{
                 writingMode: 'vertical-rl',
                 textOrientation: 'upright',
@@ -1608,7 +1635,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
               </div>
             </div>
 
-            <div className="absolute bottom-[8mm] left-[4mm]">
+            <div className="absolute bottom-[8mm] left-[5mm]">
               <TempleSenderVerticalBlock templeInfo={templeInfo} variant="postcard" />
             </div>
           </div>
@@ -1622,8 +1649,8 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
 
         const personalizedMessage = applyNoticeTemplate(
           customMessage || DEFAULT_A4_MEMORIAL_TEMPLATE,
-          [],
-          '',
+          householdTargets,
+          milestonePeriodLabel || '',
           headName,
           templeInfo,
           sponsorName,

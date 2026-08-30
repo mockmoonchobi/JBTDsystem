@@ -18,6 +18,7 @@ import {
   Clock,
   CheckCircle2,
   CheckSquare,
+  Square,
   Mail
 } from 'lucide-react';
 import { PastRecord, Household, MemorialMilestone, TempleInfo, MemorialService, TempleTodo, TempleProfile } from '../types';
@@ -43,6 +44,7 @@ import {
   NenkiFilterSettings,
   DEFAULT_NENKI_FILTER_SETTINGS,
   isSpiritMatchingNenkiSettings,
+  MemorialNoticeTarget,
 } from '../utils/memorialCalculator';
 import { getRokuyo, calculateEndTime, getPreviousDay } from '../utils/calendarUtils';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -73,6 +75,9 @@ interface KakochoListProps {
   onAddTodo?: (todo: TempleTodo) => void;
   onSaveNoticeTemplates?: (templates: NoticeTemplateItem[] | { higan: string; niibon: string }) => void;
   onOpenImportModal?: (target?: 'past_record' | 'combined') => void;
+  onNavigateToPrint?: (selectedIds?: string[]) => void;
+  setSelectedIdsForPrint?: React.Dispatch<React.SetStateAction<string[]>>;
+  onUpdateMilestoneTargets?: (targetsMap: Record<string, MemorialNoticeTarget[]>, periodLabel: string) => void;
 }
 
 export const KakochoList: React.FC<KakochoListProps> = ({
@@ -95,9 +100,13 @@ export const KakochoList: React.FC<KakochoListProps> = ({
   onAddTodo,
   onSaveNoticeTemplates,
   onOpenImportModal,
+  onNavigateToPrint,
+  setSelectedIdsForPrint,
+  onUpdateMilestoneTargets,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'daily' | 'milestones'>(initialTab);
+  const [selectedMilestoneHouseholdIds, setSelectedMilestoneHouseholdIds] = useState<string[]>([]);
 
   // Sync activeTab when initialTab prop changes
   useEffect(() => {
@@ -417,55 +426,57 @@ export const KakochoList: React.FC<KakochoListProps> = ({
   });
 
   // Calculate milestone candidates for the selected shipping period
-  const milestoneCandidates = pastRecords.flatMap((record) => {
-    if (!currentPeriod) return [];
+  const milestoneCandidates = useMemo(() => {
+    return pastRecords.flatMap((record) => {
+      if (!currentPeriod) return [];
 
-    if (currentPeriod.type === 'bon' || currentPeriod.id.endsWith('-bon')) {
-      const normalizedDeathDate = normalizeDateInput(record.deathDate);
-      if (!normalizedDeathDate) return [];
+      if (currentPeriod.type === 'bon' || currentPeriod.id.endsWith('-bon')) {
+        const normalizedDeathDate = normalizeDateInput(record.deathDate);
+        if (!normalizedDeathDate) return [];
 
-      const targetNiibonTag = `${getJapaneseEra(currentPeriod.year)}新盆`;
-      const recordNiibon = record.niibon && record.niibon.trim() !== ''
-        ? record.niibon.trim()
-        : calculateNiibonFromDeathDate(record.deathDate, templeInfo?.bonSeason || '8月盆');
+        const targetNiibonTag = `${getJapaneseEra(currentPeriod.year)}新盆`;
+        const recordNiibon = record.niibon && record.niibon.trim() !== ''
+          ? record.niibon.trim()
+          : calculateNiibonFromDeathDate(record.deathDate, templeInfo?.bonSeason || '8月盆');
 
-      const isMatch = recordNiibon === targetNiibonTag || recordNiibon.includes(targetNiibonTag) || (
-        normalizedDeathDate >= currentPeriod.startDate && normalizedDeathDate <= currentPeriod.endDate
-      );
+        const isMatch = recordNiibon === targetNiibonTag || recordNiibon.includes(targetNiibonTag) || (
+          normalizedDeathDate >= currentPeriod.startDate && normalizedDeathDate <= currentPeriod.endDate
+        );
 
-      if (isMatch) {
-        const isJulyBon = (templeInfo?.bonSeason || '8月盆') === '7月盆';
-        const bonScheduledDate = `${currentPeriod.year}/${isJulyBon ? '07/15' : '08/15'}`;
+        if (isMatch) {
+          const isJulyBon = (templeInfo?.bonSeason || '8月盆') === '7月盆';
+          const bonScheduledDate = `${currentPeriod.year}/${isJulyBon ? '07/15' : '08/15'}`;
 
-        return [{
+          return [{
+            record,
+            milestone: {
+              type: '新盆' as any,
+              yearNumber: 1,
+              targetYear: currentPeriod.year,
+              scheduledDate: bonScheduledDate,
+              japaneseEra: recordNiibon || `${getJapaneseEra(currentPeriod.year)} 新盆`,
+              isPast: false,
+              isCurrentYear: true,
+              isNextYear: false,
+            },
+          }];
+        }
+        return [];
+      } else {
+        const milestones = calculateMemorialMilestones(record.deathDate);
+        // Filter milestones whose scheduledDate falls within the Higan period range [startDate, endDate]
+        const matched = milestones.filter((m) => {
+          const inPeriod = m.scheduledDate >= currentPeriod.startDate && m.scheduledDate <= currentPeriod.endDate;
+          if (!inPeriod) return false;
+          return isSpiritMatchingNenkiSettings({ memorialType: m.type } as any, nenkiSettings);
+        });
+        return matched.map((m) => ({
           record,
-          milestone: {
-            type: '新盆' as any,
-            yearNumber: 1,
-            targetYear: currentPeriod.year,
-            scheduledDate: bonScheduledDate,
-            japaneseEra: recordNiibon || `${getJapaneseEra(currentPeriod.year)} 新盆`,
-            isPast: false,
-            isCurrentYear: true,
-            isNextYear: false,
-          },
-        }];
+          milestone: m,
+        }));
       }
-      return [];
-    } else {
-      const milestones = calculateMemorialMilestones(record.deathDate);
-      // Filter milestones whose scheduledDate falls within the Higan period range [startDate, endDate]
-      const matched = milestones.filter((m) => {
-        const inPeriod = m.scheduledDate >= currentPeriod.startDate && m.scheduledDate <= currentPeriod.endDate;
-        if (!inPeriod) return false;
-        return isSpiritMatchingNenkiSettings({ memorialType: m.type } as any, nenkiSettings);
-      });
-      return matched.map((m) => ({
-        record,
-        milestone: m,
-      }));
-    }
-  });
+    });
+  }, [pastRecords, currentPeriod, templeInfo?.bonSeason, nenkiSettings]);
 
   // Group milestone candidates by Household to prevent double postcard printing per household
   type HouseholdMilestoneGroup = {
@@ -515,6 +526,87 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
     return groups;
   }, [milestoneCandidates, households]);
+
+  const onUpdateMilestoneTargetsRef = useRef(onUpdateMilestoneTargets);
+  useEffect(() => {
+    onUpdateMilestoneTargetsRef.current = onUpdateMilestoneTargets;
+  }, [onUpdateMilestoneTargets]);
+
+  const lastDispatchedPayloadRef = useRef<string>('');
+
+  // Maintain and dispatch temporary milestone targets for the current shipping period
+  useEffect(() => {
+    if (!onUpdateMilestoneTargetsRef.current) return;
+    const targetsMap: Record<string, MemorialNoticeTarget[]> = {};
+    householdMilestoneGroups.forEach((g) => {
+      const targets: MemorialNoticeTarget[] = g.items.map((item) => ({
+        dharmaName: item.record.dharmaName || '',
+        secularName: item.record.secularName || '',
+        memorialType: item.milestone.type,
+        scheduledDateStr: item.milestone.scheduledDate,
+      }));
+      // Map under householdId, householdKey, and household head name
+      const keys = [g.primaryRecord.householdId, g.householdKey, g.headName].filter(Boolean) as string[];
+      keys.forEach((k) => {
+        targetsMap[k] = targets;
+      });
+    });
+
+    const periodLabel = currentPeriod?.label || '';
+    const payloadSignature = JSON.stringify({ periodLabel, targetsMap });
+    if (lastDispatchedPayloadRef.current === payloadSignature) {
+      return;
+    }
+    lastDispatchedPayloadRef.current = payloadSignature;
+
+    onUpdateMilestoneTargetsRef.current(targetsMap, periodLabel);
+  }, [householdMilestoneGroups, currentPeriod?.id, currentPeriod?.label]);
+
+  // Clear milestone selections when selectedPeriodId changes
+  useEffect(() => {
+    setSelectedMilestoneHouseholdIds([]);
+  }, [selectedPeriodId]);
+
+  // Household IDs for the current shipping period
+  const currentPeriodHouseholdIds = useMemo(() => {
+    const ids: string[] = [];
+    householdMilestoneGroups.forEach((g) => {
+      const hid = g.primaryRecord.householdId || g.householdKey;
+      if (hid && !ids.includes(hid)) {
+        ids.push(hid);
+      }
+    });
+    return ids;
+  }, [householdMilestoneGroups]);
+
+  const isAllMilestonesSelected =
+    currentPeriodHouseholdIds.length > 0 &&
+    currentPeriodHouseholdIds.every((id) => selectedMilestoneHouseholdIds.includes(id));
+
+  const handleToggleSelectAllMilestones = () => {
+    if (isAllMilestonesSelected) {
+      setSelectedMilestoneHouseholdIds([]);
+    } else {
+      setSelectedMilestoneHouseholdIds([...currentPeriodHouseholdIds]);
+    }
+  };
+
+  const handleToggleSelectMilestone = (householdId: string) => {
+    if (!householdId) return;
+    setSelectedMilestoneHouseholdIds((prev) =>
+      prev.includes(householdId) ? prev.filter((id) => id !== householdId) : [...prev, householdId]
+    );
+  };
+
+  const handleNavigateToPrintWithSelected = () => {
+    if (selectedMilestoneHouseholdIds.length === 0) return;
+    if (setSelectedIdsForPrint) {
+      setSelectedIdsForPrint(selectedMilestoneHouseholdIds);
+    }
+    if (onNavigateToPrint) {
+      onNavigateToPrint(selectedMilestoneHouseholdIds);
+    }
+  };
 
   // Yearly Spirits Calculation (前年・本年・来年の精霊ベース年法要予定: 四十九日・百ヶ日・年回忌、年忌設定で絞り込み)
   const yearlySpirits = useMemo(() => {
@@ -757,7 +849,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                 }`}
               >
                 <Mail className="w-3.5 h-3.5" />
-                <span>対象法要期（年２回発送区分）</span>
+                <span>対象法要期（正月・彼岸・新盆）</span>
               </button>
 
               <button
@@ -790,7 +882,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
               <div className="bg-white border border-[#D1CEC7] p-4 shadow-sm font-serif space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-2">
-                    <span className="text-xs text-[#1A1A1A] font-bold uppercase tracking-wider font-sans">対象法要期 (年2回発送区分):</span>
+                    <span className="text-xs text-[#1A1A1A] font-bold uppercase tracking-wider font-sans">対象法要期（正月・彼岸・新盆）:</span>
                   </div>
                   <div className="text-xs text-[#444444] font-sans sm:text-right whitespace-nowrap">
                     {currentPeriod.label} 該当当家: <strong className="text-[#1A1A1A] text-sm font-mono font-bold">{householdMilestoneGroups.length}</strong> 檀家
@@ -825,6 +917,20 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
                   {/* 対象法要期メニューの右側アクションボタン群 */}
                   <div className="flex flex-wrap items-center sm:items-end justify-end gap-1.5 pt-1 md:pt-0">
+                    {/* 一括印刷ボタン (チェックが付いた場合に表示) */}
+                    {selectedMilestoneHouseholdIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleNavigateToPrintWithSelected}
+                        className="px-3.5 py-1.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
+                        title="選択中の世帯を長3封筒・はがき印刷へ"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        <span>選択中の {selectedMilestoneHouseholdIds.length} 件を長３封筒・はがき印刷へ</span>
+                      </button>
+                    )}
+
+                    {/* 表示年忌設定ボタン */}
                     <button
                       type="button"
                       onClick={() => setIsNenkiFilterModalOpen(true)}
@@ -833,15 +939,6 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                     >
                       <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
                       <span>表示年忌設定</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsTemplateModalOpen(true)}
-                      className="px-3.5 py-1.5 bg-[#FAF9F5] hover:bg-[#1A1A1A] text-[#1A1A1A] hover:text-[#D4AF37] border border-[#D1CEC7] hover:border-[#1A1A1A] text-xs font-bold flex items-center justify-center space-x-1.5 transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
-                      title="彼岸・新盆はがきの文章テンプレートを各自で設定・編集"
-                    >
-                      <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
-                      <span>案内文テンプレート設定</span>
                     </button>
                   </div>
                 </div>
@@ -854,24 +951,68 @@ export const KakochoList: React.FC<KakochoListProps> = ({
               ) : (
                 <div ref={milestonesScrollRef} className="max-h-[calc(100vh-340px)] min-h-[360px] overflow-y-auto overflow-x-auto relative border border-[#D1CEC7] bg-white shadow-xs font-serif">
                   <table className="w-full text-left text-xs text-[#2D2D2D] border-collapse">
-                    <thead className="sticky top-0 z-10 bg-[#1A1A1A] text-[#D4AF37] font-sans uppercase tracking-wider font-bold border-b border-[#D4AF37] shadow-sm">
+                    <thead className="sticky top-0 z-10 bg-[#1A1A1A] text-[#D4AF37] font-sans uppercase tracking-wider font-bold border-b border-[#D4AF37] shadow-sm select-none">
                       <tr>
+                        {/* 全選択チェックボックス */}
+                        <th className="sticky top-0 bg-[#1A1A1A] px-2 py-3 w-8 text-center">
+                          <button
+                            type="button"
+                            onClick={handleToggleSelectAllMilestones}
+                            className="focus:outline-none cursor-pointer"
+                            title="全選択/解除"
+                          >
+                            {isAllMilestonesSelected ? (
+                              <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] mx-auto" />
+                            ) : (
+                              <Square className="w-3.5 h-3.5 text-[#888888] mx-auto" />
+                            )}
+                          </button>
+                        </th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">檀信徒名</th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">予定日</th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">回忌</th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">戒名</th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">他法要予定</th>
-                        <th className="sticky top-0 bg-[#1A1A1A] p-3.5 text-right font-sans whitespace-nowrap">操作</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#F0EFEA]">
                       {householdMilestoneGroups.map((group, gIdx) => {
                         const { headName, sponsorName, primaryRecord, primaryMilestone, items } = group;
                         const displaySponsor = sponsorName || headName;
-                        const isUpcomingPeriodSelected = selectedPeriodId === targetUpcomingPeriodId;
+                        const householdId = primaryRecord.householdId || group.householdKey;
+                        const isSelected = selectedMilestoneHouseholdIds.includes(householdId);
 
                         return (
-                          <tr key={`milestone-group-${group.householdKey}-${gIdx}`} className="hover:bg-[#F9F7F2] transition-colors">
+                          <tr
+                            key={`milestone-group-${group.householdKey}-${gIdx}`}
+                            onClick={() => handleToggleSelectMilestone(householdId)}
+                            className={`transition-colors cursor-pointer ${
+                              isSelected ? 'bg-amber-50/80 hover:bg-amber-100/80' : 'hover:bg-[#F9F7F2]'
+                            }`}
+                          >
+                            {/* 個別チェックボックス */}
+                            <td
+                              className="px-2 py-3 text-center w-8"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleSelectMilestone(householdId);
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleSelectMilestone(householdId);
+                                }}
+                                className="focus:outline-none cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-3.5 h-3.5 text-[#1A1A1A] mx-auto" />
+                                ) : (
+                                  <Square className="w-3.5 h-3.5 text-[#888888] mx-auto" />
+                                )}
+                              </button>
+                            </td>
                             {/* 檀信徒名（施主） */}
                             <td className="p-3.5 font-bold text-[#1A1A1A] text-sm whitespace-nowrap">
                               {displaySponsor} 様
@@ -898,26 +1039,6 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                                 </span>
                               ) : (
                                 <span className="text-[#888888]">なし</span>
-                              )}
-                            </td>
-                            {/* 操作: 法要案内作成ボタン (※次回発送対象のみ表示、新盆は対象外) */}
-                            <td className="p-3.5 text-right font-sans whitespace-nowrap">
-                              {isUpcomingPeriodSelected && primaryMilestone.type !== '新盆' ? (
-                                <div className="flex items-center justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenNoticeModalForGroup(group)}
-                                    className="px-3 py-1.5 bg-[#FAF9F5] hover:bg-[#EAE6DF] text-[#1A1A1A] text-xs font-bold tracking-wider transition-colors border border-[#D1CEC7] flex items-center space-x-1.5 cursor-pointer shadow-2xs"
-                                    title="この檀家様の年忌法要案内状・はがきを作成・印刷"
-                                  >
-                                    <Mail className="w-3.5 h-3.5 text-[#8C2D19]" />
-                                    <span>法要案内作成</span>
-                                  </button>
-                                </div>
-                              ) : primaryMilestone.type === '新盆' ? (
-                                <span className="text-[#888888] text-xs">新盆供養対象</span>
-                              ) : (
-                                <span className="text-[#888888] text-xs">案内作成対象外</span>
                               )}
                             </td>
                           </tr>

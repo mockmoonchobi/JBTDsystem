@@ -4,12 +4,23 @@ import {
   signInWithPopup, 
   GoogleAuthProvider, 
   onAuthStateChanged, 
+  setPersistence,
+  browserLocalPersistence,
+  inMemoryPersistence,
   User 
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const auth = getAuth(app);
+
+// Initialize persistence safely
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((e) => {
+    console.warn('Fallback to inMemoryPersistence for Firebase Auth:', e);
+    setPersistence(auth, inMemoryPersistence).catch(() => {});
+  });
+}
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
@@ -105,7 +116,24 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
+    let result;
+    try {
+      result = await signInWithPopup(auth, provider);
+    } catch (popupErr: any) {
+      const errMsg = popupErr?.message || '';
+      if (
+        errMsg.includes('Database is closing') ||
+        errMsg.includes('closing/hidden') ||
+        popupErr?.code === 'auth/internal-error'
+      ) {
+        console.warn('IndexedDB closing/hidden error detected during popup sign-in, retrying with inMemoryPersistence...');
+        await setPersistence(auth, inMemoryPersistence).catch(() => {});
+        result = await signInWithPopup(auth, provider);
+      } else {
+        throw popupErr;
+      }
+    }
+
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
       throw new Error('Google OAuthアクセストークンの取得に失敗しました。');
