@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Household, PastRecord, MemorialService, MasterOptions, TempleProfile } from '../../types';
+import { Household, PastRecord, MemorialService, MasterOptions, TempleProfile, TempleInfo } from '../../types';
 import { 
   Search, 
   Phone, 
@@ -14,18 +14,22 @@ import {
   ExternalLink,
   Filter,
   X,
-  ArrowUpDown
+  ArrowUpDown,
+  Camera,
+  Sparkles
 } from 'lucide-react';
 import { getGoogleMapsSearchUrl } from '../../utils/calendarUtils';
 import { sortHouseholdsByGojuon, getKanaRow, getKanaColumn, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba } from '../../utils/memorialCalculator';
 import { MobileHouseholdModal } from './MobileHouseholdModal';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
+import { SingleHouseholdKakochoImportModal } from '../SingleHouseholdKakochoImportModal';
 
 interface MobileHouseholdViewProps {
   households: Household[];
   pastRecords: PastRecord[];
   memorialServices: MemorialService[];
   masterOptions?: MasterOptions;
+  templeInfo?: TempleInfo;
   temples?: TempleProfile[];
   activeTempleId?: string;
   onSelectTemple?: (templeId: string) => void;
@@ -33,6 +37,7 @@ interface MobileHouseholdViewProps {
   onDeleteHousehold: (id: string) => void;
   onOpenAddPastRecord: (householdId: string) => void;
   onOpenAddService: (householdId: string) => void;
+  onBatchAddPastRecords?: (records: PastRecord[], description?: string) => void;
 }
 
 export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
@@ -40,6 +45,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   pastRecords = [],
   memorialServices = [],
   masterOptions,
+  templeInfo,
   temples = [],
   activeTempleId = 'temple-main',
   onSelectTemple,
@@ -47,6 +53,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   onDeleteHousehold,
   onOpenAddPastRecord,
   onOpenAddService,
+  onBatchAddPastRecords,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
@@ -61,6 +68,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingHousehold, setEditingHousehold] = useState<Household | null>(null);
+  const [aiImportHousehold, setAiImportHousehold] = useState<Household | null>(null);
 
   // Filtered and sorted households (Default: 五十音順 / Japanese Alphabetical Order)
   const filteredHouseholds = useMemo(() => {
@@ -567,19 +575,50 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                           <BookOpen className="w-3.5 h-3.5" />
                           <span>当家の過去帳・精霊 ({relPast.length}霊):</span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => onOpenAddPastRecord(h.id)}
-                          className="text-[10px] text-[#8C2D19] hover:underline font-bold bg-white px-2 py-0.5 border border-[#D4AF37] rounded-xs cursor-pointer flex items-center gap-0.5"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>精霊追加</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAiImportHousehold(h)}
+                            className="text-[10px] text-[#8C2D19] hover:bg-[#F0ECE1] font-bold bg-[#FAF7F0] px-2 py-0.5 border border-[#D4AF37] rounded-xs cursor-pointer flex items-center gap-1 shadow-2xs"
+                            title="墓碑写真・Word・ExcelからAI一括読み込み"
+                          >
+                            <Camera className="w-3 h-3 text-[#8C2D19]" />
+                            <Sparkles className="w-2.5 h-2.5 text-[#D4AF37]" />
+                            <span>写真/文書AI取込</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onOpenAddPastRecord(h.id)}
+                            className="text-[10px] text-[#1A1A1A] hover:underline font-bold bg-white px-2 py-0.5 border border-stone-300 rounded-xs cursor-pointer flex items-center gap-0.5"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>手動追加</span>
+                          </button>
+                        </div>
                       </div>
 
                       {relPast.length === 0 ? (
-                        <div className="p-2 bg-white border border-stone-200 text-center text-gray-400 text-[11px] rounded-xs">
-                          過去帳データが登録されていません
+                        <div className="p-3 bg-white border border-dashed border-[#D1CEC7] text-center space-y-2 rounded-xs">
+                          <div className="text-[11px] text-gray-500 font-bold">過去帳データが未登録です</div>
+                          <div className="flex flex-wrap items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setAiImportHousehold(h)}
+                              className="px-2.5 py-1 bg-[#FAF7F0] text-[#8C2D19] border border-[#D4AF37] font-bold text-[11px] rounded-xs flex items-center gap-1 shadow-2xs cursor-pointer"
+                            >
+                              <Camera className="w-3.5 h-3.5 text-[#8C2D19]" />
+                              <Sparkles className="w-3 h-3 text-[#D4AF37]" />
+                              <span>墓碑写真・ファイルからAI取り込み</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onOpenAddPastRecord(h.id)}
+                              className="px-2 py-1 bg-stone-100 text-stone-700 font-bold text-[11px] rounded-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>手動追加</span>
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="space-y-1">
@@ -654,6 +693,24 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         existingHouseholds={households}
         onSave={onSaveHousehold}
         onDelete={onDeleteHousehold}
+      />
+
+      {/* Single Household Past Record AI Import Wizard (Mobile) */}
+      <SingleHouseholdKakochoImportModal
+        isOpen={!!aiImportHousehold}
+        onClose={() => setAiImportHousehold(null)}
+        targetHousehold={aiImportHousehold}
+        existingPastRecords={pastRecords}
+        templeInfo={templeInfo}
+        temples={temples}
+        onImportPastRecords={(records, description) => {
+          if (onBatchAddPastRecords) {
+            onBatchAddPastRecords(records, description);
+          } else {
+            records.forEach((r) => onOpenAddPastRecord && onOpenAddPastRecord(r.householdId));
+          }
+          setAiImportHousehold(null);
+        }}
       />
     </div>
   );

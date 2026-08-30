@@ -3,6 +3,15 @@ import { Household, PastRecord, Transaction, FamilyMember, MasterOptions, Temple
 import { normalizeDateInput, normalizeFurigana } from './memorialCalculator';
 import { getCurrentAuditFields, normalizeAuditDate, normalizeAuditTime } from './auditUtils';
 import { cleanAndNormalizeHouseholdId, getTemplePrefix, generateNewHouseholdId } from './dankaIdUtils';
+import { 
+  LinkingDecision, 
+  KakochoItemInput, 
+  parseDeathDateToTimestampAndYear,
+  buildInitialLineageMap,
+  evaluateItemMatch,
+  registerConfirmedSpiritToLineage,
+  normalizeNameForMatching
+} from './kakochoLineageMatching';
 
 export type ImportTargetType = 'household' | 'past_record' | 'combined' | 'accounting';
 
@@ -303,6 +312,79 @@ export function normalizePaymentMethod(val: string | number | undefined): string
 }
 
 /**
+ * Extracts past record items from raw table rows based on mapping for lineage matching and verification.
+ */
+export function extractKakochoItems(
+  headers: string[],
+  rawRows: (string | number | undefined)[][],
+  mapping: Record<string, string>
+): KakochoItemInput[] {
+  const headerIndexMap: Record<string, number> = {};
+  headers.forEach((h, idx) => {
+    headerIndexMap[h] = idx;
+  });
+
+  const getCell = (row: (string | number | undefined)[], fieldKey: string): string => {
+    const colName = mapping[fieldKey];
+    if (!colName) return '';
+    const colIdx = headerIndexMap[colName];
+    if (colIdx === undefined || colIdx === -1) return '';
+    const cellVal = row[colIdx];
+    return cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+  };
+
+  const items: KakochoItemInput[] = [];
+
+  rawRows.forEach((row, rowIdx) => {
+    const dharmaName = getCell(row, 'dharmaName');
+    const secularName = getCell(row, 'secularName');
+    const rawDeathDate = getCell(row, 'deathDate');
+
+    if (!dharmaName && !secularName) return;
+
+    const { normalizedDate, timestamp, year } = parseDeathDateToTimestampAndYear(rawDeathDate);
+    const ageAtDeath = cleanAge(getCell(row, 'ageAtDeath'));
+    const householdHeadName = getCell(row, 'householdHeadName');
+    const currentHeadName = getCell(row, 'currentHeadName');
+    const rawHouseholdId = getCell(row, 'householdId') || getCell(row, 'id');
+    const relationship = getCell(row, 'relationship') || '';
+    const burialLocation = getCell(row, 'burialLocation') || getCell(row, 'tombNumber');
+    const niibon = getCell(row, 'niibon');
+    const notes = getCell(row, 'notes');
+    const createdDate = getCell(row, 'createdDate');
+    const createdTime = getCell(row, 'createdTime');
+    const updatedDate = getCell(row, 'updatedDate');
+    const updatedTime = getCell(row, 'updatedTime');
+
+    items.push({
+      index: items.length,
+      rowIdx,
+      dharmaName,
+      secularName,
+      rawDeathDate,
+      deathDate: normalizedDate,
+      deathYear: year,
+      deathTimestamp: timestamp,
+      ageAtDeath,
+      householdHeadName,
+      currentHeadName,
+      rawHouseholdId,
+      relationship,
+      burialLocation,
+      niibon,
+      notes,
+      createdDate,
+      createdTime,
+      updatedDate,
+      updatedTime,
+      rawRow: row,
+    });
+  });
+
+  return items;
+}
+
+/**
  * Parses and converts raw table into typed data based on chosen mapping.
  */
 export function convertTableToData(
@@ -317,6 +399,7 @@ export function convertTableToData(
     defaultHouseholdType?: string;
     targetTempleId?: string;
     temples?: TempleProfile[];
+    linkingDecisions?: Record<number, LinkingDecision>;
   }
 ): {
   households: Household[];
@@ -664,56 +747,96 @@ export function convertTableToData(
       const updatedDate = rawUDate || importAudit.date;
       const updatedTime = rawUTime || importAudit.time;
 
-      // Link or create Household by ID or current/original Head name
+      // Link or create Household by ID, User Decision, or Lineage Match
       let targetHousehold: Household | undefined = undefined;
+      const userDecision = options.linkingDecisions?.[rowIdx];
 
-      if (rawHouseholdId) {
-        // 檀家IDがある場合: IDから現在の世帯を検索
-        targetHousehold = findHousehold('', undefined, rawHouseholdId);
-        // IDで見つからず、名前の指定がある場合は名前でも検索
-        if (!targetHousehold && (currentHeadName || originalHeadName)) {
+      if (userDecision) {
+        if (userDecision.action === 'link_existing' && userDecision.targetHouseholdId) {
+          targetHousehold = outHouseholds.find(h => h.id === userDecision.targetHouseholdId);
+          if (!targetHousehold) {
+            targetHousehold = options.existingHouseholds.find(h => h.id === userDecision.targetHouseholdId);
+            if (targetHousehold && !outHouseholds.some(h => h.id === targetHousehold!.id)) {
+              outHouseholds.push(targetHousehold);
+            }
+          }
+        } else if (userDecision.action === 'create_new_household') {
+          let newHId = getNextAvailableId();
+          const headName = userDecision.newHouseholdHeadName || originalHeadName || currentHeadName || '（世帯主未設定）';
+
+          targetHousehold = {
+            id: newHId,
+            templeId: targetTempleId,
+            familyHead: headName,
+            furigana: '',
+            postalCode: '',
+            address: '',
+            phone: '',
+            district: '',
+            tombNumber: burialLocation || '',
+            householdType: options.defaultHouseholdType || '',
+            status: '',
+            qrToken: `QR-${newHId}-${Date.now().toString(36).toUpperCase()}`,
+            familyMembers: [],
+            createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
+            createdDate,
+            createdTime,
+            updatedDate,
+            updatedTime,
+          };
+          outHouseholds.push(targetHousehold);
+          importedHouseholds.push(targetHousehold);
+          householdsCreated++;
+        }
+        // If userDecision.action === 'skip_unlinked', targetHousehold remains undefined
+      } else {
+        // Automatic / Fallback Matching (High Precision)
+        if (rawHouseholdId) {
+          // 檀家IDがある場合: IDから現在の世帯を検索
+          targetHousehold = findHousehold('', undefined, rawHouseholdId);
+          if (!targetHousehold && (currentHeadName || originalHeadName)) {
+            targetHousehold = findHousehold(currentHeadName || originalHeadName);
+          }
+        } else if (currentHeadName || originalHeadName) {
+          // 檀家IDがない場合: 現在の施主名または当時の施主名から検索
           targetHousehold = findHousehold(currentHeadName || originalHeadName);
         }
-      } else if (currentHeadName || originalHeadName) {
-        // 檀家IDがない場合: 現在の施主名または当時の施主名から検索
-        targetHousehold = findHousehold(currentHeadName || originalHeadName);
-      }
 
-      // 自動世帯作成オプションが有効で、世帯が見つからない場合
-      if (!targetHousehold && (rawHouseholdId || currentHeadName || originalHeadName) && options.autoCreateHouseholdForKakocho) {
-        let newHId = rawHouseholdId ? normalizeToTempleId(rawHouseholdId) : '';
-        if (newHId && outHouseholds.some(h => h.id === newHId)) {
-          newHId = getNextAvailableId();
-        } else if (!newHId) {
-          newHId = getNextAvailableId();
+        // 自動世帯作成オプションが有効で、世帯が見つからない場合
+        if (!targetHousehold && (rawHouseholdId || currentHeadName || originalHeadName) && options.autoCreateHouseholdForKakocho) {
+          let newHId = rawHouseholdId ? normalizeToTempleId(rawHouseholdId) : '';
+          if (newHId && outHouseholds.some(h => h.id === newHId)) {
+            newHId = getNextAvailableId();
+          } else if (!newHId) {
+            newHId = getNextAvailableId();
+          }
+
+          const householdHead = currentHeadName || originalHeadName || '（世帯主未設定）';
+
+          targetHousehold = {
+            id: newHId,
+            templeId: targetTempleId,
+            familyHead: householdHead,
+            furigana: '',
+            postalCode: '',
+            address: '',
+            phone: '',
+            district: '',
+            tombNumber: burialLocation || '',
+            householdType: options.defaultHouseholdType || '',
+            status: '',
+            qrToken: `QR-${newHId}-${Date.now().toString(36).toUpperCase()}`,
+            familyMembers: [],
+            createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
+            createdDate,
+            createdTime,
+            updatedDate,
+            updatedTime,
+          };
+          outHouseholds.push(targetHousehold);
+          importedHouseholds.push(targetHousehold);
+          householdsCreated++;
         }
-
-        // 現在の施主名が指定されていればそれを優先、なければ当時の施主名、それもなければ（世帯主未設定）
-        const householdHead = currentHeadName || originalHeadName || '（世帯主未設定）';
-
-        targetHousehold = {
-          id: newHId,
-          templeId: targetTempleId,
-          familyHead: householdHead,
-          furigana: '',
-          postalCode: '',
-          address: '',
-          phone: '',
-          district: '',
-          tombNumber: burialLocation || '',
-          householdType: '',
-          status: '',
-          qrToken: `QR-${newHId}-${Date.now().toString(36).toUpperCase()}`,
-          familyMembers: [],
-          createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
-          createdDate,
-          createdTime,
-          updatedDate,
-          updatedTime,
-        };
-        outHouseholds.push(targetHousehold);
-        importedHouseholds.push(targetHousehold);
-        householdsCreated++;
       }
 
       const householdId = targetHousehold ? targetHousehold.id : (rawHouseholdId ? normalizeToTempleId(rawHouseholdId) : `${templePrefix}00000`);

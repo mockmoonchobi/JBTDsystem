@@ -38,11 +38,13 @@ import {
   RotateCcw,
   Check,
   Eye,
-  EyeOff
+  EyeOff,
+  Camera
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Household, PastRecord, Transaction, TransactionCategory, MasterOptions, FamilyMember, TempleInfo, TempleProfile, MemorialService, TempleTodo } from '../types';
 import { calculateMemorialMilestones, getJapaneseEra, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions, calculateNiibonFromDeathDate, isRelevantNiibon, sortHouseholds, formatCurrency, getHouseholdSponsorName, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, toggleHouseholdSponsorSegakiToba, getHouseholdNiibonStatus } from '../utils/memorialCalculator';
+import { SingleHouseholdKakochoImportModal } from './SingleHouseholdKakochoImportModal';
 
 export type ListColumnKey =
   | 'idTomb'         // ID/墓地
@@ -178,6 +180,7 @@ interface HouseholdListProps {
   onToggleExcludeHousehold?: (id: string) => void;
   onRecordHistory?: (description: string) => void;
   onBatchUpdateHouseholds?: (updatedList: Household[], description?: string) => void;
+  onBatchAddPastRecords?: (records: PastRecord[], description?: string) => void;
 }
 
 interface BatchChangeRequest {
@@ -226,9 +229,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   onToggleExcludeHousehold,
   onRecordHistory,
   onBatchUpdateHouseholds,
+  onBatchAddPastRecords,
 }) => {
   // Batch Change Modal State for Multi-Selected rows
   const [batchConfirmRequest, setBatchConfirmRequest] = useState<BatchChangeRequest | null>(null);
+  // Single Household Kakocho AI Import Modal state
+  const [singleImportModalHousehold, setSingleImportModalHousehold] = useState<Household | null>(null);
   // View mode state: 'list' (all households table/grid) or 'individual' (single household card view with past records)
   const [viewMode, setViewMode] = useState<'list' | 'individual'>('list');
   const [selectedIndividualId, setSelectedIndividualId] = useState<string>(households[0]?.id || '');
@@ -3635,21 +3641,53 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={handleStartAddNewPastRecordInline}
-                  className="px-4 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans transition-colors flex items-center space-x-1.5 shadow-sm"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>新規精霊</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSingleImportModalHousehold(currentIndividualHousehold)}
+                    className="px-3.5 py-2 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans transition-colors flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                    title="墓碑写真・Word・Excel・OCRテキストからAIでこの世帯の精霊を自動読み取り"
+                  >
+                    <Camera className="w-4 h-4 text-[#8C2D19]" />
+                    <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>写真・文書からAI取り込み</span>
+                  </button>
+
+                  <button
+                    onClick={handleStartAddNewPastRecordInline}
+                    className="px-4 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans transition-colors flex items-center space-x-1.5 shadow-sm cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>新規精霊</span>
+                  </button>
+                </div>
               </div>
 
               {/* List of Past Records for this household (Row/Table view) */}
               {currentHouseholdPastRecords.length === 0 && !isAddingNewPastRecordInline ? (
-                <div className="bg-[#F9F7F2] border border-dashed border-[#D1CEC7] p-8 text-center text-[#888888] font-sans text-xs space-y-2">
+                <div className="bg-[#F9F7F2] border border-dashed border-[#D1CEC7] p-8 text-center text-[#888888] font-sans text-xs space-y-3">
                   <BookOpen className="w-8 h-8 text-[#CCCCCC] mx-auto" />
                   <p className="font-bold text-[#444444]">この世帯には過去帳（物故者データ）が未登録です。</p>
-                  <p>上の「新規精霊」ボタンからご先祖・ご物故者の情報を追加できます。</p>
+                  <p>墓碑の写真やWord/Excel資料からAIで一括読み取るか、「新規精霊」から手動入力できます。</p>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSingleImportModalHousehold(currentIndividualHousehold)}
+                      className="px-4 py-2 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Camera className="w-4 h-4 text-[#8C2D19]" />
+                      <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+                      <span>墓碑写真・Word・ExcelからAI過去帳取り込み</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleStartAddNewPastRecordInline}
+                      className="px-4 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>新規精霊を手動登録</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div
@@ -5486,6 +5524,24 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
         columns={listColumns}
         onSave={saveListColumns}
         defaultColumns={DEFAULT_LIST_COLUMNS}
+      />
+
+      {/* 個別檀家 過去帳・精霊 AI取り込みウィザード (墓碑写真・Word・Excel・OCRテキスト) */}
+      <SingleHouseholdKakochoImportModal
+        isOpen={!!singleImportModalHousehold}
+        onClose={() => setSingleImportModalHousehold(null)}
+        targetHousehold={singleImportModalHousehold}
+        existingPastRecords={pastRecords}
+        templeInfo={templeInfo}
+        temples={temples}
+        onImportPastRecords={(records, description) => {
+          if (onBatchAddPastRecords) {
+            onBatchAddPastRecords(records, description);
+          } else {
+            records.forEach((r) => onAddPastRecord(r));
+          }
+          setSingleImportModalHousehold(null);
+        }}
       />
     </div>
   );

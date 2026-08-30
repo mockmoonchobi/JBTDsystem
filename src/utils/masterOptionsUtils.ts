@@ -85,6 +85,62 @@ export function mergeMasterOptionsWithData(
 }
 
 /**
+ * Merges ONLY the user-selected master items into MasterOptions.
+ */
+export function mergeSelectedMasterOptions(
+  currentMaster: MasterOptions | undefined,
+  diff: ExtractedMasterDifferences,
+  selectedKeys: Record<string, boolean>
+): MasterOptions {
+  const base = currentMaster || EMPTY_MASTER_OPTIONS;
+
+  const householdTypes = new Set<string>(base.householdTypes || []);
+  const statuses = new Set<string>(base.statuses || []);
+  const districts = new Set<string>(base.districts || []);
+  const tobaTypes = new Set<string>(base.tobaTypes || []);
+  const incomeCategories = new Set<string>(base.incomeCategories || []);
+  const expenseCategories = new Set<string>(base.expenseCategories || []);
+  const paymentMethods = new Set<string>(base.paymentMethods || []);
+
+  diff.newHouseholdTypes.forEach((t) => {
+    if (selectedKeys[`ht:${t}`] !== false) householdTypes.add(t);
+  });
+  diff.newStatuses.forEach((s) => {
+    if (selectedKeys[`st:${s}`] !== false) statuses.add(s);
+  });
+  diff.newDistricts.forEach((d) => {
+    if (selectedKeys[`dst:${d}`] !== false) districts.add(d);
+  });
+  diff.newTobaTypes.forEach((tb) => {
+    if (selectedKeys[`tb:${tb}`] !== false) tobaTypes.add(tb);
+  });
+  diff.newIncomeCategories.forEach((inc) => {
+    if (selectedKeys[`inc:${inc}`] !== false) incomeCategories.add(inc);
+  });
+  diff.newExpenseCategories.forEach((exp) => {
+    if (selectedKeys[`exp:${exp}`] !== false) expenseCategories.add(exp);
+  });
+  diff.newPaymentMethods.forEach((pm) => {
+    if (selectedKeys[`pm:${pm}`] !== false) paymentMethods.add(pm);
+  });
+
+  const incList = Array.from(incomeCategories);
+  const expList = Array.from(expenseCategories);
+  const allAccounting = Array.from(new Set([...incList, ...expList]));
+
+  return {
+    householdTypes: Array.from(householdTypes),
+    statuses: Array.from(statuses),
+    districts: Array.from(districts),
+    tobaTypes: Array.from(tobaTypes),
+    incomeCategories: incList,
+    expenseCategories: expList,
+    accountingCategories: allAccounting,
+    paymentMethods: Array.from(paymentMethods),
+  };
+}
+
+/**
  * Calculates which new master items will be added compared to the existing master options.
  */
 export function detectNewMasterOptions(

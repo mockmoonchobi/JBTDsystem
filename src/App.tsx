@@ -317,28 +317,41 @@ export default function App() {
     onRedoRequest: () => handleRequestRedoRef.current(),
   });
 
+  // Active Google Sheets connection check for Undo / Redo interruption
+  const isGoogleConnected = useMemo(() => {
+    if (syncStatus === 'disconnected') return false;
+    const rawSheetInfo = safeStorage.getItem('temple_google_sheet_info');
+    if (!rawSheetInfo) return false;
+    try {
+      const parsed = JSON.parse(rawSheetInfo);
+      return Boolean(parsed && parsed.id);
+    } catch {
+      return false;
+    }
+  }, [syncStatus]);
+
   // Undo / Redo request handlers with Google Sheets connection check
   const handleRequestUndo = useCallback(() => {
     if (!canUndo) return;
-    const isGoogleConnected = syncStatus !== 'disconnected' || safeStorage.getItem('temple_google_sheet_info') !== null;
     if (isGoogleConnected) {
       setUndoInterruptAction('undo');
       setIsGoogleSheetsUndoInterruptOpen(true);
     } else {
+      // 連携していない時はダイアログ表示やバックアップ等を行わず、直接「元に戻す」を実行
       undo();
     }
-  }, [canUndo, undo, syncStatus]);
+  }, [canUndo, undo, isGoogleConnected]);
 
   const handleRequestRedo = useCallback(() => {
     if (!canRedo) return;
-    const isGoogleConnected = syncStatus !== 'disconnected' || safeStorage.getItem('temple_google_sheet_info') !== null;
     if (isGoogleConnected) {
       setUndoInterruptAction('redo');
       setIsGoogleSheetsUndoInterruptOpen(true);
     } else {
+      // 連携していない時はダイアログ表示やバックアップ等を行わず、直接「やり直す」を実行
       redo();
     }
-  }, [canRedo, redo, syncStatus]);
+  }, [canRedo, redo, isGoogleConnected]);
 
   useEffect(() => {
     handleRequestUndoRef.current = handleRequestUndo;
@@ -1951,6 +1964,12 @@ export default function App() {
     setPastRecords((prev) => [withCreationAudit(record), ...prev]);
   };
 
+  const handleBatchAddPastRecords = (records: PastRecord[], description?: string) => {
+    recordHistory(description || `${records.length}件の過去帳（精霊）を一括追加`);
+    const audited = records.map((r) => withCreationAudit(r));
+    setPastRecords((prev) => [...audited, ...prev]);
+  };
+
   const handleUpdatePastRecord = (record: PastRecord) => {
     recordHistory(`過去帳「${record.dharmaName || record.secularName || record.id}」を更新`);
     const existing = pastRecords.find((r) => r.id === record.id);
@@ -2605,6 +2624,7 @@ export default function App() {
             }
           }}
           onDeletePastRecord={handleDeletePastRecord}
+          onBatchAddPastRecords={handleBatchAddPastRecords}
           onSaveService={(service) => {
             const exists = memorialServices.some((s) => s.id === service.id);
             if (exists) {
@@ -2725,6 +2745,7 @@ export default function App() {
             onBatchUpdateHouseholds={handleBatchUpdateHouseholds}
             onDeleteHousehold={handleDeleteHousehold}
             onAddPastRecord={handleAddPastRecord}
+            onBatchAddPastRecords={handleBatchAddPastRecords}
             onUpdatePastRecord={handleUpdatePastRecord}
             onDeletePastRecord={handleDeletePastRecord}
             onCreateMemorialService={handleCreateMemorialFromPastRecord}

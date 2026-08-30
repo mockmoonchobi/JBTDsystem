@@ -21,7 +21,9 @@ import {
   FolderOpen,
   Trash2,
   Settings,
-  Search
+  Search,
+  Sparkles,
+  GitBranch
 } from 'lucide-react';
 import { Household, PastRecord, Transaction, MasterOptions, MemorialService, TempleProfile } from '../types';
 import { 
@@ -31,6 +33,7 @@ import {
   autoMapColumns, 
   convertTableToData, 
   downloadSampleTemplate,
+  extractKakochoItems,
   HOUSEHOLD_MAPPING_FIELDS,
   PAST_RECORD_MAPPING_FIELDS,
   COMBINED_MAPPING_FIELDS,
@@ -38,7 +41,9 @@ import {
   ColumnMappingField
 } from '../utils/externalImportUtils';
 import { normalizeDateInput, normalizeFurigana } from '../utils/memorialCalculator';
-import { mergeMasterOptionsWithData, detectNewMasterOptions } from '../utils/masterOptionsUtils';
+import { mergeMasterOptionsWithData, detectNewMasterOptions, mergeSelectedMasterOptions } from '../utils/masterOptionsUtils';
+import { LinkingDecision, KakochoItemInput } from '../utils/kakochoLineageMatching';
+import { KakochoLineageConfirmModal } from './KakochoLineageConfirmModal';
 
 interface ExternalDataImportModalProps {
   isOpen: boolean;
@@ -104,13 +109,19 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   const [previewSearch, setPreviewSearch] = useState('');
   const [previewDisplayLimit, setPreviewDisplayLimit] = useState<'all' | 50 | 100 | 500 | 1000>(50);
 
-  // Import Execution Options
-  const [conflictMode, setConflictMode] = useState<'append' | 'merge' | 'replace'>('append');
+  // Import Execution Options (自動統合を廃止し、追加と全置換のみに)
+  const [conflictMode, setConflictMode] = useState<'append' | 'replace'>('append');
   const [clearAllRelatedData, setClearAllRelatedData] = useState(false);
   const [showReplaceConfirmModal, setShowReplaceConfirmModal] = useState(false);
   const [autoCreateHouseholdForKakocho, setAutoCreateHouseholdForKakocho] = useState(true);
   const [defaultHouseholdType, setDefaultHouseholdType] = useState('');
   const [autoSyncMasterOptions, setAutoSyncMasterOptions] = useState(true); // Toggle to auto-sync master options
+  const [selectedMasterItems, setSelectedMasterItems] = useState<Record<string, boolean>>({}); // Selective master items
+
+  // Kakocho Lineage Matching Decisions and Confirmation Modal State
+  const [linkingDecisions, setLinkingDecisions] = useState<Record<number, LinkingDecision>>({});
+  const [showLineageModal, setShowLineageModal] = useState(false);
+  const [kakochoItems, setKakochoItems] = useState<KakochoItemInput[]>([]);
 
   // Preview / Conversion Result
   const [conversionResult, setConversionResult] = useState<ReturnType<typeof convertTableToData> | null>(null);
@@ -132,7 +143,50 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     );
   }, [conversionResult, masterOptions]);
 
+  // When new master diff is detected, initialize all items to selected (true)
+  useEffect(() => {
+    if (newMasterDiff) {
+      const initial: Record<string, boolean> = {};
+      newMasterDiff.newHouseholdTypes.forEach(t => { initial[`ht:${t}`] = true; });
+      newMasterDiff.newStatuses.forEach(s => { initial[`st:${s}`] = true; });
+      newMasterDiff.newDistricts.forEach(d => { initial[`dst:${d}`] = true; });
+      newMasterDiff.newTobaTypes.forEach(tb => { initial[`tb:${tb}`] = true; });
+      newMasterDiff.newIncomeCategories.forEach(inc => { initial[`inc:${inc}`] = true; });
+      newMasterDiff.newExpenseCategories.forEach(exp => { initial[`exp:${exp}`] = true; });
+      newMasterDiff.newPaymentMethods.forEach(pm => { initial[`pm:${pm}`] = true; });
+      setSelectedMasterItems(initial);
+    }
+  }, [newMasterDiff]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handler to start another import consecutively without closing the wizard
+  const handleStartAnotherImport = (newTargetType?: 'household' | 'past_record' | 'combined' | 'accounting') => {
+    setStep(1);
+    if (newTargetType) {
+      setTargetType(newTargetType);
+    }
+    setFile(null);
+    setRawTable(null);
+    setSelectedSheetIndex(0);
+    setSampleRowIndex(0);
+    setColumnMapping({});
+    setActivePreset('auto');
+    setConflictMode('append');
+    setClearAllRelatedData(false);
+    setShowReplaceConfirmModal(false);
+    setAutoSyncMasterOptions(true);
+    setLinkingDecisions({});
+    setShowLineageModal(false);
+    setKakochoItems([]);
+    setConversionResult(null);
+    setErrorMessage(null);
+    setPreviewSearch('');
+    setPreviewDisplayLimit(50);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   // Auto reset state whenever the modal opens or initialTargetType changes
   useEffect(() => {
@@ -150,6 +204,9 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       setClearAllRelatedData(false);
       setShowReplaceConfirmModal(false);
       setAutoSyncMasterOptions(true);
+      setLinkingDecisions({});
+      setShowLineageModal(false);
+      setKakochoItems([]);
       setConversionResult(null);
       setErrorMessage(null);
       setPreviewSearch('');
@@ -273,6 +330,44 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     }
   };
 
+  // Open Kakocho Lineage Confirmation Window
+  const handleOpenLineageConfirmModal = () => {
+    if (!rawTable) return;
+    const items = extractKakochoItems(rawTable.headers, rawTable.rawRows, columnMapping);
+    setKakochoItems(items);
+    setShowLineageModal(true);
+  };
+
+  // Callback when Kakocho Lineage decisions are confirmed by the user
+  const handleLineageDecisionsConfirmed = (confirmedDecisions: Record<number, LinkingDecision>) => {
+    setLinkingDecisions(confirmedDecisions);
+    setShowLineageModal(false);
+
+    if (!rawTable) return;
+
+    try {
+      const res = convertTableToData(
+        targetType,
+        rawTable.headers,
+        rawTable.rawRows,
+        columnMapping,
+        {
+          existingHouseholds,
+          conflictMode,
+          autoCreateHouseholdForKakocho,
+          defaultHouseholdType,
+          targetTempleId,
+          temples,
+          linkingDecisions: confirmedDecisions,
+        }
+      );
+      setConversionResult(res);
+      setStep(3);
+    } catch (err: any) {
+      alert(`データ変換中にエラーが発生しました: ${err.message || err}`);
+    }
+  };
+
   // Generate Preview & Move to Step 3
   const handleProceedToPreview = () => {
     if (!rawTable) return;
@@ -283,6 +378,17 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       const names = missingRequired.map(f => `「${f.label}」`).join(', ');
       alert(`必須項目 ${names} の取り込み元列が割り当てられていません。\n該当する列を選択してください。`);
       return;
+    }
+
+    // For past_record imports, if user has not yet reviewed decisions, open Lineage Confirmation Modal first
+    if (targetType === 'past_record') {
+      const items = extractKakochoItems(rawTable.headers, rawTable.rawRows, columnMapping);
+      setKakochoItems(items);
+
+      if (Object.keys(linkingDecisions).length === 0 && items.length > 0) {
+        setShowLineageModal(true);
+        return;
+      }
     }
 
     try {
@@ -298,6 +404,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
           defaultHouseholdType,
           targetTempleId,
           temples,
+          linkingDecisions,
         }
       );
       setConversionResult(res);
@@ -308,7 +415,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   };
 
   // Re-calculate when conflict mode changes dynamically in Step 3
-  const handleConflictModeChange = (newMode: 'append' | 'merge' | 'replace') => {
+  const handleConflictModeChange = (newMode: 'append' | 'replace') => {
     setConflictMode(newMode);
     if (rawTable) {
       try {
@@ -324,6 +431,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
             defaultHouseholdType,
             targetTempleId,
             temples,
+            linkingDecisions,
           }
         );
         setConversionResult(res);
@@ -373,13 +481,19 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
         : [...existingTransactions, ...conversionResult.transactions];
     }
 
-    const updatedMaster = autoSyncMasterOptions
-      ? mergeMasterOptionsWithData(
+    const updatedMaster = autoSyncMasterOptions && newMasterDiff
+      ? mergeSelectedMasterOptions(
           masterOptions,
-          conversionResult.importedHouseholds && conversionResult.importedHouseholds.length > 0 ? conversionResult.importedHouseholds : (outHouseholds || []),
-          conversionResult.importedTransactions && conversionResult.importedTransactions.length > 0 ? conversionResult.importedTransactions : (outTransactions || [])
+          newMasterDiff,
+          selectedMasterItems
         )
-      : masterOptions;
+      : (autoSyncMasterOptions
+          ? mergeMasterOptionsWithData(
+              masterOptions,
+              conversionResult.importedHouseholds && conversionResult.importedHouseholds.length > 0 ? conversionResult.importedHouseholds : (outHouseholds || []),
+              conversionResult.importedTransactions && conversionResult.importedTransactions.length > 0 ? conversionResult.importedTransactions : (outTransactions || [])
+            )
+          : masterOptions);
 
     onImportSuccess({
       households: outHouseholds,
@@ -956,6 +1070,25 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     </tbody>
                   </table>
                 </div>
+
+                {targetType === 'past_record' && (
+                  <div className="p-3 bg-amber-50/70 border-t border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center space-x-2 text-amber-950">
+                      <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>
+                        <strong>過去帳・精霊 檀家照合システム:</strong> 没年月日の新しい精霊から順に施主名・先代精霊の俗名を照合し、対話的確認ウィンドウで高精度に紐づけます。
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOpenLineageConfirmModal}
+                      className="px-3.5 py-1.5 rounded bg-[#D4AF37] hover:bg-[#c49f2c] text-stone-950 font-bold text-xs shrink-0 shadow-xs flex items-center gap-1.5"
+                    >
+                      <GitBranch className="w-3.5 h-3.5 text-stone-900" />
+                      精霊・檀家照合ウィンドウを開く
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1008,34 +1141,98 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                 </div>
               </div>
 
+              {/* Lineage Matching Status Card for Past Record Imports */}
+              {targetType === 'past_record' && (
+                <div className="bg-amber-50/80 border border-[#D4AF37] p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 rounded bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center text-amber-900">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-amber-950 flex items-center gap-2">
+                        <span>過去帳・精霊 檀家照合確認ステータス</span>
+                        <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900 text-[10px] font-bold">
+                          {Object.keys(linkingDecisions).length > 0
+                            ? `${Object.keys(linkingDecisions).length}件の照合決定を適用中`
+                            : '自動照合判定中'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-stone-600 mt-0.5">
+                        没年月日の新しい順に施主名・先代精霊の俗名を照合済みです。再確認や紐づけ先の変更を行う場合は右のボタンを押してください。
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleOpenLineageConfirmModal}
+                    className="px-3.5 py-1.5 rounded bg-[#2D2A26] hover:bg-black text-[#D4AF37] font-bold text-xs flex items-center gap-1.5 shadow-sm transition-colors"
+                  >
+                    <GitBranch className="w-3.5 h-3.5" />
+                    精霊・檀家の照合確認ウィンドウを再表示
+                  </button>
+                </div>
+              )}
+
               {/* Master Options Auto-Sync Notification & Toggle in Step 3 */}
               {newMasterDiff && newMasterDiff.totalNewCount > 0 && (
-                <div className={`border p-3.5 text-xs space-y-2.5 shadow-2xs transition-colors ${
+                <div className={`border p-4 text-xs space-y-3 shadow-2xs transition-colors rounded-xs ${
                   autoSyncMasterOptions ? 'bg-amber-50/80 border-[#D4AF37] text-[#1A1A1A]' : 'bg-[#F5F4F0] border-[#D1CEC7] text-[#666666]'
                 }`}>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2">
                     <div className="font-bold flex items-center gap-1.5 text-amber-900">
                       <Settings className="w-4 h-4 text-[#D4AF37]" />
                       <span>区分・勘定科目マスタへの自動反映 ({newMasterDiff.totalNewCount}件の新規項目を検出)</span>
                     </div>
 
-                    <label className="flex items-center space-x-2 bg-white px-2.5 py-1 border border-[#D1CEC7] cursor-pointer shadow-2xs rounded-xs">
-                      <input
-                        type="checkbox"
-                        checked={autoSyncMasterOptions}
-                        onChange={(e) => setAutoSyncMasterOptions(e.target.checked)}
-                        className="w-4 h-4 text-[#1A1A1A] cursor-pointer"
-                      />
-                      <span className="font-bold text-xs text-[#1A1A1A]">
-                        {autoSyncMasterOptions ? 'マスタに自動登録する（有効）' : 'マスタには取り込まない（無効）'}
-                      </span>
-                    </label>
+                    <div className="flex items-center space-x-2">
+                      {autoSyncMasterOptions && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allOn: Record<string, boolean> = {};
+                              newMasterDiff.newHouseholdTypes.forEach(t => { allOn[`ht:${t}`] = true; });
+                              newMasterDiff.newStatuses.forEach(s => { allOn[`st:${s}`] = true; });
+                              newMasterDiff.newDistricts.forEach(d => { allOn[`dst:${d}`] = true; });
+                              newMasterDiff.newTobaTypes.forEach(tb => { allOn[`tb:${tb}`] = true; });
+                              newMasterDiff.newIncomeCategories.forEach(inc => { allOn[`inc:${inc}`] = true; });
+                              newMasterDiff.newExpenseCategories.forEach(exp => { allOn[`exp:${exp}`] = true; });
+                              newMasterDiff.newPaymentMethods.forEach(pm => { allOn[`pm:${pm}`] = true; });
+                              setSelectedMasterItems(allOn);
+                            }}
+                            className="px-2 py-0.5 bg-white border border-amber-300 text-[10px] font-bold text-amber-900 rounded hover:bg-amber-100"
+                          >
+                            すべて選択
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMasterItems({})}
+                            className="px-2 py-0.5 bg-white border border-stone-300 text-[10px] font-bold text-stone-600 rounded hover:bg-stone-100"
+                          >
+                            すべて解除
+                          </button>
+                        </>
+                      )}
+
+                      <label className="flex items-center space-x-2 bg-white px-2.5 py-1 border border-[#D1CEC7] cursor-pointer shadow-2xs rounded-xs">
+                        <input
+                          type="checkbox"
+                          checked={autoSyncMasterOptions}
+                          onChange={(e) => setAutoSyncMasterOptions(e.target.checked)}
+                          className="w-4 h-4 text-[#1A1A1A] cursor-pointer"
+                        />
+                        <span className="font-bold text-xs text-[#1A1A1A]">
+                          {autoSyncMasterOptions ? 'マスタに反映する（有効）' : 'マスタには取り込まない（無効）'}
+                        </span>
+                      </label>
+                    </div>
                   </div>
 
                   <p className="text-[11px] leading-relaxed">
                     {autoSyncMasterOptions ? (
                       <span className="text-[#555555]">
-                        今回取り込むファイル内に含まれる以下の未登録値が「区分・勘定科目マスタ」に自動追加され、今後の入力候補や検索一覧として即時利用可能になります。
+                        ファイル内に含まれる未登録値のうち、<strong>チェックが入っている項目（クリックでON/OFF切替）</strong>のみを「区分・勘定科目マスタ」に追加します。
                       </span>
                     ) : (
                       <span className="text-stone-600 font-bold">
@@ -1045,37 +1242,181 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                   </p>
 
                   {autoSyncMasterOptions && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {newMasterDiff.newHouseholdTypes.map((t) => (
-                        <span key={`ht-${t}`} className="px-2 py-0.5 bg-white border border-[#D1CEC7] text-[10px] font-bold text-[#1A1A1A]">
-                          区分１: {t}
-                        </span>
-                      ))}
-                      {newMasterDiff.newStatuses.map((s) => (
-                        <span key={`st-${s}`} className="px-2 py-0.5 bg-white border border-[#D1CEC7] text-[10px] font-bold text-[#1A1A1A]">
-                          区分２: {s}
-                        </span>
-                      ))}
-                      {newMasterDiff.newDistricts.map((d) => (
-                        <span key={`dst-${d}`} className="px-2 py-0.5 bg-white border border-[#D1CEC7] text-[10px] font-bold text-[#1A1A1A]">
-                          総代・世話人: {d}
-                        </span>
-                      ))}
-                      {newMasterDiff.newIncomeCategories.map((c) => (
-                        <span key={`inc-${c}`} className="px-2 py-0.5 bg-emerald-50 border border-emerald-300 text-[10px] font-bold text-emerald-900">
-                          収入科目: {c}
-                        </span>
-                      ))}
-                      {newMasterDiff.newExpenseCategories.map((c) => (
-                        <span key={`exp-${c}`} className="px-2 py-0.5 bg-rose-50 border border-rose-300 text-[10px] font-bold text-rose-900">
-                          支出科目: {c}
-                        </span>
-                      ))}
-                      {newMasterDiff.newPaymentMethods.map((p) => (
-                        <span key={`pm-${p}`} className="px-2 py-0.5 bg-blue-50 border border-blue-300 text-[10px] font-bold text-blue-900">
-                          決済方法: {p}
-                        </span>
-                      ))}
+                    <div className="space-y-2 pt-1">
+                      {/* Household Types */}
+                      {newMasterDiff.newHouseholdTypes.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-stone-700 w-24 shrink-0 mt-0.5">区分１ (世帯種別):</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newHouseholdTypes.map((t) => {
+                              const isChecked = selectedMasterItems[`ht:${t}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`ht-${t}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`ht:${t}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-white border-[#D4AF37] text-stone-900 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {t}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Statuses */}
+                      {newMasterDiff.newStatuses.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-stone-700 w-24 shrink-0 mt-0.5">区分２ (ステータス):</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newStatuses.map((s) => {
+                              const isChecked = selectedMasterItems[`st:${s}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`st-${s}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`st:${s}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-white border-[#D4AF37] text-stone-900 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {s}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Districts */}
+                      {newMasterDiff.newDistricts.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-stone-700 w-24 shrink-0 mt-0.5">総代・世話人・地区:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newDistricts.map((d) => {
+                              const isChecked = selectedMasterItems[`dst:${d}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`dst-${d}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`dst:${d}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-white border-[#D4AF37] text-stone-900 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {d}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Toba Types */}
+                      {newMasterDiff.newTobaTypes.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-stone-700 w-24 shrink-0 mt-0.5">塔婆種別:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newTobaTypes.map((tb) => {
+                              const isChecked = selectedMasterItems[`tb:${tb}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`tb-${tb}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`tb:${tb}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-white border-[#D4AF37] text-stone-900 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {tb}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Income Categories */}
+                      {newMasterDiff.newIncomeCategories.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-emerald-900 w-24 shrink-0 mt-0.5">収入科目:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newIncomeCategories.map((c) => {
+                              const isChecked = selectedMasterItems[`inc:${c}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`inc-${c}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`inc:${c}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-emerald-50 border-emerald-400 text-emerald-950 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {c}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Expense Categories */}
+                      {newMasterDiff.newExpenseCategories.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-rose-900 w-24 shrink-0 mt-0.5">支出科目:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newExpenseCategories.map((c) => {
+                              const isChecked = selectedMasterItems[`exp:${c}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`exp-${c}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`exp:${c}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-rose-50 border-rose-400 text-rose-950 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {c}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Payment Methods */}
+                      {newMasterDiff.newPaymentMethods.length > 0 && (
+                        <div className="flex items-start gap-2">
+                          <span className="text-[11px] font-bold text-blue-900 w-24 shrink-0 mt-0.5">決済方法:</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {newMasterDiff.newPaymentMethods.map((p) => {
+                              const isChecked = selectedMasterItems[`pm:${p}`] !== false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={`pm-${p}`}
+                                  onClick={() => setSelectedMasterItems(prev => ({ ...prev, [`pm:${p}`]: !isChecked }))}
+                                  className={`px-2.5 py-0.5 border text-[11px] font-bold rounded cursor-pointer transition-colors flex items-center gap-1 ${
+                                    isChecked ? 'bg-blue-50 border-blue-400 text-blue-950 shadow-2xs' : 'bg-stone-100 border-stone-200 text-stone-400 line-through'
+                                  }`}
+                                >
+                                  <input type="checkbox" checked={isChecked} readOnly className="w-3 h-3 pointer-events-none" />
+                                  {p}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1093,7 +1434,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     <label className="block text-xs font-bold text-[#1A1A1A] mb-1">
                       既存データとの重複・結合方法:
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <label className={`p-3 border text-xs cursor-pointer flex items-start space-x-2 transition-all ${
                         conflictMode === 'append' ? 'bg-[#FAF7EE] border-[#1A1A1A] ring-1 ring-[#D4AF37]' : 'bg-[#FAF9F5] border-[#D1CEC7]'
                       }`}>
@@ -1107,22 +1448,6 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                         <div>
                           <strong className="block text-[#1A1A1A]">追加（安全・重複なし）</strong>
                           <span className="text-[10px] text-[#666666]">既存データを維持し、新規データとして追加登録します。</span>
-                        </div>
-                      </label>
-
-                      <label className={`p-3 border text-xs cursor-pointer flex items-start space-x-2 transition-all ${
-                        conflictMode === 'merge' ? 'bg-[#FAF7EE] border-[#1A1A1A] ring-1 ring-[#D4AF37]' : 'bg-[#FAF9F5] border-[#D1CEC7]'
-                      }`}>
-                        <input
-                          type="radio"
-                          name="conflictMode"
-                          checked={conflictMode === 'merge'}
-                          onChange={() => handleConflictModeChange('merge')}
-                          className="mt-0.5 text-[#1A1A1A]"
-                        />
-                        <div>
-                          <strong className="block text-[#1A1A1A]">自動統合（同名世帯を更新）</strong>
-                          <span className="text-[10px] text-[#666666]">同名・同住所の檀家が存在する場合、情報を上書き更新します。</span>
                         </div>
                       </label>
 
@@ -1498,16 +1823,18 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
 
           {/* ================= STEP 4: Completed ================= */}
           {step === 4 && (
-            <div className="py-12 text-center space-y-4 font-sans">
+            <div className="py-8 text-center space-y-5 font-sans">
               <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-md">
                 <CheckCircle2 className="w-10 h-10" />
               </div>
-              <h3 className="text-xl font-bold font-serif text-[#1A1A1A]">
-                データの取り込みが完了いたしました
-              </h3>
-              <p className="text-xs text-[#555555] max-w-md mx-auto">
-                取り込まれたデータは即時に反映され、Googleスプレッドシートへの自動同期および各種印刷・年回忌計算にもご利用いただけます。
-              </p>
+              <div>
+                <h3 className="text-xl font-bold font-serif text-[#1A1A1A]">
+                  データの取り込みが完了いたしました
+                </h3>
+                <p className="text-xs text-[#555555] max-w-md mx-auto mt-1">
+                  取り込まれたデータは即時に反映され、Googleスプレッドシートへの自動同期および各種印刷・年回忌計算にもご利用いただけます。
+                </p>
+              </div>
 
               {autoSyncMasterOptions && newMasterDiff && newMasterDiff.totalNewCount > 0 && (
                 <div className="bg-amber-50/80 border border-[#D4AF37] p-3 text-xs text-[#1A1A1A] max-w-lg mx-auto text-left space-y-1.5 shadow-2xs">
@@ -1521,11 +1848,88 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                 </div>
               )}
 
-              <div className="pt-4">
+              {/* Consecutive Import Actions */}
+              <div className="bg-stone-50 border border-stone-300 rounded-xl p-4 max-w-xl mx-auto text-left space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-stone-200 pb-2">
+                  <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-[#D4AF37]" />
+                    続けて他のデータを取り込む
+                  </span>
+                  <span className="text-[11px] text-stone-500">
+                    ウィザードを開いたまま次のデータを取り込めます
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {targetType !== 'past_record' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartAnotherImport('past_record')}
+                      className="p-3 bg-white hover:bg-amber-50/70 border border-stone-300 hover:border-amber-400 text-stone-800 rounded-lg text-left transition-all group cursor-pointer shadow-2xs"
+                    >
+                      <div className="flex items-center space-x-2 mb-1">
+                        <div className="w-6 h-6 rounded bg-amber-100 flex items-center justify-center text-amber-900 font-serif font-bold text-xs">
+                          過去
+                        </div>
+                        <span className="font-bold text-xs text-stone-900 group-hover:text-amber-900">過去帳を取り込む</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 leading-tight">戒名・俗名・命日・施主・精霊データ</p>
+                    </button>
+                  )}
+
+                  {targetType !== 'accounting' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartAnotherImport('accounting')}
+                      className="p-3 bg-white hover:bg-amber-50/70 border border-stone-300 hover:border-amber-400 text-stone-800 rounded-lg text-left transition-all group cursor-pointer shadow-2xs"
+                    >
+                      <div className="flex items-center space-x-2 mb-1">
+                        <div className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center text-emerald-900 font-serif font-bold text-xs">
+                          出納
+                        </div>
+                        <span className="font-bold text-xs text-stone-900 group-hover:text-amber-900">会計収支を取り込む</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 leading-tight">出納帳・護持会費・寄付・収入支出</p>
+                    </button>
+                  )}
+
+                  {targetType !== 'household' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartAnotherImport('household')}
+                      className="p-3 bg-white hover:bg-amber-50/70 border border-stone-300 hover:border-amber-400 text-stone-800 rounded-lg text-left transition-all group cursor-pointer shadow-2xs"
+                    >
+                      <div className="flex items-center space-x-2 mb-1">
+                        <div className="w-6 h-6 rounded bg-blue-100 flex items-center justify-center text-blue-900 font-serif font-bold text-xs">
+                          檀家
+                        </div>
+                        <span className="font-bold text-xs text-stone-900 group-hover:text-amber-900">檀家名簿を取り込む</span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 leading-tight">世帯主・住所・電話・墓地・家族情報</p>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handleStartAnotherImport()}
+                    className="p-3 bg-white hover:bg-stone-100 border border-stone-300 text-stone-700 rounded-lg text-left transition-all group cursor-pointer shadow-2xs"
+                  >
+                    <div className="flex items-center space-x-2 mb-1">
+                      <div className="w-6 h-6 rounded bg-stone-200 flex items-center justify-center text-stone-700 font-bold text-xs">
+                        ＋
+                      </div>
+                      <span className="font-bold text-xs text-stone-800 group-hover:text-stone-900">別のファイルを選択</span>
+                    </div>
+                    <p className="text-[10px] text-stone-500 leading-tight">取り込み種別を最初から選択</p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-6 py-2.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] text-xs font-bold transition-colors shadow-md"
+                  className="px-8 py-2.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] text-xs font-bold transition-colors shadow-md rounded-md cursor-pointer"
                 >
                   完了して画面を閉じる
                 </button>
@@ -1681,6 +2085,20 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
             </div>
           </div>
         </div>
+      )}
+
+      {/* Kakocho Lineage Matching Confirmation Modal */}
+      {showLineageModal && (
+        <KakochoLineageConfirmModal
+          isOpen={showLineageModal}
+          onClose={() => setShowLineageModal(false)}
+          rawItems={kakochoItems}
+          existingHouseholds={existingHouseholds}
+          existingPastRecords={existingPastRecords}
+          targetTempleId={targetTempleId}
+          temples={temples}
+          onConfirmDecisions={handleLineageDecisionsConfirmed}
+        />
       )}
     </div>
   );

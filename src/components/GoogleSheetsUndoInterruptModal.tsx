@@ -18,7 +18,7 @@ export const GoogleSheetsUndoInterruptModal: React.FC<GoogleSheetsUndoInterruptM
 
   const isUndo = actionType === 'undo';
   const actionLabel = isUndo ? '元に戻す' : 'やり直す';
-  const confirmButtonText = isUndo ? '元に戻すを実行' : '元に戻すを実行';
+  const confirmButtonText = isUndo ? '元に戻すを実行' : 'やり直すを実行';
 
   return (
     <div className="fixed inset-0 z-50 bg-[#1A1A1A]/80 backdrop-blur-xs flex items-center justify-center p-4 font-serif">

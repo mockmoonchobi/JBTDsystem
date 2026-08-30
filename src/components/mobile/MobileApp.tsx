@@ -38,6 +38,7 @@ interface MobileAppProps {
   onDeleteHousehold: (id: string) => void;
   onSavePastRecord: (record: PastRecord) => void;
   onDeletePastRecord: (id: string) => void;
+  onBatchAddPastRecords?: (records: PastRecord[], description?: string) => void;
   onSaveService: (service: MemorialService) => void;
   onDeleteService: (id: string) => void;
   onSaveTodo?: (todo: TempleTodo) => void;
@@ -67,6 +68,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   onDeleteHousehold,
   onSavePastRecord,
   onDeletePastRecord,
+  onBatchAddPastRecords,
   onSaveService,
   onDeleteService,
   onSaveTodo = () => {},
@@ -166,6 +168,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             pastRecords={effectiveAllPastRecords}
             memorialServices={memorialServices}
             masterOptions={masterOptions}
+            templeInfo={templeInfo}
             temples={temples}
             activeTempleId={activeTempleId}
             onSelectTemple={onSelectTemple}
@@ -173,6 +176,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onDeleteHousehold={onDeleteHousehold}
             onOpenAddPastRecord={handleOpenAddPastRecordFromHousehold}
             onOpenAddService={handleOpenAddServiceFromHousehold}
+            onBatchAddPastRecords={onBatchAddPastRecords}
           />
         )}
 
