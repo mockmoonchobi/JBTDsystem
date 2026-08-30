@@ -738,17 +738,17 @@ export function evaluateItemMatch(
       const notesClean = (item.notes || '').replace(/[\s　]/g, '');
       const addrMatch = notesClean && hAddrClean && (notesClean.includes(hAddrClean) || hAddrClean.includes(notesClean));
 
-      // 同姓の候補が寺院名簿内に1件しかない場合は適合度80%（推奨基準）とする
+      // 同姓の候補が寺院名簿内に1件しかない場合は適合度75%とする
       let baseScore: number;
       let matchTitle: string;
       let matchExplanation: string;
 
       if (isUniqueSurnameInTemple && isSameTemple) {
-        baseScore = surnameComp.isExact ? 80 : 79;
+        baseScore = surnameComp.isExact ? 75 : 74;
         matchTitle = surnameComp.isVariant
-          ? '同姓檀家候補（名簿内唯一の同姓・80%推奨・異体字）'
-          : '同姓檀家候補（名簿内唯一の同姓・80%推奨）';
-        matchExplanation = `同姓「${hSurname}」様${surnameComp.isVariant ? '（異体字）' : ''}の檀家が寺院名簿内に1件のみ存在するため、適合度80%（推奨判定基準）として設定しました。`;
+          ? '同姓檀家候補（名簿内唯一の同姓・75%・異体字）'
+          : '同姓檀家候補（名簿内唯一の同姓・75%）';
+        matchExplanation = `同姓「${hSurname}」様${surnameComp.isVariant ? '（異体字）' : ''}の檀家が寺院名簿内に1件のみ存在するため、適合度75%として判定しました。`;
       } else if (addrMatch) {
         baseScore = surnameComp.isExact ? 65 : 64;
         matchTitle = surnameComp.isVariant ? '同姓（異体字）・住所類似候補' : '同姓・住所類似候補';

@@ -930,30 +930,66 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                         <td className="p-2.5">
                           {dec ? (
                             dec.action === 'link_existing' ? (
-                              <span className="inline-flex items-center gap-1 text-green-800 font-bold bg-green-50 px-2.5 py-1 rounded border border-green-200 text-xs">
-                                <Check className="w-3.5 h-3.5 text-green-600" />
-                                {dec.targetHouseholdName} 様 ({dec.targetHouseholdId})
-                              </span>
+                              (() => {
+                                const matchedCand = candidates.find((c) => c.household.id === dec.targetHouseholdId);
+                                const score = matchedCand
+                                  ? matchedCand.confidenceScore
+                                  : top?.household.id === dec.targetHouseholdId
+                                  ? top.confidenceScore
+                                  : undefined;
+                                const scoreStyle = score !== undefined ? getConfidenceScoreStyle(score) : null;
+                                return (
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {scoreStyle ? (
+                                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold ${scoreStyle.pill}`}>
+                                        <span className={`w-2 h-2 rounded-full ${scoreStyle.dot}`} />
+                                        <span>{score}%</span>
+                                        <span className="font-extrabold">{dec.targetHouseholdName} 様</span>
+                                        <span className="font-mono text-[11px] opacity-75">({dec.targetHouseholdId})</span>
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1.5 text-stone-800 font-bold bg-stone-100 px-2.5 py-1 rounded border border-stone-300 text-xs">
+                                        <Check className="w-3.5 h-3.5 text-stone-600" />
+                                        <span>{dec.targetHouseholdName} 様</span>
+                                        <span className="font-mono text-[11px] text-stone-500">({dec.targetHouseholdId})</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()
                             ) : dec.action === 'create_new_household' ? (
-                              <span className="inline-flex items-center gap-1 text-blue-800 font-bold bg-blue-50 px-2.5 py-1 rounded border border-blue-200 text-xs">
-                                <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                              <span className="inline-flex items-center gap-1.5 text-indigo-900 font-bold bg-indigo-50 px-2.5 py-1 rounded border border-indigo-200 text-xs">
+                                <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
                                 新規檀家「{dec.newHouseholdHeadName}」
                               </span>
                             ) : (
-                              <span className="text-stone-500 font-normal text-xs">檀家不明（未紐づけ）</span>
+                              <span className="inline-flex items-center gap-1 text-stone-500 font-medium bg-stone-100 px-2 py-0.5 rounded border border-stone-200 text-xs">
+                                <SkipForward className="w-3 h-3 text-stone-400" />
+                                檀家不明（未紐づけ）
+                              </span>
                             )
                           ) : isTopRecommended ? (
                             (() => {
                               const scoreStyle = getConfidenceScoreStyle(top.confidenceScore);
                               return (
                                 <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold ${scoreStyle.pill}`}>
-                                  <span className={`w-2 h-2 rounded-full ${scoreStyle.dot}`} />
-                                  推奨: {top.household.familyHead} 様 ({top.confidenceScore}%)
+                                  <span className={`w-2 h-2 rounded-full ${scoreStyle.dot} animate-pulse`} />
+                                  <span>推奨: {top.household.familyHead} 様 ({top.confidenceScore}%)</span>
+                                </span>
+                              );
+                            })()
+                          ) : top ? (
+                            (() => {
+                              const scoreStyle = getConfidenceScoreStyle(top.confidenceScore);
+                              return (
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs ${scoreStyle.pill}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${scoreStyle.dot}`} />
+                                  <span>候補あり: {top.household.familyHead} 様 ({top.confidenceScore}%)</span>
                                 </span>
                               );
                             })()
                           ) : (
-                            <span className="text-stone-500 text-xs">檀家不明</span>
+                            <span className="text-stone-400 text-xs italic">檀家不明</span>
                           )}
                         </td>
                         <td className="p-2.5 text-center">
