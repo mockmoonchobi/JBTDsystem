@@ -11,6 +11,7 @@ import { DailyMemorialList } from './components/DailyMemorialList';
 import { TempleInfoModal } from './components/TempleInfoModal';
 import { MasterOptionsModal } from './components/MasterOptionsModal';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
+import { GoogleSheetsUndoInterruptModal } from './components/GoogleSheetsUndoInterruptModal';
 import { ExternalDataImportModal } from './components/ExternalDataImportModal';
 import { MobileApp } from './components/mobile/MobileApp';
 import { StartupLauncher } from './components/StartupLauncher';
@@ -191,6 +192,14 @@ export default function App() {
   });
   const [excludedHouseholdIds, setExcludedHouseholdIds] = useState<string[]>([]);
 
+  // Google Sheets Auto-Sync States
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'disconnected'>('disconnected');
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
+    return safeStorage.getItem('temple_google_sheet_last_sync');
+  });
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [isInitialLoaded, setIsInitialLoaded] = useState<boolean>(false);
+
   // Snapshot generator for Undo / Redo
   const getCurrentSnapshot = useCallback((): AppSnapshot => {
     return {
@@ -256,10 +265,50 @@ export default function App() {
     }
   }, []);
 
+  // Google Sheets Undo / Redo Interrupt Confirmation Modal states
+  const [isGoogleSheetsUndoInterruptOpen, setIsGoogleSheetsUndoInterruptOpen] = useState<boolean>(false);
+  const [undoInterruptAction, setUndoInterruptAction] = useState<'undo' | 'redo'>('undo');
+
+  const handleRequestUndoRef = useRef<() => void>(() => {});
+  const handleRequestRedoRef = useRef<() => void>(() => {});
+
   const { canUndo, canRedo, undoDescription, redoDescription, undo, redo, recordHistory } = useAppHistory({
     getCurrentSnapshot,
     restoreSnapshot,
+    onUndoRequest: () => handleRequestUndoRef.current(),
+    onRedoRequest: () => handleRequestRedoRef.current(),
   });
+
+  // Undo / Redo request handlers with Google Sheets connection check
+  const handleRequestUndo = useCallback(() => {
+    if (!canUndo) return;
+    const isGoogleConnected = syncStatus !== 'disconnected' || safeStorage.getItem('temple_google_sheet_info') !== null;
+    if (isGoogleConnected) {
+      setUndoInterruptAction('undo');
+      setIsGoogleSheetsUndoInterruptOpen(true);
+    } else {
+      undo();
+    }
+  }, [canUndo, undo, syncStatus]);
+
+  const handleRequestRedo = useCallback(() => {
+    if (!canRedo) return;
+    const isGoogleConnected = syncStatus !== 'disconnected' || safeStorage.getItem('temple_google_sheet_info') !== null;
+    if (isGoogleConnected) {
+      setUndoInterruptAction('redo');
+      setIsGoogleSheetsUndoInterruptOpen(true);
+    } else {
+      redo();
+    }
+  }, [canRedo, redo, syncStatus]);
+
+  useEffect(() => {
+    handleRequestUndoRef.current = handleRequestUndo;
+  }, [handleRequestUndo]);
+
+  useEffect(() => {
+    handleRequestRedoRef.current = handleRequestRedo;
+  }, [handleRequestRedo]);
 
   // Active master options based on active temple
   const activeMasterOptions = useMemo(() => {
@@ -397,14 +446,6 @@ export default function App() {
     safeStorage.removeItem('temple_google_sheet_last_sync');
     recordHistory('Googleシート連携を解除');
   };
-
-  // Google Sheets Auto-Sync States
-  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'error' | 'disconnected'>('disconnected');
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
-    return safeStorage.getItem('temple_google_sheet_last_sync');
-  });
-  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
-  const [isInitialLoaded, setIsInitialLoaded] = useState<boolean>(false);
 
   // ----------------------------------------------------
   // 起動画面（Startup Launcher） 4つの選択肢ハンドラー
@@ -1541,6 +1582,25 @@ export default function App() {
     }
   };
 
+  // Googleシート連携中断ダイアログでの「元に戻すを実行」確認ハンドラー
+  const handleConfirmUndoInterrupt = () => {
+    // 1. Googleシートとの連携を解除
+    handleDisconnectGoogle();
+
+    // 2. Excel入出力の「全寺院データを一括書き出し」をダイアログなしに実行
+    handleExportExcel('ALL');
+
+    // 3. Undo / Redo を実行
+    if (undoInterruptAction === 'redo') {
+      redo();
+    } else {
+      undo();
+    }
+
+    // 4. ダイアログを閉じる
+    setIsGoogleSheetsUndoInterruptOpen(false);
+  };
+
   const handleImportExcel = async (file: File, targetTempleId?: string | 'ALL') => {
     const modeLabel = targetTempleId && targetTempleId !== 'ALL'
       ? `指定寺院（${temples.find((t) => t.id === targetTempleId)?.name || '指定寺院'}）へのデータ取り込み`
@@ -2551,6 +2611,14 @@ export default function App() {
           temples={temples}
           activeTempleId={activeTempleId}
         />
+
+        {/* Google Sheets Undo Interrupt Modal */}
+        <GoogleSheetsUndoInterruptModal
+          isOpen={isGoogleSheetsUndoInterruptOpen}
+          onClose={() => setIsGoogleSheetsUndoInterruptOpen(false)}
+          onConfirm={handleConfirmUndoInterrupt}
+          actionType={undoInterruptAction}
+        />
       </>
     );
   }
@@ -2588,8 +2656,8 @@ export default function App() {
         lastSyncTime={lastSyncTime}
         canUndo={canUndo}
         canRedo={canRedo}
-        onUndo={undo}
-        onRedo={redo}
+        onUndo={handleRequestUndo}
+        onRedo={handleRequestRedo}
         undoDescription={undoDescription}
         redoDescription={redoDescription}
         onSwitchToMobile={() => handleSetViewMode('mobile')}
@@ -2824,6 +2892,14 @@ export default function App() {
         temples={temples}
         activeTempleId={activeTempleId}
         onImportSuccess={handleImportExternalSuccess}
+      />
+
+      {/* Google Sheets Undo Interrupt Modal */}
+      <GoogleSheetsUndoInterruptModal
+        isOpen={isGoogleSheetsUndoInterruptOpen}
+        onClose={() => setIsGoogleSheetsUndoInterruptOpen(false)}
+        onConfirm={handleConfirmUndoInterrupt}
+        actionType={undoInterruptAction}
       />
     </div>
   );

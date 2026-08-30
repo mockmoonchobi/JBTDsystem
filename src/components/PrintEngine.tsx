@@ -1210,14 +1210,24 @@ const TempleEnvelopeSenderBlock: React.FC<{
 
       {/* QRコード (3列の中央真下に濃紅で配置) */}
       {showQrCode && (
-        <div className="flex items-center justify-center shrink-0 mt-[2.5mm]">
+        <div className="flex flex-col items-center justify-center shrink-0 mt-[2.5mm]">
           <QRCodeSVG
             value={templeInfo?.website || templeInfo?.websiteUrl || 'https://temple-portal.jp'}
-            size={36}
+            size={44}
             fgColor="#8B0000"
             bgColor="transparent"
             level="M"
           />
+          <span
+            className="font-serif text-stone-900 font-bold text-center block mt-0.5 tracking-wider whitespace-nowrap"
+            style={{
+              fontSize: '6.5pt',
+              lineHeight: '1.2',
+              writingMode: 'horizontal-tb',
+            }}
+          >
+            {(templeInfo?.name || '寺院').trim()} HP
+          </span>
         </div>
       )}
     </div>
@@ -1389,11 +1399,11 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             );
           })()}
 
-          {/* 宛名 (中央・大文字・4mm左へ移動) */}
+          {/* 宛名 (中央・大文字・1mm左へ移動（以前の4mm左から3mm右へ移動）) */}
           <div
             className="absolute top-[50%] left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
             style={{
-              transform: 'translate(calc(-50% - 4mm), -50%)',
+              transform: 'translate(calc(-50% - 1mm), -50%)',
               writingMode: 'vertical-rl',
               textOrientation: 'upright',
               fontSize: '28pt',
@@ -1442,11 +1452,11 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       {/* 2. はがき 宛名面 (100mm x 148mm) */}
       {docType === 'postcard' && postcardTab === 'front' && (
         <div className="w-full h-full relative text-stone-900">
-          {/* 郵便番号枠 (7桁・左3mm右へ/右1mm左へ調整・均等割付) */}
+          {/* 郵便番号枠 (7桁・左3mm右へ/右1mm左へ調整・均等割付・1mm上へ移動) */}
           <div
             className="absolute flex items-center justify-between"
             style={{
-              top: '6mm',
+              top: '5mm',
               right: '-1mm',
               width: '48mm',
             }}

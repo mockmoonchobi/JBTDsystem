@@ -109,7 +109,7 @@ export const VerticalNoticeContent: React.FC<VerticalNoticeContentProps> = ({
                   writingMode: 'horizontal-tb',
                 }}
               >
-                {templeInfo?.name || '寺院HP'}
+                {(templeInfo?.name || '寺院').trim()} HP
               </span>
             </span>
           );

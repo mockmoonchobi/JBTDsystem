@@ -7,9 +7,10 @@ interface UseAppHistoryProps {
   getCurrentSnapshot: () => AppSnapshot;
   restoreSnapshot: (snapshot: AppSnapshot) => void;
   onUndoRequest?: () => void;
+  onRedoRequest?: () => void;
 }
 
-export function useAppHistory({ getCurrentSnapshot, restoreSnapshot, onUndoRequest }: UseAppHistoryProps) {
+export function useAppHistory({ getCurrentSnapshot, restoreSnapshot, onUndoRequest, onRedoRequest }: UseAppHistoryProps) {
   const [undoStack, setUndoStack] = useState<AppSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<AppSnapshot[]>([]);
 
@@ -22,6 +23,9 @@ export function useAppHistory({ getCurrentSnapshot, restoreSnapshot, onUndoReque
 
   const onUndoRequestRef = useRef(onUndoRequest);
   onUndoRequestRef.current = onUndoRequest;
+
+  const onRedoRequestRef = useRef(onRedoRequest);
+  onRedoRequestRef.current = onRedoRequest;
 
   const undoStackRef = useRef(undoStack);
   undoStackRef.current = undoStack;
@@ -135,7 +139,11 @@ export function useAppHistory({ getCurrentSnapshot, restoreSnapshot, onUndoReque
       else if ((e.key === 'y' && !e.shiftKey) || (e.key === 'z' && e.shiftKey) || (e.key === 'Z')) {
         if (isInput) return; // Allow native input redo
         e.preventDefault();
-        redo();
+        if (onRedoRequestRef.current) {
+          onRedoRequestRef.current();
+        } else {
+          redo();
+        }
       }
     };
 
