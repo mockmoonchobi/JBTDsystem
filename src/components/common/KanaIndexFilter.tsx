@@ -117,7 +117,7 @@ export const KanaIndexFilter: React.FC<KanaIndexFilterProps> = ({
             type="button"
             onClick={() => onSelectCol('ALL')}
             className={`px-2 py-0.5 rounded-xs text-xs font-bold border transition-colors cursor-pointer ${
-              selectedCol === 'ALL' || !selectedCol
+              selectedCol === 'ALL' || selectedCol === 'all' || !selectedCol
                 ? getSubActiveClasses()
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
             }`}

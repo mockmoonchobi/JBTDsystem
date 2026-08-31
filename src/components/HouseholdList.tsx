@@ -570,7 +570,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   // Modals state
   const [activeQrModalHousehold, setActiveQrModalHousehold] = useState<Household | null>(null);
-  const [aiAdviceModal, setAiAdviceModal] = useState<{ record: PastRecord; text: string; loading: boolean } | null>(null);
 
   // Past Record Add/Edit Modal
   const [showPastRecordModal, setShowPastRecordModal] = useState(false);
@@ -1516,26 +1515,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       onAddPastRecord(completeRecord);
     }
     setShowPastRecordModal(false);
-  };
-
-  // Ask AI Advisor for Past Record
-  const handleAskAiAdvisor = async (record: PastRecord) => {
-    setAiAdviceModal({ record, text: '', loading: true });
-    try {
-      const res = await fetch('/api/ai/dharma-advisor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          secularName: record.secularName,
-          gender: record.relationship.includes('妻') || record.relationship.includes('母') ? '女性' : '男性',
-          remarks: `戒名: ${record.dharmaName}, 命日: ${record.deathDate}, 享年: ${record.ageAtDeath}`,
-        }),
-      });
-      const data = await res.json();
-      setAiAdviceModal({ record, text: data.text || '解説を取得できませんでした。', loading: false });
-    } catch (err: any) {
-      setAiAdviceModal({ record, text: 'AI通信エラーが発生しました。', loading: false });
-    }
   };
 
   return (
@@ -3646,11 +3625,11 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     type="button"
                     onClick={() => setSingleImportModalHousehold(currentIndividualHousehold)}
                     className="px-3.5 py-2 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans transition-colors flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                    title="墓碑写真・Word・Excel・OCRテキストからAIでこの世帯の精霊を自動読み取り"
+                    title="Word・Excel・CSV・メモ帳テキストからこの世帯の精霊（戒名）を一括取り込み"
                   >
-                    <Camera className="w-4 h-4 text-[#8C2D19]" />
+                    <FileText className="w-4 h-4 text-[#8C2D19]" />
                     <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-                    <span>写真・文書からAI取り込み</span>
+                    <span>Word・Excel・テキスト取込</span>
                   </button>
 
                   <button
@@ -3668,16 +3647,16 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 <div className="bg-[#F9F7F2] border border-dashed border-[#D1CEC7] p-8 text-center text-[#888888] font-sans text-xs space-y-3">
                   <BookOpen className="w-8 h-8 text-[#CCCCCC] mx-auto" />
                   <p className="font-bold text-[#444444]">この世帯には過去帳（物故者データ）が未登録です。</p>
-                  <p>墓碑の写真やWord/Excel資料からAIで一括読み取るか、「新規精霊」から手動入力できます。</p>
+                  <p>WordやExcel、メモ帳のテキストから一括読み取るか、「新規精霊」から手動入力できます。</p>
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setSingleImportModalHousehold(currentIndividualHousehold)}
                       className="px-4 py-2 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
                     >
-                      <Camera className="w-4 h-4 text-[#8C2D19]" />
+                      <FileText className="w-4 h-4 text-[#8C2D19]" />
                       <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-                      <span>墓碑写真・Word・ExcelからAI過去帳取り込み</span>
+                      <span>Word・Excel・テキストから過去帳取り込み</span>
                     </button>
                     <button
                       type="button"
@@ -4335,51 +4314,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       ) : null}
     </div>
   )}
-
-      {/* Modal 2: AI Advisor Modal */}
-      {aiAdviceModal && (
-        <div className="fixed inset-0 z-50 bg-[#1A1A1A]/80 backdrop-blur-xs flex items-center justify-center p-4 font-serif">
-          <div className="bg-white border border-[#D1CEC7] p-6 max-w-lg w-full text-[#2D2D2D] space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-[#D1CEC7] pb-3">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-[#D4AF37]" />
-                <h3 className="text-base font-bold text-[#1A1A1A]">
-                  AI 過去帳・戒名解説
-                </h3>
-              </div>
-              <button onClick={() => setAiAdviceModal(null)} className="text-[#888888] hover:text-[#1A1A1A]">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="bg-[#F9F7F2] p-3 border border-[#EBE7DF] text-xs space-y-1 font-sans">
-              <div>
-                対象故人: <strong className="text-[#1A1A1A] font-serif text-sm">{aiAdviceModal.record.dharmaName}</strong>
-              </div>
-              <div>俗名: {aiAdviceModal.record.secularName || '未登録'}</div>
-            </div>
-
-            {aiAdviceModal.loading ? (
-              <div className="py-8 text-center text-[#1A1A1A] font-bold text-xs animate-pulse font-sans">
-                Gemini AI が戒名・過去帳の解説を作成中...
-              </div>
-            ) : (
-              <div className="bg-[#F9F7F2] border border-[#D1CEC7] p-4 text-xs leading-relaxed text-[#2D2D2D] whitespace-pre-wrap max-h-60 overflow-y-auto font-sans">
-                {aiAdviceModal.text}
-              </div>
-            )}
-
-            <div className="text-right">
-              <button
-                onClick={() => setAiAdviceModal(null)}
-                className="px-5 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans"
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal 3: Household QR Modal */}
       {activeQrModalHousehold && (

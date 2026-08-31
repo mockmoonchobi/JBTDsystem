@@ -15,7 +15,7 @@ import {
   Filter,
   X,
   ArrowUpDown,
-  Camera,
+  FileText,
   Sparkles
 } from 'lucide-react';
 import { getGoogleMapsSearchUrl } from '../../utils/calendarUtils';
@@ -75,7 +75,8 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
     const list = households.filter((h) => {
       // Kana row & column filter (あ行, か行, さ行 etc. and individual sub-characters)
       if (selectedKanaRow !== 'all' && selectedKanaRow !== 'ALL') {
-        const kanaText = h.furigana || (h as any).kana || h.familyHead || '';
+        const sponsorInfo = getHouseholdSponsorInfo(h);
+        const kanaText = sponsorInfo.furigana || h.furigana || (h as any).kana || sponsorInfo.sponsorName || h.familyHead || '';
         const row = getKanaRow(kanaText);
         if (row !== selectedKanaRow) {
           return false;
@@ -143,7 +144,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
 
     // Sort strictly in 五十音順 (A-I-U-E-O order using normalized furigana / familyHead)
     return sortHouseholdsByGojuon(list);
-  }, [households, searchQuery, selectedTypeFilter, selectedStatusFilter, selectedDistrictFilter, selectedSegakiFilter, selectedTanagyoFilter, selectedKanaRow]);
+  }, [households, searchQuery, selectedTypeFilter, selectedStatusFilter, selectedDistrictFilter, selectedSegakiFilter, selectedTanagyoFilter, selectedKanaRow, selectedKanaCol]);
 
   // Unique types, statuses, and districts for filter chips
   const householdTypes = useMemo(() => {
@@ -230,9 +231,10 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                 setSelectedSegakiFilter('all');
                 setSelectedTanagyoFilter('all');
                 setSelectedKanaRow('all');
+                setSelectedKanaCol('all');
               }}
               className={`px-2.5 py-1 rounded-xs font-bold shrink-0 cursor-pointer border text-xs ${
-                selectedTypeFilter === 'all' && selectedStatusFilter === 'all' && selectedDistrictFilter === 'all' && selectedSegakiFilter === 'all' && selectedTanagyoFilter === 'all' && selectedKanaRow === 'all'
+                selectedTypeFilter === 'all' && selectedStatusFilter === 'all' && selectedDistrictFilter === 'all' && selectedSegakiFilter === 'all' && selectedTanagyoFilter === 'all' && (selectedKanaRow === 'all' || selectedKanaRow === 'ALL') && (selectedKanaCol === 'all' || selectedKanaCol === 'ALL')
                   ? 'bg-[#1A1A1A] text-[#D4AF37] border-[#1A1A1A]'
                   : 'bg-[#FAF8F5] text-gray-600 border-[#D1CEC7]'
               }`}
@@ -354,7 +356,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
           <span className="px-1.5 py-0.2 bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-bold rounded-2xs">
             五十音順
           </span>
-          {selectedKanaRow !== 'all' && (
+          {(selectedKanaRow !== 'all' && selectedKanaRow !== 'ALL') && (
             <span className="px-1.5 py-0.2 bg-[#8C2D19] text-white text-[10px] font-bold rounded-2xs">
               【{selectedKanaRow}行{selectedKanaCol !== 'all' && selectedKanaCol !== 'ALL' ? `・${selectedKanaCol}` : ''}】
             </span>
@@ -375,12 +377,13 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
             </span>
           )}
         </div>
-        {(searchQuery || selectedKanaRow !== 'all' || selectedTypeFilter !== 'all' || selectedStatusFilter !== 'all' || selectedDistrictFilter !== 'all' || selectedSegakiFilter !== 'all' || selectedTanagyoFilter !== 'all') && (
+        {(searchQuery || (selectedKanaRow !== 'all' && selectedKanaRow !== 'ALL') || (selectedKanaCol !== 'all' && selectedKanaCol !== 'ALL') || selectedTypeFilter !== 'all' || selectedStatusFilter !== 'all' || selectedDistrictFilter !== 'all' || selectedSegakiFilter !== 'all' || selectedTanagyoFilter !== 'all') && (
           <button
             type="button"
             onClick={() => {
               setSearchQuery('');
               setSelectedKanaRow('all');
+              setSelectedKanaCol('all');
               setSelectedTypeFilter('all');
               setSelectedStatusFilter('all');
               setSelectedDistrictFilter('all');
@@ -580,11 +583,11 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                             type="button"
                             onClick={() => setAiImportHousehold(h)}
                             className="text-[10px] text-[#8C2D19] hover:bg-[#F0ECE1] font-bold bg-[#FAF7F0] px-2 py-0.5 border border-[#D4AF37] rounded-xs cursor-pointer flex items-center gap-1 shadow-2xs"
-                            title="墓碑写真・Word・ExcelからAI一括読み込み"
+                            title="Word・Excel・CSV・メモ帳テキストから一括読み込み"
                           >
-                            <Camera className="w-3 h-3 text-[#8C2D19]" />
+                            <FileText className="w-3 h-3 text-[#8C2D19]" />
                             <Sparkles className="w-2.5 h-2.5 text-[#D4AF37]" />
-                            <span>写真/文書AI取込</span>
+                            <span>Word/Excel取込</span>
                           </button>
                           <button
                             type="button"
@@ -606,9 +609,9 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                               onClick={() => setAiImportHousehold(h)}
                               className="px-2.5 py-1 bg-[#FAF7F0] text-[#8C2D19] border border-[#D4AF37] font-bold text-[11px] rounded-xs flex items-center gap-1 shadow-2xs cursor-pointer"
                             >
-                              <Camera className="w-3.5 h-3.5 text-[#8C2D19]" />
+                              <FileText className="w-3.5 h-3.5 text-[#8C2D19]" />
                               <Sparkles className="w-3 h-3 text-[#D4AF37]" />
-                              <span>墓碑写真・ファイルからAI取り込み</span>
+                              <span>Word・Excel・テキストから取り込み</span>
                             </button>
                             <button
                               type="button"

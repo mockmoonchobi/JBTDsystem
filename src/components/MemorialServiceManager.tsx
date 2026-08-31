@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Calendar, 
   Plus, 
-  Sparkles, 
+  FileText, 
   Printer, 
   CheckCircle2, 
   XCircle, 
@@ -41,9 +41,8 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // AI Generator Modal State
+  // Notice Generator Modal State
   const [aiModalService, setAiModalService] = useState<MemorialService | null>(null);
-  const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGeneratedText, setAiGeneratedText] = useState('');
   const [aiAdditionalNotes, setAiAdditionalNotes] = useState('');
 
@@ -166,38 +165,37 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
     setShowSaveConfirm(true);
   };
 
-  // Trigger Gemini AI Notice Text Generation
-  const handleGenerateAiNotice = async () => {
+  // Generate Standard Notice Text (100% Local template, 0 API tokens)
+  const handleGenerateNoticeText = () => {
     if (!aiModalService) return;
-    setAiGenerating(true);
+    const templeName = templeInfo.name || '当山';
+    const dateStr = aiModalService.scheduledDate || '〇月〇日';
+    const timeStr = aiModalService.scheduledTime ? `${aiModalService.scheduledTime}〜` : '';
+    const venueStr = aiModalService.venue ? `${aiModalService.venue}` : templeName;
+    const deceased = aiModalService.deceasedName ? `故 ${aiModalService.deceasedName} 様` : '';
+    const dharma = aiModalService.dharmaName ? `（法名／戒名: ${aiModalService.dharmaName}）` : '';
+    const memorial = aiModalService.memorialType || '年忌法要';
+    const notes = aiAdditionalNotes ? `\n【ご連絡事項】\n${aiAdditionalNotes}` : '';
 
-    try {
-      const res = await fetch('/api/ai/generate-notice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          templeName: templeInfo.name,
-          deceasedName: aiModalService.deceasedName,
-          dharmaName: aiModalService.dharmaName,
-          memorialType: aiModalService.memorialType,
-          eventDate: aiModalService.scheduledDate,
-          time: aiModalService.scheduledTime,
-          location: aiModalService.venue,
-          additionalNotes: aiAdditionalNotes,
-        }),
-      });
+    const text = `謹啓
 
-      const data = await res.json();
-      if (data.text) {
-        setAiGeneratedText(data.text);
-      } else {
-        alert(data.error || '案内文生成に失敗しました。');
-      }
-    } catch (err: any) {
-      alert('AI通信エラーが発生しました。');
-    } finally {
-      setAiGenerating(false);
-    }
+皆様におかれましては益々ご清祥のこととお慶び申し上げます。
+さて、${deceased}${dharma}の${memorial}を下記の通り厳修いたしたくご案内申し上げます。
+ご多忙中誠に恐縮に存じますが、万障お繰り合わせの上、ご参集賜りますようお願い申し上げます。
+
+合掌
+
+記
+
+一、日　時: ${dateStr} ${timeStr}
+一、場　所: ${venueStr}
+${notes ? `${notes}\n` : ''}
+以上
+
+${templeName}
+施主 ${aiModalService.chiefMourner} 殿`;
+
+    setAiGeneratedText(text);
   };
 
   const handleApplyAiNoticeToService = () => {
@@ -318,7 +316,7 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
                   </div>
                 ) : (
                   <div className="text-[11px] text-[#888888] font-sans italic py-1">
-                    案内本文未生成。「Gemini AI 案内文自動作成」ボタンから作成できます。
+                    案内本文未生成。「案内状本文作成」ボタンから定型文を作成できます。
                   </div>
                 )}
               </div>
@@ -331,10 +329,10 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
                     setAiGeneratedText(service.noticeText || '');
                     setAiAdditionalNotes('');
                   }}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] text-xs transition-colors font-bold tracking-wider uppercase"
+                  className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] text-xs transition-colors font-bold tracking-wider uppercase cursor-pointer"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  <span>AI案内文作成</span>
+                  <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>案内状本文作成</span>
                 </button>
 
                 <div className="flex items-center space-x-2">
@@ -613,18 +611,18 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
         onCancel={() => setShowSaveConfirm(false)}
       />
 
-      {/* AI Notice Text Generator Modal */}
+      {/* Notice Text Generator Modal */}
       {aiModalService && (
         <div className="fixed inset-0 z-50 bg-[#1A1A1A]/80 backdrop-blur-xs flex items-center justify-center p-4 font-serif">
           <div className="bg-white border border-[#D1CEC7] p-6 max-w-2xl w-full text-[#2D2D2D] space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-[#D1CEC7] pb-3">
               <div className="flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-[#D4AF37]" />
+                <FileText className="w-5 h-5 text-[#D4AF37]" />
                 <h3 className="text-base font-bold text-[#1A1A1A]">
-                  Gemini AI 法要案内文 自動生成
+                  法要案内状 本文作成・編集
                 </h3>
               </div>
-              <button onClick={() => setAiModalService(null)} className="text-[#888888] hover:text-[#1A1A1A]">
+              <button onClick={() => setAiModalService(null)} className="text-[#888888] hover:text-[#1A1A1A] cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -648,19 +646,18 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
             </div>
 
             <button
-              onClick={handleGenerateAiNotice}
-              disabled={aiGenerating}
-              className="w-full py-2.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans transition-colors flex items-center justify-center space-x-2 disabled:opacity-50"
+              onClick={handleGenerateNoticeText}
+              className="w-full py-2.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs uppercase tracking-wider font-sans transition-colors flex items-center justify-center space-x-2 cursor-pointer shadow-sm"
             >
-              <Sparkles className="w-4 h-4 text-[#D4AF37]" />
-              <span>{aiGenerating ? 'AIが正式な案内文を生成中...' : '拝啓・敬具付き案内文をAI生成する'}</span>
+              <FileText className="w-4 h-4 text-[#D4AF37]" />
+              <span>標準定型文を作成・展開する</span>
             </button>
 
             {aiGeneratedText && (
               <div className="space-y-2 font-sans">
-                <label className="block text-xs font-bold text-[#1A1A1A]">生成結果 (編集可能):</label>
+                <label className="block text-xs font-bold text-[#1A1A1A]">案内状本文 (直接編集可能):</label>
                 <textarea
-                  rows={6}
+                  rows={8}
                   value={aiGeneratedText}
                   onChange={(e) => setAiGeneratedText(e.target.value)}
                   className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-3 text-xs text-[#2D2D2D] font-serif leading-relaxed focus:border-[#1A1A1A] focus:outline-none"
