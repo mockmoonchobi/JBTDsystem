@@ -51,8 +51,10 @@ export interface MobileExtractedKakochoItem {
   isExpanded?: boolean;
 }
 
+export type KakochoPromptFormatType = 'csv' | 'label' | 'tsv';
+
 /**
- * Client-side parser for mobile text paste (0 tokens, 100% offline)
+ * Super robust client-side parser that handles CSV, TSV, Markdown Tables, Key-Value Labels, JSON, and smart column auto-correction.
  */
 function parseMobileTextToItems(
   text: string, 
@@ -61,199 +63,485 @@ function parseMobileTextToItems(
 ): MobileExtractedKakochoItem[] {
   if (!text || !text.trim()) return [];
 
-  const rawLines = text
+  // Step 1: Clean markdown code fences and extraneous AI chatter
+  let cleanedText = text
+    .replace(/^```[a-zA-Z]*\s*/gm, '')
+    .replace(/```$/gm, '')
+    .trim();
+
+  // Try parsing JSON first if input is JSON array
+  if (cleanedText.startsWith('[') && cleanedText.endsWith(']')) {
+    try {
+      const jsonArr = JSON.parse(cleanedText);
+      if (Array.isArray(jsonArr) && jsonArr.length > 0) {
+        const jsonItems: MobileExtractedKakochoItem[] = jsonArr.map((obj: any, idx: number) => {
+          const dharma = obj.dharmaName || obj.dharma || obj.戒名 || obj.法名 || obj.法号 || '';
+          const secular = obj.secularName || obj.secular || obj.俗名 || obj.氏名 || obj.名前 || '';
+          const furi = obj.furigana || obj.ふりがな || obj.フリガナ || '';
+          const death = obj.deathDate || obj.death || obj.没年月日 || obj.命日 || obj.死亡日 || '';
+          const rawAge = obj.ageAtDeath ?? obj.age ?? obj.享年 ?? obj.行年 ?? '';
+          const rel = obj.relationship || obj.rel || obj.続柄 || '';
+          const note = obj.notes || obj.note || obj.備考 || '';
+
+          const ageNum = typeof rawAge === 'number' ? rawAge : parseInt(String(rawAge).replace(/[^0-9]/g, ''), 10);
+          const normalizedDeath = normalizeDateInput(death, { mode: 'pastRecord' });
+          const displayDeath = normalizedDeath ? formatJapaneseEraDate(normalizedDeath, false) : death;
+
+          return {
+            id: `mob-kakocho-json-${Date.now()}-${idx}`,
+            selected: true,
+            dharmaName: String(dharma).trim(),
+            secularName: String(secular).trim(),
+            furigana: String(furi).trim(),
+            deathDate: (displayDeath || '').trim(),
+            ageAtDeath: !isNaN(ageNum) && ageNum > 0 ? ageNum : undefined,
+            relationship: String(rel).trim(),
+            householdHeadName: household.familyHead || '',
+            burialLocation: household.tombNumber || '',
+            notes: String(note).trim(),
+            isExpanded: true,
+          };
+        }).filter(item => item.dharmaName || item.secularName);
+
+        if (jsonItems.length > 0) {
+          return attachDuplicateInfo(jsonItems, existingRecords);
+        }
+      }
+    } catch (e) {
+      // Ignore JSON parse error and fallback to text parsing
+    }
+  }
+
+  // Filter out comments and common conversational AI greetings
+  const rawLines = cleanedText
     .split(/\r\n|\r|\n/)
     .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith('#') && !l.startsWith('//') && !l.startsWith('【'));
+    .filter((l) => {
+      if (!l) return false;
+      if (l.startsWith('#') || l.startsWith('//')) return false;
+      if (/^(はい[、,]|以下[はがに]|文字起こし結果|承知いた|抽出結果|データを出力)/.test(l)) return false;
+      if (/^(上記[のテキスト]|コピーして|寺院管理アプリ)/.test(l)) return false;
+      return true;
+    });
 
   if (rawLines.length === 0) return [];
 
+  // Check if it's Key-Value / Label format (e.g. 【戒名】... 【俗名】...)
+  const isLabelFormat = rawLines.some(l => 
+    /^[【\[]?(戒名|法名|法号|俗名|氏名|没年月日|命日|享年|行年|続柄|備考)[】\]]?\s*[:：]/.test(l) ||
+    /【(戒名|法名|俗名|氏名|没年月日|命日|享年|続柄)】/.test(l)
+  );
+
+  if (isLabelFormat) {
+    const items = parseLabelFormat(rawLines, household);
+    if (items.length > 0) {
+      return attachDuplicateInfo(items, existingRecords);
+    }
+  }
+
+  // Check if it's a Markdown Table (e.g. | 戒名 | 俗名 | ... |)
+  const isMarkdownTable = rawLines.some(l => l.startsWith('|') && l.endsWith('|') && l.includes('|'));
+  if (isMarkdownTable) {
+    const items = parseMarkdownTable(rawLines, household);
+    if (items.length > 0) {
+      return attachDuplicateInfo(items, existingRecords);
+    }
+  }
+
+  // Standard Delimited parser (CSV, TSV, Semicolon, Pipe)
+  const items = parseDelimitedOrSmartLines(rawLines, household);
+  return attachDuplicateInfo(items, existingRecords);
+}
+
+/**
+ * Key-Value / Label based parser (e.g. 【戒名】〇〇 【俗名】〇〇 etc.)
+ */
+function parseLabelFormat(lines: string[], household: Household): MobileExtractedKakochoItem[] {
+  const items: MobileExtractedKakochoItem[] = [];
+  let current: Partial<MobileExtractedKakochoItem> = {
+    householdHeadName: household.familyHead || '',
+    burialLocation: household.tombNumber || '',
+    selected: true,
+    isExpanded: true,
+  };
+
+  const flushCurrent = () => {
+    if (current.dharmaName || current.secularName) {
+      const normalizedDeath = normalizeDateInput(current.deathDate || '', { mode: 'pastRecord' });
+      const displayDeath = normalizedDeath ? formatJapaneseEraDate(normalizedDeath, false) : (current.deathDate || '');
+
+      items.push({
+        id: `mob-kakocho-lbl-${Date.now()}-${items.length}`,
+        selected: true,
+        dharmaName: (current.dharmaName || '').trim(),
+        secularName: (current.secularName || '').trim(),
+        furigana: (current.furigana || '').trim(),
+        deathDate: displayDeath.trim(),
+        ageAtDeath: current.ageAtDeath,
+        relationship: (current.relationship || '').trim(),
+        householdHeadName: current.householdHeadName || household.familyHead || '',
+        burialLocation: current.burialLocation || household.tombNumber || '',
+        notes: (current.notes || '').trim(),
+        isExpanded: true,
+      });
+    }
+    current = {
+      householdHeadName: household.familyHead || '',
+      burialLocation: household.tombNumber || '',
+      selected: true,
+      isExpanded: true,
+    };
+  };
+
+  for (const line of lines) {
+    // Delimiter between spirits
+    if (/^[-=_*]{3,}$/.test(line) || /^精霊\s*\d+/i.test(line) || /^第?\d+霊/.test(line)) {
+      flushCurrent();
+      continue;
+    }
+
+    // In-line multiple tags: 【戒名】〇〇 【俗名】〇〇 ...
+    if ((line.match(/【/g) || []).length >= 2) {
+      const tags = line.split(/(?=【)/);
+      for (const t of tags) {
+        extractTagValue(t.trim(), current);
+      }
+      continue;
+    }
+
+    // Single line tag: 戒名: 〇〇
+    extractTagValue(line, current);
+  }
+
+  flushCurrent();
+  return items;
+}
+
+function extractTagValue(str: string, target: Partial<MobileExtractedKakochoItem>) {
+  const match = str.match(/^[【\[]?\s*(戒名|法名|法号|俗名|氏名|名前|ふりがな|フリガナ|よみ|没年月日|命日|死亡日|没日|没|享年|行年|年齢|歳|続柄|関係|施主|世帯主|墓地|納骨|区画|備考|特記|メモ)\s*[】\]]?\s*[:：\s]\s*(.*)$/);
+  if (!match) return;
+
+  const key = match[1];
+  const val = match[2].trim().replace(/^["']|["']$/g, '');
+  if (val === 'なし' || val === '無' || val === '-' || val === '―') return;
+
+  if (/戒名|法名|法号/.test(key)) {
+    target.dharmaName = val;
+  } else if (/俗名|氏名|名前/.test(key)) {
+    target.secularName = val;
+  } else if (/ふりがな|フリガナ|よみ/.test(key)) {
+    target.furigana = val;
+  } else if (/没年月日|命日|死亡日|没日|没/.test(key)) {
+    target.deathDate = val.replace(/[寂没]$/, '').trim();
+  } else if (/享年|行年|年齢|歳/.test(key)) {
+    const ageNum = parseInt(val.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(ageNum) && ageNum > 0 && ageNum < 130) {
+      target.ageAtDeath = ageNum;
+    }
+  } else if (/続柄|関係/.test(key)) {
+    target.relationship = val;
+  } else if (/施主|世帯主/.test(key)) {
+    target.householdHeadName = val;
+  } else if (/墓地|納骨|区画/.test(key)) {
+    target.burialLocation = val;
+  } else if (/備考|特記|メモ/.test(key)) {
+    target.notes = val;
+  }
+}
+
+/**
+ * Markdown Table Parser (| 戒名 | 俗名 | 没年月日 | ... |)
+ */
+function parseMarkdownTable(lines: string[], household: Household): MobileExtractedKakochoItem[] {
+  const tableLines = lines.filter(l => l.startsWith('|') && l.endsWith('|'));
+  if (tableLines.length < 2) return [];
+
+  const rows = tableLines.map(l => 
+    l.slice(1, -1).split('|').map(c => c.trim())
+  ).filter(r => !r.every(c => /^[-:\s]+$/.test(c))); // remove separator line
+
+  if (rows.length < 2) return [];
+
+  const headerRow = rows[0].map(c => c.toLowerCase());
+  const headerMap: { [key: string]: number } = {};
+
+  headerRow.forEach((col, idx) => {
+    if (col.includes('戒名') || col.includes('法名') || col.includes('法号')) headerMap.dharma = idx;
+    else if (col.includes('俗名') || col.includes('氏名') || col.includes('名前')) headerMap.secular = idx;
+    else if (col.includes('ふりがな') || col.includes('フリガナ') || col.includes('よみ')) headerMap.furigana = idx;
+    else if (col.includes('没') || col.includes('命日') || col.includes('死亡')) headerMap.death = idx;
+    else if (col.includes('享年') || col.includes('行年') || col.includes('歳') || col.includes('年齢')) headerMap.age = idx;
+    else if (col.includes('続柄') || col.includes('関係')) headerMap.rel = idx;
+    else if (col.includes('備考') || col.includes('特記') || col.includes('メモ')) headerMap.notes = idx;
+  });
+
   const items: MobileExtractedKakochoItem[] = [];
 
-  // Check CSV or TSV
-  const isCsvOrTsv = text.includes('\t') || (text.includes(',') && rawLines.some(l => (l.match(/,/g) || []).length >= 2));
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row.length === 0 || row.every(c => !c)) continue;
 
-  if (isCsvOrTsv) {
-    const rows = rawLines.map(line => {
-      if (line.includes('\t')) return line.split('\t').map(c => c.trim().replace(/^["']|["']$/g, ''));
-      return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.trim().replace(/^["']|["']$/g, ''));
-    });
+    const dharma = headerMap.dharma !== undefined ? row[headerMap.dharma] : (row[0] || '');
+    const secular = headerMap.secular !== undefined ? row[headerMap.secular] : (row[1] || '');
+    const furi = headerMap.furigana !== undefined ? row[headerMap.furigana] : (row[2] || '');
+    const death = headerMap.death !== undefined ? row[headerMap.death] : (row[3] || '');
+    const ageStr = headerMap.age !== undefined ? row[headerMap.age] : (row[4] || '');
+    const rel = headerMap.rel !== undefined ? row[headerMap.rel] : (row[5] || '');
+    const notes = headerMap.notes !== undefined ? row[headerMap.notes] : (row[6] || '');
 
-    const headerMap: { [key: string]: number } = {};
-    let startIdx = 0;
-    const firstRow = rows[0].map(c => c.toLowerCase());
+    if (!dharma && !secular) continue;
 
-    const hasHeader = firstRow.some(c => 
-      c.includes('戒名') || c.includes('法名') || c.includes('法号') || 
-      c.includes('俗名') || c.includes('氏名') || c.includes('名前') || 
-      c.includes('命日') || c.includes('没') || c.includes('死亡') || 
-      c.includes('享年') || c.includes('行年') || c.includes('歳') || 
-      c.includes('続柄') || c.includes('関係')
-    );
+    const ageNum = parseInt((ageStr || '').replace(/[^0-9]/g, ''), 10);
+    const normalizedDeath = normalizeDateInput(death || '', { mode: 'pastRecord' });
+    const displayDeath = normalizedDeath ? formatJapaneseEraDate(normalizedDeath, false) : (death || '');
 
-    if (hasHeader) {
-      firstRow.forEach((col, idx) => {
-        if (col.includes('戒名') || col.includes('法名') || col.includes('法号')) headerMap.dharma = idx;
-        else if (col.includes('俗名') || col.includes('氏名') || col.includes('名前')) headerMap.secular = idx;
-        else if (col.includes('ふりがな') || col.includes('フリガナ') || col.includes('よみ')) headerMap.furigana = idx;
-        else if (col.includes('命日') || col.includes('没') || col.includes('死亡')) headerMap.death = idx;
-        else if (col.includes('享年') || col.includes('行年') || col.includes('年齢') || col.includes('歳')) headerMap.age = idx;
-        else if (col.includes('続柄') || col.includes('関係')) headerMap.rel = idx;
-        else if (col.includes('施主') || col.includes('世帯主')) headerMap.head = idx;
-        else if (col.includes('墓地') || col.includes('納骨') || col.includes('区画')) headerMap.burial = idx;
-        else if (col.includes('備考') || col.includes('特記') || col.includes('メモ')) headerMap.notes = idx;
-      });
-      startIdx = 1;
-    }
-
-    for (let i = startIdx; i < rows.length; i++) {
-      const row = rows[i];
-      if (row.length === 0 || row.every(c => !c)) continue;
-
-      let dharma = '';
-      let secular = '';
-      let furigana = '';
-      let deathDate = '';
-      let ageStr = '';
-      let rel = '';
-      let head = household.familyHead || '';
-      let burial = household.tombNumber || '';
-      let notes = '';
-
-      if (hasHeader) {
-        if (headerMap.dharma !== undefined) dharma = row[headerMap.dharma] || '';
-        if (headerMap.secular !== undefined) secular = row[headerMap.secular] || '';
-        if (headerMap.furigana !== undefined) furigana = row[headerMap.furigana] || '';
-        if (headerMap.death !== undefined) deathDate = row[headerMap.death] || '';
-        if (headerMap.age !== undefined) ageStr = row[headerMap.age] || '';
-        if (headerMap.rel !== undefined) rel = row[headerMap.rel] || '';
-        if (headerMap.head !== undefined) head = row[headerMap.head] || head;
-        if (headerMap.burial !== undefined) burial = row[headerMap.burial] || burial;
-        if (headerMap.notes !== undefined) notes = row[headerMap.notes] || '';
-      } else {
-        dharma = row[0] || '';
-        secular = row[1] || '';
-        deathDate = row[2] || '';
-        ageStr = row[3] || '';
-        rel = row[4] || '';
-        notes = row[5] || '';
-      }
-
-      if (!dharma && !secular) continue;
-
-      const ageNum = parseInt(ageStr.replace(/[^0-9]/g, ''), 10);
-      const normalizedDeath = normalizeDateInput(deathDate, { mode: 'pastRecord' });
-      const displayDeath = normalizedDeath ? formatJapaneseEraDate(normalizedDeath, false) : deathDate;
-
-      items.push({
-        id: `mob-kakocho-${Date.now()}-${i}`,
-        selected: true,
-        dharmaName: dharma.trim(),
-        secularName: secular.trim(),
-        furigana: furigana.trim(),
-        deathDate: (displayDeath || '').trim(),
-        ageAtDeath: !isNaN(ageNum) && ageNum > 0 ? ageNum : undefined,
-        relationship: rel.trim(),
-        householdHeadName: head.trim(),
-        burialLocation: burial.trim(),
-        notes: notes.trim(),
-        isExpanded: true,
-      });
-    }
-  }
-
-  // If no CSV items parsed, parse free-form lines
-  if (items.length === 0) {
-    rawLines.forEach((line, idx) => {
-      let remaining = line;
-
-      // Extract age
-      let ageNum: number | undefined = undefined;
-      const ageMatch = remaining.match(/(?:享年|行年|満)?\s*([0-9０-９一二三四五六七八九十百]+)\s*歳?/);
-      if (ageMatch) {
-        const rawAge = ageMatch[1]
-          .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0))
-          .replace(/一/g, '1').replace(/二/g, '2').replace(/三/g, '3').replace(/四/g, '4')
-          .replace(/五/g, '5').replace(/六/g, '6').replace(/七/g, '7').replace(/八/g, '8').replace(/九/g, '9');
-        const parsed = parseInt(rawAge, 10);
-        if (!isNaN(parsed) && parsed > 0 && parsed < 130) {
-          ageNum = parsed;
-        }
-        remaining = remaining.replace(ageMatch[0], ' ');
-      }
-
-      // Extract date
-      let deathStr = '';
-      const dateMatch = remaining.match(/((?:令和|平成|昭和|大正|明治|R|H|S|T|M|\d{4})[年/\-.\s]?[0-9０-９一二三四五六七八九十百]+[月/\-.\s]?[0-9０-９一二三四五六七八九十百]+日?(?:寂|没)?|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/);
-      if (dateMatch) {
-        deathStr = dateMatch[0].replace(/[寂没]$/, '').trim();
-        remaining = remaining.replace(dateMatch[0], ' ');
-      }
-
-      // Extract relationship
-      let relStr = '';
-      const relMatch = remaining.match(/[（(]([^）)]+)[）)]/);
-      if (relMatch) {
-        relStr = relMatch[1].trim();
-        remaining = remaining.replace(relMatch[0], ' ');
-      } else {
-        const relWordMatch = remaining.match(/(父|母|祖父|祖母|夫|妻|長男|長女|二男|次男|二女|次女|三男|三女|子供|兄|弟|姉|妹|本人|伯父|叔父|伯母|叔母)/);
-        if (relWordMatch) {
-          relStr = relWordMatch[0];
-          remaining = remaining.replace(relWordMatch[0], ' ');
-        }
-      }
-
-      // Extract secular name
-      let secularStr = '';
-      const secularMatch = remaining.match(/(?:俗名|氏名|本名|名)[\s:：]*([^\s,，、]+(?:\s+[^\s,，、]+)?)/);
-      if (secularMatch) {
-        secularStr = secularMatch[1].trim();
-        remaining = remaining.replace(secularMatch[0], ' ');
-      }
-
-      // Remaining tokens
-      const tokens = remaining
-        .split(/[\s,，、|\t]+/)
-        .map(t => t.trim())
-        .filter(t => t.length > 0);
-
-      let dharmaStr = '';
-      let notesStr = '';
-
-      if (tokens.length > 0) {
-        dharmaStr = tokens[0];
-        if (tokens.length > 1 && !secularStr) {
-          secularStr = tokens[1];
-          notesStr = tokens.slice(2).join(' ');
-        } else if (tokens.length > 1) {
-          notesStr = tokens.slice(1).join(' ');
-        }
-      }
-
-      if (!dharmaStr && !secularStr) return;
-
-      const normalizedDeath = normalizeDateInput(deathStr || '', { mode: 'pastRecord' });
-      const displayDeath = normalizedDeath ? formatJapaneseEraDate(normalizedDeath, false) : deathStr;
-
-      items.push({
-        id: `mob-kakocho-${Date.now()}-${idx}`,
-        selected: true,
-        dharmaName: dharmaStr.trim(),
-        secularName: secularStr.trim(),
-        furigana: '',
-        deathDate: (displayDeath || '').trim(),
-        ageAtDeath: ageNum,
-        relationship: relStr.trim(),
-        householdHeadName: household.familyHead || '',
-        burialLocation: household.tombNumber || '',
-        notes: notesStr.trim(),
-        isExpanded: true,
-      });
+    items.push({
+      id: `mob-kakocho-tbl-${Date.now()}-${i}`,
+      selected: true,
+      dharmaName: (dharma || '').trim(),
+      secularName: (secular || '').trim(),
+      furigana: (furi || '').trim(),
+      deathDate: displayDeath.trim(),
+      ageAtDeath: !isNaN(ageNum) && ageNum > 0 ? ageNum : undefined,
+      relationship: (rel || '').trim(),
+      householdHeadName: household.familyHead || '',
+      burialLocation: household.tombNumber || '',
+      notes: (notes || '').trim(),
+      isExpanded: true,
     });
   }
 
-  // Duplicate detection
+  return items;
+}
+
+/**
+ * Delimited parser with smart column assignment (CSV / TSV / Semicolon / Space fallback)
+ */
+function parseDelimitedOrSmartLines(lines: string[], household: Household): MobileExtractedKakochoItem[] {
+  const items: MobileExtractedKakochoItem[] = [];
+
+  // Determine delimiter
+  let delimiter = ',';
+  const sample = lines.slice(0, 5).join('\n');
+  if (sample.includes('\t')) delimiter = '\t';
+  else if (sample.includes(';') && !sample.includes(',')) delimiter = ';';
+  else if (sample.includes('|') && !sample.includes(',')) delimiter = '|';
+
+  // Parse lines into token cells
+  const parsedRows: string[][] = lines.map(line => {
+    // Strip bullet points like '1. ', '- ', '* ', '● '
+    const cleanLine = line.replace(/^[\s*\-•●\d+.)\]】]+\s*/, '').trim();
+    if (!cleanLine) return [];
+
+    if (delimiter === '\t') {
+      return cleanLine.split('\t').map(c => cleanCell(c));
+    }
+    if (delimiter === ';') {
+      return cleanLine.split(';').map(c => cleanCell(c));
+    }
+    if (delimiter === '|') {
+      return cleanLine.split('|').map(c => cleanCell(c));
+    }
+
+    // CSV regex split (supports quotes)
+    if (cleanLine.includes(',')) {
+      return cleanLine.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => cleanCell(c));
+    }
+
+    // Space or full-width space split
+    return cleanLine.split(/[\s　]+/).map(c => cleanCell(c));
+  }).filter(r => r.length > 0);
+
+  if (parsedRows.length === 0) return [];
+
+  // Check if first row is header
+  const firstRow = parsedRows[0].map(c => c.toLowerCase());
+  const hasHeader = firstRow.some(c => 
+    c.includes('戒名') || c.includes('法名') || c.includes('法号') || 
+    c.includes('俗名') || c.includes('氏名') || c.includes('名前') || 
+    c.includes('命日') || c.includes('没') || c.includes('死亡') || 
+    c.includes('享年') || c.includes('行年') || c.includes('歳') || 
+    c.includes('続柄') || c.includes('関係')
+  );
+
+  let startIdx = 0;
+  const headerMap: { [key: string]: number } = {};
+
+  if (hasHeader) {
+    firstRow.forEach((col, idx) => {
+      if (col.includes('戒名') || col.includes('法名') || col.includes('法号')) headerMap.dharma = idx;
+      else if (col.includes('俗名') || col.includes('氏名') || col.includes('名前')) headerMap.secular = idx;
+      else if (col.includes('ふりがな') || col.includes('フリガナ') || col.includes('よみ')) headerMap.furigana = idx;
+      else if (col.includes('命日') || col.includes('没') || col.includes('死亡')) headerMap.death = idx;
+      else if (col.includes('享年') || col.includes('行年') || col.includes('年齢') || col.includes('歳')) headerMap.age = idx;
+      else if (col.includes('続柄') || col.includes('関係')) headerMap.rel = idx;
+      else if (col.includes('施主') || col.includes('世帯主')) headerMap.head = idx;
+      else if (col.includes('墓地') || col.includes('納骨') || col.includes('区画')) headerMap.burial = idx;
+      else if (col.includes('備考') || col.includes('特記') || col.includes('メモ')) headerMap.notes = idx;
+    });
+    startIdx = 1;
+  }
+
+  for (let i = startIdx; i < parsedRows.length; i++) {
+    const row = parsedRows[i];
+    if (row.length === 0 || row.every(c => !c)) continue;
+
+    let dharma = '';
+    let secular = '';
+    let furigana = '';
+    let deathDate = '';
+    let ageStr = '';
+    let rel = '';
+    let head = household.familyHead || '';
+    let burial = household.tombNumber || '';
+    let notes = '';
+
+    if (hasHeader && Object.keys(headerMap).length > 0) {
+      if (headerMap.dharma !== undefined) dharma = row[headerMap.dharma] || '';
+      if (headerMap.secular !== undefined) secular = row[headerMap.secular] || '';
+      if (headerMap.furigana !== undefined) furigana = row[headerMap.furigana] || '';
+      if (headerMap.death !== undefined) deathDate = row[headerMap.death] || '';
+      if (headerMap.age !== undefined) ageStr = row[headerMap.age] || '';
+      if (headerMap.rel !== undefined) rel = row[headerMap.rel] || '';
+      if (headerMap.head !== undefined) head = row[headerMap.head] || head;
+      if (headerMap.burial !== undefined) burial = row[headerMap.burial] || burial;
+      if (headerMap.notes !== undefined) notes = row[headerMap.notes] || '';
+    } else {
+      // Smart Auto-Mapping without Header
+      // Standard 7-column order: 0:戒名, 1:俗名, 2:ふりがな, 3:没年月日, 4:享年, 5:続柄, 6:備考
+      const mapped = smartAutoAssignColumns(row);
+      dharma = mapped.dharma;
+      secular = mapped.secular;
+      furigana = mapped.furigana;
+      deathDate = mapped.deathDate;
+      ageStr = mapped.ageStr;
+      rel = mapped.rel;
+      notes = mapped.notes;
+    }
+
+    if (!dharma && !secular) continue;
+
+    const ageNum = parseInt(ageStr.replace(/[^0-9]/g, ''), 10);
+    const normalizedDeath = normalizeDateInput(deathDate, { mode: 'pastRecord' });
+    const displayDeath = normalizedDeath ? formatJapaneseEraDate(normalizedDeath, false) : deathDate;
+
+    items.push({
+      id: `mob-kakocho-csv-${Date.now()}-${i}`,
+      selected: true,
+      dharmaName: dharma.trim(),
+      secularName: secular.trim(),
+      furigana: furigana.trim(),
+      deathDate: (displayDeath || '').trim(),
+      ageAtDeath: !isNaN(ageNum) && ageNum > 0 && ageNum < 130 ? ageNum : undefined,
+      relationship: rel.trim(),
+      householdHeadName: head.trim(),
+      burialLocation: burial.trim(),
+      notes: notes.trim(),
+      isExpanded: true,
+    });
+  }
+
+  return items;
+}
+
+function cleanCell(cell: string): string {
+  if (!cell) return '';
+  const trimmed = cell.trim().replace(/^["']|["']$/g, '').trim();
+  if (trimmed === 'なし' || trimmed === '無' || trimmed === '-' || trimmed === '―' || trimmed === 'null' || trimmed === 'undefined') {
+    return '';
+  }
+  return trimmed;
+}
+
+/**
+ * Intelligently classifies unheadered cells into the correct boxes
+ */
+function smartAutoAssignColumns(cells: string[]) {
+  const res = {
+    dharma: '',
+    secular: '',
+    furigana: '',
+    deathDate: '',
+    ageStr: '',
+    rel: '',
+    notes: '',
+  };
+
+  const unused: string[] = [];
+
+  for (let idx = 0; idx < cells.length; idx++) {
+    const cell = cells[idx];
+    if (!cell) continue;
+
+    // Check if Date (e.g. 令和4年8月10日, 2022-08-10, H22.3.3)
+    if (!res.deathDate && /(?:令和|平成|昭和|大正|明治|R|H|S|T|M|\d{4})[年/\-.\s]?[0-9０-９]+[月/\-.\s]?[0-9０-９]+日?|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(cell)) {
+      res.deathDate = cell.replace(/[寂没]$/, '').trim();
+      continue;
+    }
+
+    // Check if Age (e.g. 88歳, 享年88, 88)
+    if (!res.ageStr && /(?:享年|行年|満)?\s*([0-9０-９]{1,3})\s*歳?/.test(cell)) {
+      const match = cell.match(/(?:享年|行年|満)?\s*([0-9０-９]{1,3})\s*歳?/);
+      if (match) {
+        const num = parseInt(match[1].replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xfee0)), 10);
+        if (num > 0 && num < 130) {
+          res.ageStr = String(num);
+          continue;
+        }
+      }
+    }
+
+    // Check if Relationship (e.g. 父, 母, 祖父, 祖母, 夫, 妻, 長男, 叔父 etc.)
+    if (!res.rel && /^(父|母|祖父|祖母|夫|妻|長男|長女|二男|次男|二女|次女|三男|三女|子供|兄|弟|姉|妹|本人|伯父|叔父|伯母|叔母|養父|養母|義父|義母)$/.test(cell.replace(/[（()）]/g, '').trim())) {
+      res.rel = cell.replace(/[（()）]/g, '').trim();
+      continue;
+    }
+
+    // Check if Furigana (All Hiragana or Katakana)
+    if (!res.furigana && /^[ぁ-んー\s]+$/.test(cell) && cell.length >= 2) {
+      res.furigana = cell;
+      continue;
+    }
+
+    // Unassigned tokens
+    unused.push(cell);
+  }
+
+  // Assign remaining tokens to Dharma name, Secular name, and Notes
+  if (unused.length === 1) {
+    // If it has typical dharma suffixes or prefixes, assign to dharmaName
+    if (/院|居士|大姉|信士|信女|釋|釈|童子|童女|大居士|清信|水子/.test(unused[0])) {
+      res.dharma = unused[0];
+    } else {
+      res.secular = unused[0];
+    }
+  } else if (unused.length >= 2) {
+    // Standard 1st is dharma, 2nd is secular
+    if (/院|居士|大姉|信士|信女|釋|釈|童子|童女|水子/.test(unused[0])) {
+      res.dharma = unused[0];
+      res.secular = unused[1];
+      if (unused.length > 2) {
+        res.notes = unused.slice(2).join(' ');
+      }
+    } else if (/院|居士|大姉|信士|信女|釋|釈|童子|童女|水子/.test(unused[1])) {
+      res.secular = unused[0];
+      res.dharma = unused[1];
+      if (unused.length > 2) {
+        res.notes = unused.slice(2).join(' ');
+      }
+    } else {
+      res.dharma = unused[0];
+      res.secular = unused[1];
+      if (unused.length > 2) {
+        res.notes = unused.slice(2).join(' ');
+      }
+    }
+  }
+
+  return res;
+}
+
+function attachDuplicateInfo(items: MobileExtractedKakochoItem[], existingRecords: PastRecord[]): MobileExtractedKakochoItem[] {
   return items.map((item) => {
     let isDup = false;
     let dupReason = '';
@@ -286,6 +574,7 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
   onImportPastRecords,
 }) => {
   const [currentStep, setCurrentStep] = useState<'input' | 'review' | 'complete'>('input');
+  const [promptFormat, setPromptFormat] = useState<KakochoPromptFormatType>('csv');
   const [pastedText, setPastedText] = useState<string>('');
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [showPromptHelp, setShowPromptHelp] = useState<boolean>(false);
@@ -319,31 +608,67 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
   }, [isOpen]);
 
   // Generate Optimal AI Prompt for External AI Camera / Image recognition
-  const generateAiPromptText = () => {
-    return `【寺院過去帳・墓碑OCR文字起こし依頼】
-添付の写真（墓碑・墓誌・霊標・位牌・過去帳原本・メモ等）から、記載されている精霊（故人）の情報を読み取り、以下の【出力フォーマット】に従って1霊につき1行のテキストで出力してください。
+  const generateAiPromptText = (format: KakochoPromptFormatType = promptFormat) => {
+    if (format === 'label') {
+      return `【寺院過去帳・墓碑OCR文字起こし依頼（項目ラベル形式）】
+添付の写真（墓碑・墓誌・霊標・位牌・過去帳等）から、記載されている精霊（故人）の情報を漏れなく読み取り、以下の【出力フォーマット】に従って1霊ずつ出力してください。
 
 【対象世帯情報】
-・施主/世帯主名: ${householdName} 様
+・施主/世帯主: ${householdName} 様
 ・墓地番号: ${householdTomb || '未設定'}
 
 【出力フォーマット】
-戒名（法名） [タブまたはスペース] 俗名 [タブまたはスペース] 没年月日 [タブまたはスペース] 享年 [タブまたはスペース] 続柄 [タブまたはスペース] 備考
+【戒名】〇〇院釈光徳居士
+【俗名】佐藤 徳蔵
+【ふりがな】さとう とくぞう
+【没年月日】令和4年8月10日
+【享年】88歳
+【続柄】父
+【備考】墓誌右端
+---
 
-【出力例】
-〇〇院釈光徳居士　佐藤 徳蔵　令和4年8月10日　88歳　父　
-清心妙法大姉　佐藤 静江　平成22年3月3日　82歳　母　
+【厳守ルール】
+1. 写真に複数霊ある場合は「---」で区切って全員分を出力してください。
+2. 記載がない項目は「なし」または省略してください。
+3. 享年は数字または「〇〇歳」、没年月日は元号または西暦で年月日まで記載してください。
+4. 挨拶文や前置き文は不要です。データのみを出力してください。`;
+    }
 
-【留意点】
-1. 墓碑の旧字体や異体字（釋, 壽, 榮, 萬, 廣, 靈, 圓等）も忠実に認識してください。
-2. 複数名の精霊が刻まれている場合は、全ての精霊を漏れなく1行ずつ分けて出力してください。
-3. 出力の最後に以下のメッセージをそのまま添えてください：
-「上記のテキストをコピーして、寺院管理アプリの『メモ帳・テキスト貼り付け』欄にペーストしてください。」`;
+    // Default: High-precision CSV format
+    return `【寺院過去帳・墓碑OCR文字起こし依頼（CSV形式）】
+添付の写真（墓碑・墓誌・霊標・位牌・過去帳原本・メモ等）から精霊（故人）の情報を読み取り、以下の【厳守ルール】に従ってカンマ区切り（CSV形式）で出力してください。
+
+【対象世帯情報】
+・施主/世帯主: ${householdName} 様
+・墓地番号: ${householdTomb || '未設定'}
+
+【出力列の定義（全7項目・この順番を厳守）】
+1. 戒名（法名・法号）
+2. 俗名（氏名・本名）
+3. ふりがな（ひらがな）
+4. 没年月日（例: 令和4年8月10日 または 2022-08-10）
+5. 享年（数字のみ または 88歳）
+6. 続柄（例: 父、母、祖父、祖母、夫、妻、長男など）
+7. 備考（特記事項や墓誌の位置など）
+
+【出力フォーマット】
+戒名,俗名,ふりがな,没年月日,享年,続柄,備考
+〇〇院釈光徳居士,佐藤 徳蔵,さとう とくぞう,令和4年8月10日,88,父,
+清心妙法大姉,佐藤 静江,さとう しずえ,平成22年3月3日,82,母,
+智照童子,佐藤 一郎,さとう いちろう,昭和45年5月12日,3,長男,
+
+【厳格な指示】
+1. 1行目に必ず上記のヘッダー「戒名,俗名,ふりがな,没年月日,享年,続柄,備考」を出力してください。
+2. 1霊につき1行で出力してください。
+3. 記載がない項目（例: ふりがなや備考がない場合）は空欄にし、カンマの数を減らさないでください（例: 〇〇院釈光徳居士,佐藤 徳蔵,,令和4年8月10日,88,父,）。
+4. 戒名や俗名の間の空白（スペース）は自由ですが、項目を区切るカンマ「,」以外の余分なカンマは含めないでください。
+5. 前置き・挨拶文（「はい」「文字起こししました」等）や後書きは一切不要です。純粋なCSVテキストのみを出力してください。`;
   };
 
   // Copy AI Prompt
-  const handleCopyAiPrompt = async () => {
-    const prompt = generateAiPromptText();
+  const handleCopyAiPrompt = async (formatToCopy?: KakochoPromptFormatType) => {
+    const fmt = formatToCopy || promptFormat;
+    const prompt = generateAiPromptText(fmt);
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(prompt);
@@ -387,9 +712,10 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
   // Insert Sample Text
   const handleInsertSample = () => {
     setPastedText(
-`〇〇院釈光徳居士\t佐藤 徳蔵\t令和4年8月10日\t88\t父\t
-清心妙法大姉\t佐藤 静江\t平成22年3月3日\t82\t母\t
-智照童子\t佐藤 一郎\t昭和45年5月12日\t3\t長男\t`
+`戒名,俗名,ふりがな,没年月日,享年,続柄,備考
+〇〇院釈光徳居士,佐藤 徳蔵,さとう とくぞう,令和4年8月10日,88,父,墓誌正面
+清心妙法大姉,佐藤 静江,さとう しずえ,平成22年3月3日,82,母,
+智照童子,佐藤 一郎,さとう いちろう,昭和45年5月12日,3,長男,`
     );
   };
 
@@ -633,7 +959,7 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-1.5 font-serif font-black text-xs text-[#8C2D19]">
                   <Sparkles className="w-4 h-4 text-[#D4AF37]" />
-                  <span>スマホカメラで墓碑・過去帳を撮って取り込む場合</span>
+                  <span>AIアプリ（ChatGPT/Gemini等）で撮影して取込</span>
                 </div>
                 <button
                   type="button"
@@ -646,13 +972,61 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
               </div>
 
               <p className="text-[11px] text-[#555555] leading-relaxed">
-                スマホ内のAIアプリ（ChatGPT, Gemini等）で墓碑や過去帳の写真を撮って送るだけで、このアプリに貼り付けられる形式のテキストを生成できます。
+                スマホのカメラで墓碑や過去帳を撮影し、コピーしたプロンプトと一緒にAIへ送信すると、各項目（箱）にぴったり収まるテキストが自動生成されます。
               </p>
+
+              {/* Format selection tabs */}
+              <div className="space-y-1">
+                <div className="text-[10px] font-bold text-gray-700 flex items-center justify-between">
+                  <span>プロンプト形式を選択:</span>
+                  <span className="text-[#8C2D19] font-normal text-[9.5px]">※高精度な「CSV形式」がおすすめ</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 p-0.5 bg-[#EAE5D9] rounded-xs">
+                  <button
+                    type="button"
+                    onClick={() => setPromptFormat('csv')}
+                    className={`py-1.5 px-2 text-[10.5px] font-bold rounded-2xs transition-all cursor-pointer text-center ${
+                      promptFormat === 'csv'
+                        ? 'bg-[#1A1A1A] text-[#D4AF37] shadow-xs'
+                        : 'text-gray-700 hover:bg-white/60'
+                    }`}
+                  >
+                    CSV形式（カンマ区切り・推奨）
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPromptFormat('label')}
+                    className={`py-1.5 px-2 text-[10.5px] font-bold rounded-2xs transition-all cursor-pointer text-center ${
+                      promptFormat === 'label'
+                        ? 'bg-[#1A1A1A] text-[#D4AF37] shadow-xs'
+                        : 'text-gray-700 hover:bg-white/60'
+                    }`}
+                  >
+                    項目ラベル形式（【戒名】等）
+                  </button>
+                </div>
+              </div>
+
+              {/* Column Box Breakdown Guide */}
+              <div className="bg-white/80 border border-[#E0DACB] p-2 rounded-xs space-y-1">
+                <div className="text-[10px] font-bold text-[#8C2D19] flex items-center gap-1">
+                  <span>📥 自動格納される7つの箱（フィールド順）:</span>
+                </div>
+                <div className="flex flex-wrap gap-1 text-[9.5px]">
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">① 戒名（法名）</span>
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">② 俗名</span>
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">③ ふりがな</span>
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">④ 没年月日</span>
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">⑤ 享年</span>
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">⑥ 続柄</span>
+                  <span className="bg-[#FAF5EB] border border-[#D4AF37]/50 text-gray-800 px-1.5 py-0.5 rounded-2xs">⑦ 備考</span>
+                </div>
+              </div>
 
               {/* Prompt Copy Action Button */}
               <button
                 type="button"
-                onClick={handleCopyAiPrompt}
+                onClick={() => handleCopyAiPrompt()}
                 className={`w-full py-2.5 px-3 rounded-xs font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-xs ${
                   copiedPrompt
                     ? 'bg-emerald-700 text-white'
@@ -662,12 +1036,12 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
                 {copiedPrompt ? (
                   <>
                     <Check className="w-4 h-4 text-white" />
-                    <span>プロンプトをコピーしました！</span>
+                    <span>{promptFormat === 'csv' ? 'CSV用' : 'ラベル用'}プロンプトをコピーしました！</span>
                   </>
                 ) : (
                   <>
                     <Copy className="w-4 h-4 text-[#D4AF37]" />
-                    <span>AI用撮影・文字起こしプロンプトをコピー</span>
+                    <span>{promptFormat === 'csv' ? 'CSV形式' : 'ラベル形式'}の指示プロンプトをコピー</span>
                   </>
                 )}
               </button>
@@ -682,14 +1056,14 @@ export const MobileKakochoTextImportModal: React.FC<MobileKakochoTextImportModal
                   <ol className="list-decimal pl-4 space-y-0.5 text-[10px] text-emerald-800">
                     <li>スマホのAIアプリ（ChatGPT / Gemini等）を開く</li>
                     <li>墓碑や過去帳の写真を撮影・添付し、このプロンプトを貼り付けて送信</li>
-                    <li>AIが出力したテキストをコピーして、下の枠に貼り付けてください</li>
+                    <li>AIが出力したテキストをコピーして、下の枠に貼り付けてください（自動で各箱へ振り分けられます）</li>
                   </ol>
                 </div>
               )}
 
               {/* Collapsible Help Steps */}
               {showPromptHelp && (
-                <div className="bg-white/80 p-2.5 border border-[#E0DACB] text-[10px] text-[#444444] space-y-1.5 rounded-xs">
+                <div className="bg-white/90 p-2.5 border border-[#E0DACB] text-[10px] text-[#444444] space-y-1.5 rounded-xs">
                   <div className="font-bold text-[#8C2D19]">💡 かんたん4ステップ:</div>
                   <div className="space-y-1">
                     <div><strong>① 上のボタンを押す</strong>: 最適な文字起こし指示文がコピーされます。</div>
