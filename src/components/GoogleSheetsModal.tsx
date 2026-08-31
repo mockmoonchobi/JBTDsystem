@@ -58,7 +58,7 @@ interface GoogleSheetsModalProps {
   onTriggerManualSync: () => void;
   onPullFromSheets?: () => Promise<void>;
   onSyncWithGoogleDrive?: (token: string, explicitSheetId?: string, isCleanImport?: boolean) => Promise<{ success: boolean; count: number }>;
-  onCleanWriteToSheets?: (token: string, explicitSheetId?: string) => Promise<{ success: boolean; count: number }>;
+  onCleanWriteToSheets?: (token: string, explicitSheetId?: string) => Promise<{ success: boolean; count: number; sheetInfo?: { id: string; url: string } }>;
   onDisconnect?: () => void | Promise<void>;
   onExportExcel?: (targetTempleId?: string | 'ALL') => void;
   onImportExcel?: (file: File, targetTempleId?: string | 'ALL') => Promise<{ success: boolean; message: string } | void> | void;
@@ -255,7 +255,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     }
   };
 
-  // Googleシートを初期化して書込 (Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込み)
+  // Googleシートを初期化して書込 (GoogleDrive上の既存ファイルを完全消去し、新規ファイルを作成して端末データを書込)
   const handleExecuteCleanWriteToSheets = async () => {
     setShowCleanWriteModal(false);
     setLoading(true);
@@ -271,26 +271,20 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         setUser(res.user);
       }
 
-      setStatusMessage({ type: 'loading', text: 'Googleシートを初期化して端末データを書き込み中...' });
-      const sheet = await findOrCreateSpreadsheet(token);
-      setSpreadsheetInfo(sheet);
-      saveJsonState('temple_google_sheet_info', sheet);
-
-      // Load permissions
-      loadPermissions(sheet.id);
+      setStatusMessage({ type: 'loading', text: '既存ファイルを消去し、新規スプレッドシートを作成して端末データを書き込み中...' });
 
       if (onCleanWriteToSheets) {
-        const writeRes = await onCleanWriteToSheets(token, sheet.id);
+        const writeRes = await onCleanWriteToSheets(token);
+        if (writeRes?.sheetInfo) {
+          setSpreadsheetInfo(writeRes.sheetInfo);
+          loadPermissions(writeRes.sheetInfo.id);
+        }
         setStatusMessage({
           type: 'success',
-          text: `Googleシートの初期化書き込み完了: 端末データ（${writeRes?.count ?? 0}件）をGoogleシートに書き込みました`,
+          text: `Googleシートの初期化書き込み完了: 既存ファイルを消去し、新たに作成したファイルへ端末データ（${writeRes?.count ?? 0}件）を書き込みました`,
         });
-      } else if (onSyncWithGoogleDrive) {
-        const syncRes = await onSyncWithGoogleDrive(token, sheet.id);
-        setStatusMessage({
-          type: 'success',
-          text: `Googleシートの初期化書き込み完了: 端末データ（${syncRes?.count ?? 0}件）をGoogleシートに書き込みました`,
-        });
+      } else {
+        throw new Error('初期化書き込みハンドラーが見つかりません。');
       }
     } catch (err: any) {
       console.error(err);
@@ -1417,10 +1411,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               <div className="bg-sky-50 border border-sky-200 p-3.5 space-y-2 rounded-xs text-sky-950">
                 <p className="font-bold flex items-center gap-1.5 text-sky-900 text-xs">
                   <AlertTriangle className="w-4 h-4 text-sky-600 shrink-0" />
-                  <span>Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込みます。</span>
+                  <span>Googleドライブ上の既存ファイルを消去し、新たにファイルを作成して端末データを書き込みます。</span>
                 </p>
                 <p className="text-[11px] leading-relaxed text-[#333333]">
-                  GoogleDrive上のスプレッドシート「寺院管理・檀家過去帳データ」にすでに保存されている全シート・全データを<strong>完全に消去・上書き</strong>し、現在この端末にあるデータ（檀家名簿・過去帳・法事予約・出納帳・マスタ設定等）を新たに全件書き込みます。
+                  Googleドライブ上の既存の「寺院管理・檀家過去帳データ」ファイルを<strong>完全に消去</strong>した上で、新たに「寺院管理・檀家過去帳データ」スプレッドシートを新規作成し、現在この端末にある最新データ（檀家名簿・過去帳・法事予約・出納帳・マスタ設定等）を全件書き込みます。
                 </p>
               </div>
 

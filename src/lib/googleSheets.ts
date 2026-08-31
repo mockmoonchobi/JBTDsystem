@@ -132,11 +132,21 @@ export function handleGoogleApiError(res: Response, errJson: any, defaultMessage
   if (status === 404) {
     const notFoundErr = new Error(`指定されたGoogle スプレッドシートが見つかりませんでした (404)。`);
     (notFoundErr as any).status = 404;
+    (notFoundErr as any).isNotFound = true;
     throw notFoundErr;
   }
   const genericErr = new Error(`${defaultMessage}: ${rawMsg || status}`);
   (genericErr as any).status = status;
   throw genericErr;
+}
+
+export function isNotFoundError(err: any): boolean {
+  return Boolean(
+    err?.status === 404 ||
+    err?.isNotFound === true ||
+    err?.message?.includes('404') ||
+    err?.message?.includes('見つかりませんでした')
+  );
 }
 
 const BASE_REQUIRED_SHEETS = [
@@ -238,14 +248,82 @@ export async function findOrCreateSpreadsheet(
   }
 
   // 2. If not found or forced, create a new spreadsheet with all required sheet tabs
+  return await createNewSpreadsheet(accessToken, SPREADSHEET_NAME);
+}
+
+// Delete a Google Drive file permanently or move to trash
+export async function deleteDriveFile(accessToken: string, fileId: string): Promise<void> {
+  try {
+    const url = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`;
+    const res = await fetchWithRetry(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok && res.status !== 404) {
+      // If direct DELETE is forbidden by permissions, fallback to trashing the file
+      const trashUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?supportsAllDrives=true`;
+      await fetchWithRetry(trashUrl, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ trashed: true }),
+      }).catch((e) => console.warn('Trash file error:', e));
+    }
+  } catch (err) {
+    console.warn(`Failed to delete drive file ${fileId}:`, err);
+  }
+}
+
+// Search and delete all existing spreadsheets with the specified name in Google Drive
+export async function deleteAllExistingSpreadsheetsByName(
+  accessToken: string,
+  fileName: string = SPREADSHEET_NAME,
+  explicitFileId?: string
+): Promise<void> {
+  try {
+    if (explicitFileId) {
+      await deleteDriveFile(accessToken, explicitFileId);
+    }
+    const escapedName = fileName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const driveQuery = `name = '${escapedName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`;
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
+      driveQuery
+    )}&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name)`;
+
+    const response = await fetchWithRetry(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.files && Array.isArray(data.files)) {
+        for (const file of data.files) {
+          if (file.id && file.id !== explicitFileId) {
+            await deleteDriveFile(accessToken, file.id);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Error deleting existing spreadsheets by name:', err);
+  }
+}
+
+// Create a new Google Spreadsheet with all required sheet tabs from scratch
+export async function createNewSpreadsheet(
+  accessToken: string,
+  title: string = SPREADSHEET_NAME
+): Promise<{ id: string; url: string; isExisting: boolean }> {
   const createUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
   const createPayload = {
     properties: { 
-      title: SPREADSHEET_NAME,
+      title,
       locale: 'ja_JP',
       autoRecalc: 'ON_CHANGE'
     },
-    sheets: BASE_REQUIRED_SHEETS.map((title) => ({ properties: { title } })),
+    sheets: BASE_REQUIRED_SHEETS.map((t) => ({ properties: { title: t } })),
   };
 
   const createRes = await fetchWithRetry(createUrl, {
@@ -259,7 +337,7 @@ export async function findOrCreateSpreadsheet(
 
   if (!createRes.ok) {
     const errJson = await createRes.json().catch(() => ({}));
-    throw new Error(errJson?.error?.message || 'Google スプレッドシートの作成に失敗しました。');
+    throw new Error(errJson?.error?.message || 'Google スプレッドシートの新規作成に失敗しました。');
   }
 
   const newSheet = await createRes.json();
@@ -608,6 +686,67 @@ export async function ensureSheetGridCapacities(
     }
   } catch (err) {
     console.warn('Auto grid expansion warning:', err);
+  }
+}
+
+// Completely clears all cell data from all sheets in the Google Spreadsheet.
+export async function clearAllSpreadsheetData(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<void> {
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
+    const metaRes = await fetchWithRetry(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!metaRes.ok) {
+      const errJson = await metaRes.json().catch(() => ({}));
+      handleGoogleApiError(metaRes, errJson, 'スプレッドシートのメタデータ取得に失敗しました');
+    }
+
+    const metaData = await metaRes.json();
+    const existingSheets: { sheetId: number; title: string }[] = (metaData.sheets || []).map((s: any) => ({
+      sheetId: s.properties?.sheetId,
+      title: s.properties?.title || '',
+    }));
+
+    if (existingSheets.length === 0) return;
+
+    // Create clear ranges for all existing sheets
+    const clearRanges = existingSheets
+      .filter((s) => Boolean(s.title))
+      .map((s) => `'${s.title.replace(/'/g, "''")}'`);
+
+    if (clearRanges.length === 0) return;
+
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`;
+    const clearRes = await fetchWithRetry(clearUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ranges: clearRanges }),
+    });
+
+    if (!clearRes.ok) {
+      console.warn('batchClear returned non-ok, falling back to per-sheet clear');
+      for (const s of existingSheets) {
+        if (!s.title) continue;
+        const singleClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(s.title)}':clear`;
+        await fetchWithRetry(singleClearUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }).catch((e) => console.warn(`Failed to clear sheet ${s.title}:`, e));
+      }
+    }
+  } catch (err) {
+    console.error('Error in clearAllSpreadsheetData:', err);
+    throw err;
   }
 }
 
@@ -1435,27 +1574,58 @@ export async function exportToSheets(
   const { headers: disasterHeaders, rows: disasterRows } = convertDisasterEventsToRows(disasterEvents);
   addChunkedUpdates('戦没・災害物故者命日設定', [disasterHeaders, ...disasterRows]);
 
-  // Also include legacy sheet names in clearRanges to avoid orphan duplicate data when doing full export
-  if (!targetTablesFilter) {
-    clearRanges.push("'法事・予約一覧'");
-    clearRanges.push("'寺院タスク・ToDo'");
-    clearRanges.push("'マスタ設定'");
-  }
-
   // 1. Ensure sheet grid capacities (rows & columns) are dynamically expanded so no max bound error occurs
   await ensureSheetGridCapacities(accessToken, spreadsheetId, sheetCapacities);
 
-  // 2. Clear ranges completely (full sheets)
+  // 2. Clear ranges completely using actual existing sheet titles from spreadsheet metadata
   try {
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`;
-    await fetchWithRetry(clearUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ ranges: clearRanges }),
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
+    const metaRes = await fetchWithRetry(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
+    if (metaRes.ok) {
+      const metaData = await metaRes.json();
+      const existingSheetTitles: string[] = (metaData.sheets || []).map((s: any) => s.properties?.title || '').filter(Boolean);
+
+      // Determine ranges to clear based on whether it's a specific table export or a full export
+      let rangesToClear: string[] = [];
+      if (!targetTablesFilter) {
+        // Full export: clear all existing sheets in the spreadsheet
+        rangesToClear = existingSheetTitles.map((title) => `'${title.replace(/'/g, "''")}'`);
+      } else {
+        // Specific table export: only clear existing sheets that match the filter
+        rangesToClear = existingSheetTitles
+          .filter((title) => shouldIncludeSheet(title))
+          .map((title) => `'${title.replace(/'/g, "''")}'`);
+      }
+
+      if (rangesToClear.length > 0) {
+        const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`;
+        const clearRes = await fetchWithRetry(clearUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ranges: rangesToClear }),
+        });
+
+        if (!clearRes.ok) {
+          console.warn('batchClear returned non-ok, falling back to per-sheet clear in exportToSheets');
+          for (const title of existingSheetTitles) {
+            if (targetTablesFilter && !shouldIncludeSheet(title)) continue;
+            const singleClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(title)}':clear`;
+            await fetchWithRetry(singleClearUrl, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+            }).catch((e) => console.warn(`Failed to clear sheet ${title}:`, e));
+          }
+        }
+      }
+    }
   } catch (clearErr) {
     console.warn('Batch clear warning:', clearErr);
   }
