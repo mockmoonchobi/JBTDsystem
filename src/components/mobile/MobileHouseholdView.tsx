@@ -22,7 +22,7 @@ import { getGoogleMapsSearchUrl } from '../../utils/calendarUtils';
 import { sortHouseholdsByGojuon, getKanaRow, getKanaColumn, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba } from '../../utils/memorialCalculator';
 import { MobileHouseholdModal } from './MobileHouseholdModal';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
-import { SingleHouseholdKakochoImportModal } from '../SingleHouseholdKakochoImportModal';
+import { MobileKakochoTextImportModal } from './MobileKakochoTextImportModal';
 
 interface MobileHouseholdViewProps {
   households: Household[];
@@ -583,11 +583,11 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                             type="button"
                             onClick={() => setAiImportHousehold(h)}
                             className="text-[10px] text-[#8C2D19] hover:bg-[#F0ECE1] font-bold bg-[#FAF7F0] px-2 py-0.5 border border-[#D4AF37] rounded-xs cursor-pointer flex items-center gap-1 shadow-2xs"
-                            title="Word・Excel・CSV・メモ帳テキストから一括読み込み"
+                            title="メモ帳テキスト貼り付け・AIカメラ文字起こしプロンプト連携から一括取込"
                           >
                             <FileText className="w-3 h-3 text-[#8C2D19]" />
                             <Sparkles className="w-2.5 h-2.5 text-[#D4AF37]" />
-                            <span>Word/Excel取込</span>
+                            <span>テキスト取込</span>
                           </button>
                           <button
                             type="button"
@@ -611,7 +611,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                             >
                               <FileText className="w-3.5 h-3.5 text-[#8C2D19]" />
                               <Sparkles className="w-3 h-3 text-[#D4AF37]" />
-                              <span>Word・Excel・テキストから取り込み</span>
+                              <span>メモ帳・テキストから取り込み</span>
                             </button>
                             <button
                               type="button"
@@ -698,8 +698,8 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         onDelete={onDeleteHousehold}
       />
 
-      {/* Single Household Past Record AI Import Wizard (Mobile) */}
-      <SingleHouseholdKakochoImportModal
+      {/* Single Household Past Record Text/AI Import Wizard (Mobile Specific) */}
+      <MobileKakochoTextImportModal
         isOpen={!!aiImportHousehold}
         onClose={() => setAiImportHousehold(null)}
         targetHousehold={aiImportHousehold}
