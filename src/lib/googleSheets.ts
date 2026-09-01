@@ -894,6 +894,7 @@ export async function exportToSheets(
     'ホームページ',
     '銀行振込口座',
     'お盆時期',
+    '会計処理方法',
     '会計年度開始月',
     '会計年度開始日',
     '会計年度終了月',
@@ -931,6 +932,7 @@ export async function exportToSheets(
     t.website || '',
     t.bankInfo || '',
     t.bonSeason || '8月盆',
+    t.accountingMode === 'combined' ? '全寺院合算（本寺扱い）' : '各寺院個別',
     t.fiscalYearStartMonth ?? 4,
     t.fiscalYearStartDay ?? 1,
     t.fiscalYearEndMonth ?? 3,
@@ -969,6 +971,7 @@ export async function exportToSheets(
     ['ホームページ', baseT.website || ''],
     ['銀行振込口座', baseT.bankInfo || ''],
     ['お盆時期', baseT.bonSeason || '8月盆'],
+    ['会計処理方法', baseT.accountingMode === 'combined' ? '全寺院合算（本寺扱い）' : '各寺院個別'],
     ['会計年度開始月', String(baseT.fiscalYearStartMonth ?? 4)],
     ['会計年度開始日', String(baseT.fiscalYearStartDay ?? 1)],
     ['会計年度終了月', String(baseT.fiscalYearEndMonth ?? 3)],
@@ -1728,8 +1731,8 @@ export async function importFromSheets(
     defaultTempleId?: string;
   }
 ): Promise<SheetsImportResult> {
-  // 1. Fetch spreadsheet metadata to get dynamic list of all existing sheet tab titles
-  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
+  // 1. Fetch spreadsheet metadata including gridProperties (rowCount, columnCount) to safely paginate large sheets
+  const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title,gridProperties)`;
   const metaRes = await fetchWithRetry(metaUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -1740,79 +1743,124 @@ export async function importFromSheets(
   }
 
   const metaData = await metaRes.json();
-  const allSheetNames: string[] = (metaData.sheets || []).map((s: any) => s.properties?.title || '').filter(Boolean);
+  const rawSheets: any[] = metaData.sheets || [];
+  const allSheetNames: string[] = rawSheets.map((s: any) => s.properties?.title || '').filter(Boolean);
 
   if (allSheetNames.length === 0) {
     throw new Error('スプレッドシート内にシートが見つかりませんでした。');
   }
 
-  // 2. Fetch all ranges in batch with full sheets without row or column restrictions (retrieves all 50,000+ rows)
-  // Chunk sheet requests in batches of 4 with fallback to individual sheet fetch to support large multi-thousand-row spreadsheets
-  const valueRanges: any[] = [];
-  const SHEET_BATCH_SIZE = 4;
+  // 2. Fetch all sheet data safely:
+  // For sheets with large row counts (e.g. tens of thousands of rows for Accounting, PastRecords, Todos, Households),
+  // chunk by row ranges (e.g. 2,000 rows per request) to prevent Google Sheets API 10MB payload / timeout limits.
+  const sheetDataMap = new Map<string, { headers: string[]; rows: string[][] }>();
+  const CHUNK_ROW_SIZE = 2000;
 
-  for (let i = 0; i < allSheetNames.length; i += SHEET_BATCH_SIZE) {
-    const batchNames = allSheetNames.slice(i, i + SHEET_BATCH_SIZE);
-    const rangesQuery = batchNames
-      .map((name) => `ranges=${encodeURIComponent(`'${name.replace(/'/g, "''")}'`)}`)
-      .join('&');
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${rangesQuery}&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+  for (const sheetObj of rawSheets) {
+    const title = sheetObj.properties?.title;
+    if (!title) continue;
 
-    try {
-      const res = await fetchWithRetry(getUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+    const rowCount = sheetObj.properties?.gridProperties?.rowCount || 1000;
+    const escapedTitle = title.replace(/'/g, "''");
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.valueRanges) {
-          valueRanges.push(...data.valueRanges);
-          continue;
-        }
-      }
-    } catch (batchErr) {
-      console.warn('BatchGet chunk error, falling back to individual sheet fetch:', batchErr);
-    }
-
-    // Fallback: fetch each sheet individually if batchGet encounters payload limits
-    for (const singleName of batchNames) {
+    // If sheet has 2,000 rows or fewer, fetch whole sheet in one request
+    if (rowCount <= CHUNK_ROW_SIZE) {
       try {
-        const singleUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${singleName.replace(/'/g, "''")}'`)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+        const singleUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${escapedTitle}'`)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
         const singleRes = await fetchWithRetry(singleUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (singleRes.ok) {
-          const singleData = await singleRes.json();
-          valueRanges.push({
-            range: singleData.range || singleName,
-            values: singleData.values || [],
-          });
+          const data = await singleRes.json();
+          const values: string[][] = data.values || [];
+          if (values.length > 0) {
+            const headers = (values[0] || []).map((h) => String(h || '').trim());
+            const rows = values.slice(1);
+            sheetDataMap.set(title, { headers, rows });
+          } else {
+            sheetDataMap.set(title, { headers: [], rows: [] });
+          }
         }
-      } catch (singleErr) {
-        console.warn(`Failed to fetch individual sheet "${singleName}":`, singleErr);
+      } catch (err) {
+        console.warn(`Failed to fetch sheet "${title}":`, err);
+      }
+      continue;
+    }
+
+    // Large sheet with > 2,000 rows: fetch in 2,000-row chunks until empty or rowCount reached
+    let allSheetHeaders: string[] = [];
+    const allSheetRows: string[][] = [];
+    let startRow = 1;
+    let keepFetching = true;
+
+    while (keepFetching && startRow <= rowCount + 1000) {
+      const endRow = startRow + CHUNK_ROW_SIZE - 1;
+      const rangeStr = `'${escapedTitle}'!A${startRow}:ZZ${endRow}`;
+      const chunkUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(rangeStr)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+
+      try {
+        const chunkRes = await fetchWithRetry(chunkUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+
+        if (chunkRes.ok) {
+          const chunkData = await chunkRes.json();
+          const chunkValues: string[][] = chunkData.values || [];
+
+          if (chunkValues.length === 0) {
+            // No more data in subsequent chunks
+            keepFetching = false;
+            break;
+          }
+
+          if (startRow === 1) {
+            // First chunk contains headers
+            allSheetHeaders = (chunkValues[0] || []).map((h) => String(h || '').trim());
+            const dataRows = chunkValues.slice(1);
+            if (dataRows.length > 0) {
+              allSheetRows.push(...dataRows);
+            }
+            // If fewer rows returned than requested range, reached end of data
+            if (chunkValues.length < CHUNK_ROW_SIZE) {
+              keepFetching = false;
+            }
+          } else {
+            // Subsequent chunks contain only data rows
+            allSheetRows.push(...chunkValues);
+            if (chunkValues.length < CHUNK_ROW_SIZE) {
+              keepFetching = false;
+            }
+          }
+
+          startRow += CHUNK_ROW_SIZE;
+        } else {
+          console.warn(`Failed to fetch chunk ${rangeStr} for sheet "${title}" (HTTP ${chunkRes.status})`);
+          keepFetching = false;
+        }
+      } catch (chunkErr) {
+        console.warn(`Exception fetching chunk ${rangeStr} for sheet "${title}":`, chunkErr);
+        keepFetching = false;
       }
     }
+
+    sheetDataMap.set(title, { headers: allSheetHeaders, rows: allSheetRows });
   }
 
   const getSheetDataByName = (sheetName?: string): { headers: string[]; rows: string[][] } => {
     if (!sheetName) return { headers: [], rows: [] };
-    const found = valueRanges.find((r: any) => {
-      if (!r.range) return false;
-      const cleanRange = decodeURIComponent(r.range);
-      const extractedTitle = cleanRange.replace(/!.*$/, '').replace(/^'/, '').replace(/'$/, '');
-      return (
-        extractedTitle === sheetName ||
-        cleanRange === `'${sheetName}'` ||
-        cleanRange === sheetName ||
-        cleanRange.startsWith(`${sheetName}!`) ||
-        cleanRange.startsWith(`'${sheetName}'!`)
-      );
-    });
-    const values: string[][] = found?.values || [];
-    if (values.length === 0) return { headers: [], rows: [] };
-    const headers = (values[0] || []).map((h) => String(h || '').trim());
-    const rows = values.slice(1);
-    return { headers, rows };
+    if (sheetDataMap.has(sheetName)) {
+      return sheetDataMap.get(sheetName)!;
+    }
+    for (const [key, val] of sheetDataMap.entries()) {
+      if (
+        key === sheetName ||
+        key.toLowerCase() === sheetName.toLowerCase() ||
+        key.replace(/[\s_（）()]/g, '') === sheetName.replace(/[\s_（）()]/g, '')
+      ) {
+        return val;
+      }
+    }
+    return { headers: [], rows: [] };
   };
 
   const findSheet = (aliases: string[]): string | undefined => {

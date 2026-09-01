@@ -112,6 +112,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
 
   const [receiptModalTx, setReceiptModalTx] = useState<Transaction | null>(null);
   const [receiptPayerName, setReceiptPayerName] = useState<string>('');
+  const [receiptHonorific, setReceiptHonorific] = useState<string>('様');
   const [receiptProviso, setReceiptProviso] = useState<string>('');
 
   // Calculate dynamic prior carryover for selected fiscal year from all previous transactions
@@ -119,6 +120,41 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     if (!selectedFYNumber) return null;
     return calculatePriorCarryoverBalance(cleanTransactions, selectedFYNumber, templeInfo);
   }, [cleanTransactions, selectedFYNumber, templeInfo]);
+
+  // 世帯IDまたは取引情報から施主名（敬称なし）を取得
+  const getPayerDisplayName = (tx: Transaction): string => {
+    let name = '';
+    if (tx.householdId) {
+      const matched = households.find((h) => h.id === tx.householdId);
+      if (matched && matched.familyHead) {
+        name = matched.familyHead;
+      }
+    }
+    if (!name && tx.householdHeadName) {
+      name = tx.householdHeadName;
+    }
+    // 「様」「殿」「御中」等を除去
+    const clean = name.replace(/\s*(様|殿|御中)$/, '').trim();
+    if (isAutoCarryoverTransaction(tx) || clean.includes('繰越')) {
+      return '';
+    }
+    return clean;
+  };
+
+  // 表示用の摘要文字列（施主と紐づけられている場合は「施主　〇〇」を前置）
+  const getDisplayNotes = (tx: Transaction): string => {
+    const payer = getPayerDisplayName(tx);
+    const rawNotes = (tx.notes || '').trim();
+    const cleanNote = payer && rawNotes.startsWith(payer) ? rawNotes.slice(payer.length).trim() : rawNotes;
+
+    if (payer) {
+      if (cleanNote) {
+        return `施主　${payer} ${cleanNote}`;
+      }
+      return `施主　${payer}`;
+    }
+    return rawNotes || '—';
+  };
 
   const handleOpenReceiptModal = (tx: Transaction) => {
     setReceiptModalTx(tx);
@@ -134,10 +170,27 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     if (!payer) {
       payer = tx.notes || tx.householdHeadName || '檀信徒';
     }
-    setReceiptPayerName(payer);
 
-    // 但し書きの初期値：摘要を貼り付け（空の場合は科目名を基にしたデフォルト）
-    const proviso = tx.notes ? tx.notes : `${tx.category} 御納入分として`;
+    let honorific = '様';
+    if (payer.endsWith('御中')) {
+      honorific = '御中';
+      payer = payer.replace(/\s*御中$/, '');
+    } else if (payer.endsWith('殿')) {
+      honorific = '殿';
+      payer = payer.replace(/\s*殿$/, '');
+    } else if (payer.endsWith('様')) {
+      honorific = '様';
+      payer = payer.replace(/\s*様$/, '');
+    }
+
+    setReceiptPayerName(payer.trim());
+    setReceiptHonorific(honorific);
+
+    // 但し書きの初期値：摘要を貼り付け（空の場合は科目名を基にしたデフォルト）＋末尾に「として」
+    let proviso = tx.notes ? tx.notes.trim() : `${tx.category} 御納入分`;
+    if (proviso && !proviso.endsWith('として')) {
+      proviso = `${proviso}として`;
+    }
     setReceiptProviso(proviso);
   };
 
@@ -248,8 +301,12 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     const searchLower = (searchTerm || '').trim().toLowerCase();
     return cleanTransactions.filter((t) => {
       if (!t) return false;
+      const displayNotes = getDisplayNotes(t).toLowerCase();
+      const payerName = getPayerDisplayName(t).toLowerCase();
       const matchesSearch =
         !searchLower ||
+        displayNotes.includes(searchLower) ||
+        payerName.includes(searchLower) ||
         (t.householdHeadName || '').toLowerCase().includes(searchLower) ||
         (t.receiptNumber || '').toLowerCase().includes(searchLower) ||
         (t.notes || '').toLowerCase().includes(searchLower) ||
@@ -263,7 +320,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
 
       return matchesSearch && matchesType && matchesCategory && matchesFY;
     });
-  }, [cleanTransactions, searchTerm, typeFilter, categoryFilter, fiscalYearFilter, templeInfo]);
+  }, [cleanTransactions, searchTerm, typeFilter, categoryFilter, fiscalYearFilter, templeInfo, households]);
 
   // Sort State (Default: Date Ascending / 年月日での昇順ソート)
   type AccountingSortKey = 'date' | 'category' | 'householdHeadName' | 'income' | 'expense';
@@ -307,8 +364,8 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
           cmp = (a.category || '').localeCompare(b.category || '', 'ja');
         }
       } else if (sortKey === 'householdHeadName') {
-        const textA = a.notes || a.householdHeadName || '';
-        const textB = b.notes || b.householdHeadName || '';
+        const textA = getDisplayNotes(a);
+        const textB = getDisplayNotes(b);
         cmp = textA.localeCompare(textB, 'ja');
       } else if (sortKey === 'income') {
         const valA = a.type === '収入' ? a.amount : 0;
@@ -405,9 +462,20 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                 会計
               </div>
               <h2 className="text-lg sm:text-xl font-bold text-[#F9F7F2] tracking-wider">会計管理システム</h2>
-              <div className="px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-500/60 text-[11px] font-sans font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>総レコード数：{cleanTransactions.length.toLocaleString('ja-JP')}件</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {templeInfo?.accountingMode === 'combined' ? (
+                  <div className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 text-[11px] font-sans font-bold flex items-center gap-1 shadow-xs whitespace-nowrap">
+                    <span>全寺院合算（本寺集約処理）</span>
+                  </div>
+                ) : (
+                  <div className="px-2 py-0.5 bg-[#2A2A2A] text-[#D4AF37] border border-[#D4AF37]/40 text-[11px] font-sans font-bold flex items-center gap-1 shadow-xs whitespace-nowrap">
+                    <span>{templeInfo.name || '個別寺院'} 会計</span>
+                  </div>
+                )}
+                <div className="px-2 py-0.5 bg-emerald-950/80 text-emerald-300 border border-emerald-500/60 text-[11px] font-sans font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>総レコード数：{cleanTransactions.length.toLocaleString('ja-JP')}件</span>
+                </div>
               </div>
             </div>
           </div>
@@ -765,27 +833,37 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                         </div>
                       </td>
 
-                      {/* 3. 摘要・決済方法 (適用欄を適度にスリム化し1行で整理) */}
-                      <td className="px-3 py-2 text-[#444444] font-sans max-w-[240px]">
-                        <div className="flex items-center space-x-1.5 truncate" title={t.notes || t.householdHeadName || ''}>
-                          {isAutoCarryoverTransaction(t) && (
-                            <span className="px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-bold font-sans whitespace-nowrap shrink-0">
-                              期初繰越
-                            </span>
-                          )}
-                          <span className="font-bold text-[#1A1A1A] text-sm truncate">
-                            {t.notes || t.householdHeadName || '—'}
-                          </span>
-                          {t.householdHeadName && t.notes && t.notes !== t.householdHeadName && (
-                            <span className="text-xs text-[#777777] truncate shrink-0">({t.householdHeadName})</span>
-                          )}
-                          <span className="text-xs text-[#888888] bg-[#F2EFE9] px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
-                            {t.paymentMethod}
-                          </span>
-                          {t.receiptNumber && (
-                            <span className="text-[11px] text-[#999999] shrink-0 font-mono">No.{t.receiptNumber}</span>
-                          )}
-                        </div>
+                      {/* 3. 摘要・決済方法 (施主と紐づけされている場合は「施主　〇〇」を小さく薄い文字で表示) */}
+                      <td className="px-3 py-2 text-[#444444] font-sans max-w-[280px]">
+                        {(() => {
+                          const payer = getPayerDisplayName(t);
+                          const rawNotes = (t.notes || '').trim();
+                          const cleanNote = payer && rawNotes.startsWith(payer) ? rawNotes.slice(payer.length).trim() : rawNotes;
+
+                          return (
+                            <div className="flex items-center space-x-1.5 truncate" title={getDisplayNotes(t)}>
+                              {isAutoCarryoverTransaction(t) && (
+                                <span className="px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-bold font-sans whitespace-nowrap shrink-0">
+                                  期初繰越
+                                </span>
+                              )}
+                              {payer && (
+                                <span className="text-xs text-[#736B5E] font-normal shrink-0">
+                                  施主　{payer}
+                                </span>
+                              )}
+                              <span className="font-bold text-[#1A1A1A] text-sm truncate">
+                                {cleanNote || (!payer ? '—' : '')}
+                              </span>
+                              <span className="text-xs text-[#888888] bg-[#F2EFE9] px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
+                                {t.paymentMethod}
+                              </span>
+                              {t.receiptNumber && (
+                                <span className="text-[11px] text-[#999999] shrink-0 font-mono">No.{t.receiptNumber}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* 4. 収入金額 */}
@@ -1039,21 +1117,34 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
               {/* 氏名欄 (自動入力・直接変更可能) */}
               <div className="space-y-1 font-sans">
                 <label className="text-xs font-bold text-[#666666] block no-print">宛名・氏名（書き換え可能）</label>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-baseline space-x-1 border-b-2 border-[#D4AF37] print:border-b print:border-black pb-0.5">
                   <input
                     type="text"
                     value={receiptPayerName}
                     onChange={(e) => setReceiptPayerName(e.target.value)}
-                    className="text-xl font-bold text-[#1A1A1A] font-serif bg-white border-b-2 border-[#D4AF37] print:border-b print:border-black px-2 py-1 w-full focus:outline-none"
-                    placeholder="宛名・氏名 (例: 山田 太郎 様)"
+                    className="text-xl font-bold text-[#1A1A1A] font-serif bg-transparent px-1 py-0.5 flex-1 focus:outline-none"
+                    placeholder="氏名・宛名 (例: 山田 太郎)"
                   />
+                  <select
+                    value={receiptHonorific}
+                    onChange={(e) => setReceiptHonorific(e.target.value)}
+                    className="text-xl font-bold text-[#1A1A1A] font-serif bg-transparent focus:outline-none cursor-pointer no-print px-1 py-0.5"
+                  >
+                    <option value="様">様</option>
+                    <option value="殿">殿</option>
+                    <option value="御中">御中</option>
+                    <option value="なし">（なし）</option>
+                  </select>
+                  <span className="text-xl font-bold text-[#1A1A1A] font-serif px-1 whitespace-nowrap hidden print:inline">
+                    {receiptHonorific === 'なし' ? '' : receiptHonorific}
+                  </span>
                 </div>
               </div>
 
-              <div className="bg-white p-4 border border-[#D1CEC7] print:border-black text-center">
-                <span className="text-sm text-[#666666] font-sans">金額:</span>
-                <div className="text-3xl font-bold text-[#1A1A1A] font-mono mt-0.5">
-                  {formatCurrency(receiptModalTx.amount)} —
+              <div className="bg-white p-3.5 border border-[#D1CEC7] print:border-black text-center">
+                <span className="text-xs text-[#666666] font-serif block mb-1 no-print">受領金額</span>
+                <div className="text-2xl sm:text-3xl font-bold text-[#1A1A1A] font-serif tracking-wider">
+                  一金、{receiptModalTx.amount.toLocaleString('ja-JP')}円也
                 </div>
               </div>
 
@@ -1080,7 +1171,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
 
               <div className="text-right border-t border-[#D1CEC7] print:border-black pt-3 text-xs leading-tight">
                 <div className="font-bold text-[#1A1A1A]">{templeInfo.mountainName} {templeInfo.name}</div>
-                <div>住職 {templeInfo.chiefPriest} (印)</div>
+                <div>住職 {templeInfo.chiefPriest}</div>
                 <div className="text-[9pt] text-[#666666]">〒{templeInfo.postalCode} {templeInfo.address}</div>
               </div>
             </div>

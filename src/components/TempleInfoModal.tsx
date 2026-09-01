@@ -249,6 +249,10 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       const idx = prev.findIndex((t) => t.id === currentTemple.id);
       if (idx === -1) return prev;
       const next = [...prev];
+      if (updates.accountingMode !== undefined) {
+        // 会計処理方法は全寺院で一貫した設定として同期
+        return next.map((t) => ({ ...t, accountingMode: updates.accountingMode }));
+      }
       next[idx] = { ...next[idx], ...updates };
       return next;
     });
@@ -1123,6 +1127,73 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                 <p className="text-[10px] text-[#777777]">
                   ※ 案内状や封筒、寺報・通信状の印刷時に寺院公式ホームページとして記載されます。
                 </p>
+              </div>
+
+              {/* 会計処理方法設定（各寺院個別 / 全寺院合算） */}
+              <div className="bg-[#FAF9F5] p-3.5 border border-[#D1CEC7] space-y-3">
+                <div className="font-bold text-[#1A1A1A] text-xs border-b border-[#E5E0D8] pb-1.5 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Coins className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>会計処理方法の設定（個別管理 / 全寺院合算）</span>
+                  </div>
+                  <span className="text-[10px] text-[#777777]">
+                    ※ 出納帳・決算書・領収証の集計・表記単位
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className={`relative flex items-start p-3 border cursor-pointer transition-all ${
+                    (currentTemple.accountingMode || 'individual') === 'individual'
+                      ? 'bg-amber-50/70 border-[#D4AF37] ring-1 ring-[#D4AF37]'
+                      : 'bg-white border-[#D1CEC7] hover:border-[#999999]'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="accountingMode"
+                      value="individual"
+                      checked={(currentTemple.accountingMode || 'individual') === 'individual'}
+                      onChange={() => {
+                        updateCurrentTemple({ accountingMode: 'individual' });
+                      }}
+                      className="mt-0.5 mr-2.5 text-[#D4AF37] focus:ring-[#D4AF37]"
+                    />
+                    <div className="text-xs">
+                      <div className="font-bold text-[#1A1A1A] flex items-center gap-1.5">
+                        <span>各寺院個別で行う</span>
+                        <span className="text-[10px] px-1.5 py-0.2 bg-[#EBE7DF] text-[#555555] font-sans font-bold rounded">個別管理</span>
+                      </div>
+                      <p className="text-[11px] text-[#666666] mt-1 leading-snug">
+                        寺院（本寺・兼務寺院）ごとに独立して出納帳・決算書・領収書を管理します。
+                      </p>
+                    </div>
+                  </label>
+
+                  <label className={`relative flex items-start p-3 border cursor-pointer transition-all ${
+                    currentTemple.accountingMode === 'combined'
+                      ? 'bg-amber-50/70 border-[#D4AF37] ring-1 ring-[#D4AF37]'
+                      : 'bg-white border-[#D1CEC7] hover:border-[#999999]'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="accountingMode"
+                      value="combined"
+                      checked={currentTemple.accountingMode === 'combined'}
+                      onChange={() => {
+                        updateCurrentTemple({ accountingMode: 'combined' });
+                      }}
+                      className="mt-0.5 mr-2.5 text-[#D4AF37] focus:ring-[#D4AF37]"
+                    />
+                    <div className="text-xs">
+                      <div className="font-bold text-[#1A1A1A] flex items-center gap-1.5">
+                        <span>全寺院合算で行う</span>
+                        <span className="text-[10px] px-1.5 py-0.2 bg-[#1A1A1A] text-[#D4AF37] font-sans font-bold rounded">本寺扱い</span>
+                      </div>
+                      <p className="text-[11px] text-[#666666] mt-1 leading-snug">
+                        全寺院の入出金を一括合算し、本寺名義の出納帳・決算書・領収証として統合処理します。
+                      </p>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               {/* 会計年度・お盆時期設定 */}

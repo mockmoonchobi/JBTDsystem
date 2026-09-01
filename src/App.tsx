@@ -403,10 +403,31 @@ export default function App() {
     });
   }, [households, activeTempleId, temples]);
 
-  // 会計管理: 合算表示は禁止（混乱防止のため個別寺院のみ）。ALLの場合は本寺にフォールバック
+  // 左上で選択中の寺院（兼務寺院・本寺）のプロファイル情報を寺院一覧（temples）から動的解決
+  const activeTempleInfo: TempleInfo = useMemo(() => {
+    if (activeTempleId && activeTempleId !== 'ALL') {
+      const matched = temples.find((t) => t.id === activeTempleId);
+      if (matched) return matched;
+    }
+    const mainTemple = temples.find((t) => t.isMain) || temples[0];
+    return mainTemple || templeInfo;
+  }, [activeTempleId, temples, templeInfo]);
+
+  // 会計処理方法（各寺院個別 / 全寺院合算）の判定
+  const mainTempleProfile: TempleInfo = useMemo(() => {
+    return temples.find((t) => t.isMain) || temples[0] || templeInfo;
+  }, [temples, templeInfo]);
+
+  const isAccountingCombined = useMemo(() => {
+    return (mainTempleProfile?.accountingMode || templeInfo?.accountingMode) === 'combined';
+  }, [mainTempleProfile, templeInfo]);
+
+  // 会計管理: 各寺院個別モード（選択中寺院）または全寺院合算モード（全取引を本寺集約）
   const activeTransactions = useMemo(() => {
-    const mainTemple = temples.find((t) => t.isMain);
-    const mainTempleId = mainTemple?.id || 'temple-main';
+    if (isAccountingCombined) {
+      return transactions;
+    }
+    const mainTempleId = mainTempleProfile?.id || 'temple-main';
     const targetId = activeTempleId === 'ALL' ? mainTempleId : activeTempleId;
 
     return transactions.filter((t) => {
@@ -416,7 +437,30 @@ export default function App() {
       }
       return tTempleId === targetId;
     });
-  }, [transactions, activeTempleId, temples]);
+  }, [isAccountingCombined, transactions, activeTempleId, mainTempleProfile]);
+
+  // 会計管理用の寺院情報・マスタ・世帯（全寺院合算時は本寺プロファイルを使用）
+  const accountingTempleInfo: TempleInfo = useMemo(() => {
+    if (isAccountingCombined) {
+      return mainTempleProfile;
+    }
+    return activeTempleInfo;
+  }, [isAccountingCombined, mainTempleProfile, activeTempleInfo]);
+
+  const accountingMasterOptions = useMemo(() => {
+    if (isAccountingCombined) {
+      const mainTempleId = mainTempleProfile?.id || 'temple-main';
+      return templeMasterOptionsMap[mainTempleId] || masterOptions;
+    }
+    return activeMasterOptions;
+  }, [isAccountingCombined, mainTempleProfile, templeMasterOptionsMap, masterOptions, activeMasterOptions]);
+
+  const accountingHouseholds = useMemo(() => {
+    if (isAccountingCombined) {
+      return households;
+    }
+    return activeHouseholds;
+  }, [isAccountingCombined, households, activeHouseholds]);
 
   // 過去帳: 全寺院合算可能
   const activePastRecords = useMemo(() => {
@@ -461,16 +505,6 @@ export default function App() {
     const activeHhIds = new Set(activeHouseholds.map((h) => h.id));
     return familyMembers.filter((m) => activeHhIds.has(m.householdId));
   }, [familyMembers, activeHouseholds]);
-
-  // 左上で選択中の寺院（兼務寺院・本寺）のプロファイル情報を寺院一覧（temples）から動的解決
-  const activeTempleInfo: TempleInfo = useMemo(() => {
-    if (activeTempleId && activeTempleId !== 'ALL') {
-      const matched = temples.find((t) => t.id === activeTempleId);
-      if (matched) return matched;
-    }
-    const mainTemple = temples.find((t) => t.isMain) || temples[0];
-    return mainTemple || templeInfo;
-  }, [activeTempleId, temples, templeInfo]);
 
   const sortedHouseholdsForPrint = useMemo(() => {
     return sortHouseholds(activeHouseholds, householdSortKey, householdSortOrder, activeMasterOptions, pastRecords, activeTempleInfo?.bonSeason || '8月盆');
@@ -543,6 +577,7 @@ export default function App() {
       pastRecords: [],
       memorialServices: [],
       transactions: [],
+      familyMembers: [],
       masterOptions: EMPTY_MASTER_OPTIONS,
       noticeTemplates: { higan: '', niibon: '' },
       templeTodos: [],
@@ -788,6 +823,8 @@ export default function App() {
   }, [noticeTemplates]);
 
   const pendingCleanImportRef = useRef(false);
+  const isSyncInProgressRef = useRef(false);
+  const activeSyncPromiseRef = useRef<Promise<any> | null>(null);
 
   // Continuously maintain an automatic safety backup snapshot whenever valid records exist
   useEffect(() => {
@@ -820,18 +857,27 @@ export default function App() {
       pendingCleanImportRef.current = false;
     }
     const remoteTotal = remoteData.totalRecordsCount;
-    const currentLocalCount = households.length + pastRecords.length + memorialServices.length + templeTodos.length + transactions.length;
+    
+    // 現在のローカルデータを State, ref, storage から最も完全な形で収集
+    const currentHouseholds = (households && households.length > 0) ? households : (syncStateRef.current.households || []);
+    const currentPastRecords = (pastRecords && pastRecords.length > 0) ? pastRecords : (syncStateRef.current.pastRecords || []);
+    const currentMemorials = (memorialServices && memorialServices.length > 0) ? memorialServices : (syncStateRef.current.memorialServices || []);
+    const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (syncStateRef.current.templeTodos || []);
+    const currentTransactions = (transactions && transactions.length > 0) ? transactions : (syncStateRef.current.transactions || []);
+    const currentFamily = (familyMembers && familyMembers.length > 0) ? familyMembers : (syncStateRef.current.familyMembers || []);
+
+    const currentLocalCount = currentHouseholds.length + currentPastRecords.length + currentMemorials.length + currentTodos.length + currentTransactions.length;
 
     // ★ データ損失防止ガード: リモートが0件でローカルに既存データがある場合（初期化モードでない時のみ）、空配列での一括上書き消去を絶対に行わない
     if (!isClean && remoteTotal === 0 && currentLocalCount > 0) {
       console.warn('Google Sheets import returned 0 records while local dataset has records. Wiping prevented to protect user data.');
       return {
-        households,
-        familyMembers,
-        pastRecords,
-        memorialServices,
-        templeTodos,
-        transactions,
+        households: currentHouseholds,
+        familyMembers: currentFamily,
+        pastRecords: currentPastRecords,
+        memorialServices: currentMemorials,
+        templeTodos: currentTodos,
+        transactions: currentTransactions,
         temples,
         templeInfo,
         masterOptions,
@@ -840,19 +886,19 @@ export default function App() {
         stats: {
           householdsUpdated: 0,
           householdsAdded: 0,
-          householdsLocalKept: households.length,
+          householdsLocalKept: currentHouseholds.length,
           pastRecordsUpdated: 0,
           pastRecordsAdded: 0,
-          pastRecordsLocalKept: pastRecords.length,
+          pastRecordsLocalKept: currentPastRecords.length,
           memorialsUpdated: 0,
           memorialsAdded: 0,
-          memorialsLocalKept: memorialServices.length,
+          memorialsLocalKept: currentMemorials.length,
           todosUpdated: 0,
           todosAdded: 0,
-          todosLocalKept: templeTodos.length,
+          todosLocalKept: currentTodos.length,
           transactionsUpdated: 0,
           transactionsAdded: 0,
-          transactionsLocalKept: transactions.length,
+          transactionsLocalKept: currentTransactions.length,
           familyMembersUpdated: 0,
           familyMembersAdded: 0,
           totalUpdatedFromRemote: 0,
@@ -868,12 +914,12 @@ export default function App() {
     // 保存前バックアップスナップショット作成（完全初期化モード時はスキップ）
     if (!isClean && currentLocalCount > 0) {
       const backupSnapshot = {
-        households,
-        pastRecords,
-        memorialServices,
-        templeTodos,
-        transactions,
-        familyMembers,
+        households: currentHouseholds,
+        pastRecords: currentPastRecords,
+        memorialServices: currentMemorials,
+        templeTodos: currentTodos,
+        transactions: currentTransactions,
+        familyMembers: currentFamily,
         temples,
         templeInfo,
         masterOptions,
@@ -906,24 +952,38 @@ export default function App() {
           priests: [],
         }
       : {
-          templeInfo: syncStateRef.current.templeInfo,
-          temples: syncStateRef.current.temples,
-          households: syncStateRef.current.households,
-          pastRecords: syncStateRef.current.pastRecords,
-          memorialServices: syncStateRef.current.memorialServices,
-          templeTodos: syncStateRef.current.templeTodos,
-          transactions: syncStateRef.current.transactions,
-          familyMembers,
-          masterOptions: syncStateRef.current.masterOptions,
-          templeMasterOptionsMap: syncStateRef.current.templeMasterOptionsMap,
-          noticeTemplates: syncStateRef.current.noticeTemplates,
-          priests: syncStateRef.current.priests,
+          templeInfo: syncStateRef.current.templeInfo || templeInfo,
+          temples: (syncStateRef.current.temples && syncStateRef.current.temples.length > 0) ? syncStateRef.current.temples : temples,
+          households: currentHouseholds,
+          pastRecords: currentPastRecords,
+          memorialServices: currentMemorials,
+          templeTodos: currentTodos,
+          transactions: currentTransactions,
+          familyMembers: currentFamily,
+          masterOptions: syncStateRef.current.masterOptions || masterOptions,
+          templeMasterOptionsMap: syncStateRef.current.templeMasterOptionsMap || templeMasterOptionsMap,
+          noticeTemplates: syncStateRef.current.noticeTemplates || noticeTemplates,
+          priests: syncStateRef.current.priests || priests,
         };
 
     const mergeResult = mergeDatasetsWithAuditPriority(currentLocalState, remoteData);
 
+    // Synchronously update syncStateRef to prevent race conditions during immediate export
+    syncStateRef.current.households = mergeResult.households;
+    syncStateRef.current.pastRecords = mergeResult.pastRecords;
+    syncStateRef.current.memorialServices = mergeResult.memorialServices;
+    syncStateRef.current.templeTodos = mergeResult.templeTodos;
+    syncStateRef.current.transactions = mergeResult.transactions;
+    syncStateRef.current.familyMembers = mergeResult.familyMembers;
+    if (mergeResult.temples && mergeResult.temples.length > 0) syncStateRef.current.temples = mergeResult.temples;
+    if (mergeResult.templeInfo) syncStateRef.current.templeInfo = mergeResult.templeInfo;
+    if (mergeResult.masterOptions) syncStateRef.current.masterOptions = mergeResult.masterOptions;
+    if (mergeResult.templeMasterOptionsMap) syncStateRef.current.templeMasterOptionsMap = mergeResult.templeMasterOptionsMap;
+    if (mergeResult.priests) syncStateRef.current.priests = mergeResult.priests;
+
     // 1. Households
     setHouseholds(mergeResult.households);
+    saveJsonState('temple_households', mergeResult.households);
     
     // 2. Family Members
     setFamilyMembers(mergeResult.familyMembers);
@@ -931,15 +991,19 @@ export default function App() {
 
     // 3. Past Records
     setPastRecords(mergeResult.pastRecords);
+    saveJsonState('temple_past_records', mergeResult.pastRecords);
 
     // 4. Memorial Services
     setMemorialServices(mergeResult.memorialServices);
+    saveJsonState('temple_memorial_services', mergeResult.memorialServices);
 
     // 5. Todos
     setTempleTodos(mergeResult.templeTodos);
+    saveJsonState('temple_todos', mergeResult.templeTodos);
 
     // 6. Transactions
     setTransactions(mergeResult.transactions);
+    saveJsonState('temple_transactions', mergeResult.transactions);
 
     // 7. Temples & Temple Info
     if (mergeResult.temples && mergeResult.temples.length > 0) {
@@ -1000,6 +1064,11 @@ export default function App() {
       }
     }
 
+    // Set a safety timeout to release importing flag so subsequent user edits sync properly
+    setTimeout(() => {
+      isImportingRef.current = false;
+    }, 2000);
+
     return mergeResult;
   }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, noticeTemplates, priests]);
 
@@ -1011,6 +1080,7 @@ export default function App() {
     pastRecords,
     memorialServices,
     transactions,
+    familyMembers,
     masterOptions,
     noticeTemplates,
     templeTodos,
@@ -1027,6 +1097,7 @@ export default function App() {
       pastRecords,
       memorialServices,
       transactions,
+      familyMembers,
       masterOptions,
       noticeTemplates,
       templeTodos,
@@ -1034,7 +1105,7 @@ export default function App() {
       priests,
       batchAccountingData,
     };
-  }, [templeInfo, temples, households, pastRecords, memorialServices, transactions, masterOptions, noticeTemplates, templeTodos, templeMasterOptionsMap, priests, batchAccountingData]);
+  }, [templeInfo, temples, households, pastRecords, memorialServices, transactions, familyMembers, masterOptions, noticeTemplates, templeTodos, templeMasterOptionsMap, priests, batchAccountingData]);
 
   const applyRemoteSheetsDataRef = useRef(applyRemoteSheetsData);
   useEffect(() => {
@@ -1085,145 +1156,86 @@ export default function App() {
 
   // Helper to connect and sync with Google Drive spreadsheet safely
   const syncWithGoogleDrive = useCallback(async (token: string, explicitSheetId?: string, isCleanImport?: boolean) => {
-    setSyncStatus('syncing');
-    try {
-      let sheet: { id: string; url: string; isExisting?: boolean };
-      if (explicitSheetId) {
-        sheet = { id: explicitSheetId, url: `https://docs.google.com/spreadsheets/d/${explicitSheetId}`, isExisting: true };
-      } else {
-        const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
-        if (savedSheetInfo) {
-          try {
-            sheet = JSON.parse(savedSheetInfo);
-          } catch {
+    // Mutex: If a sync is already running, wait for it instead of running parallel syncs
+    if (isSyncInProgressRef.current && activeSyncPromiseRef.current) {
+      return activeSyncPromiseRef.current;
+    }
+
+    const runSyncTask = async () => {
+      isSyncInProgressRef.current = true;
+      setSyncStatus('syncing');
+      try {
+        let sheet: { id: string; url: string; isExisting?: boolean };
+        if (explicitSheetId) {
+          sheet = { id: explicitSheetId, url: `https://docs.google.com/spreadsheets/d/${explicitSheetId}`, isExisting: true };
+        } else {
+          const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
+          if (savedSheetInfo) {
+            try {
+              sheet = JSON.parse(savedSheetInfo);
+            } catch {
+              sheet = await findOrCreateSpreadsheet(token);
+            }
+          } else {
             sheet = await findOrCreateSpreadsheet(token);
           }
-        } else {
-          sheet = await findOrCreateSpreadsheet(token);
         }
-      }
-      saveJsonState('temple_google_sheet_info', sheet);
+        saveJsonState('temple_google_sheet_info', sheet);
 
-      const state = syncStateRef.current;
-      const localCount = state.households.length + state.pastRecords.length + state.memorialServices.length + state.templeTodos.length + state.transactions.length;
+        const state = syncStateRef.current;
+        const localCount = state.households.length + state.pastRecords.length + state.memorialServices.length + state.templeTodos.length + state.transactions.length;
 
-      // Fetch remote spreadsheet data safely with 404 auto-recovery
-      const { data: remoteData, sheet: activeSheet } = await safeImportWithAutoRecovery(token, sheet.id);
-      sheet = activeSheet;
-      saveJsonState('temple_google_sheet_info', sheet);
+        // Fetch remote spreadsheet data safely with 404 auto-recovery
+        const { data: remoteData, sheet: activeSheet } = await safeImportWithAutoRecovery(token, sheet.id);
+        sheet = activeSheet;
+        saveJsonState('temple_google_sheet_info', sheet);
 
-      const remoteCount = remoteData.totalRecordsCount;
+        const remoteCount = remoteData.totalRecordsCount;
 
-      // ★ 共有スプレッドシートへの切り替え、または明示的な初期化読込指定の場合:
-      // 必ず端末上のデータを初期化してからデータを読込
-      if (isCleanImport || explicitSheetId) {
-        isImportingRef.current = true;
-        applyRemoteSheetsDataRef.current(remoteData, true /* isClean */);
-        const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-        setLastSyncTime(nowTime);
-        safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
-        setSyncStatus('synced');
-        setSyncErrorMessage(null);
-        return { success: true, count: remoteCount };
-      }
-
-      // ★ データ保護と照会同期ロジック:
-      // 1. リモートスプレッドシートにデータが1件以上存在する場合 -> 日時照会マージして即時反映＆Googleシート更新
-      if (remoteCount > 0) {
-        isImportingRef.current = true;
-        const mergeResult = applyRemoteSheetsDataRef.current(remoteData);
-
-        // マージ結果をGoogleシートにも即時反映（双方向の最新化）
-        await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
-          await exportToSheets(
-            token,
-            targetId,
-            mergeResult.templeInfo,
-            mergeResult.households,
-            mergeResult.pastRecords,
-            mergeResult.memorialServices,
-            mergeResult.transactions,
-            mergeResult.masterOptions || state.masterOptions,
-            mergeResult.noticeTemplates || state.noticeTemplates,
-            mergeResult.templeTodos,
-            mergeResult.temples,
-            {
-              targetTempleId: 'ALL',
-              templeMasterOptionsMap: mergeResult.templeMasterOptionsMap || state.templeMasterOptionsMap,
-              priests: mergeResult.priests || state.priests,
-              deletedRecords: loadDeletedRecordsLog(),
-              batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
-            }
-          );
-        });
-      } else if (localCount > 0) {
-        // 2. リモートが0件でローカルにデータが存在する場合 -> ローカルデータをスプレッドシートへ安全に書き出し（初期同期・データ保護）
-        await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
-          await exportToSheets(
-            token, 
-            targetId, 
-            state.templeInfo, 
-            state.households, 
-            state.pastRecords, 
-            state.memorialServices, 
-            state.transactions, 
-            state.masterOptions, 
-            state.noticeTemplates, 
-            state.templeTodos, 
-            state.temples, 
-            {
-              targetTempleId: 'ALL',
-              templeMasterOptionsMap: state.templeMasterOptionsMap,
-              priests: state.priests,
-              deletedRecords: loadDeletedRecordsLog(),
-              batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
-            }
-          );
-        });
-      } else {
-        // 3. 両方とも0件の場合: セーフティバックアップが存在するか確認して復元を試みる
-        const backup = (await idbGet<any>('temple_safety_snapshot')) 
-          || loadJsonState<any>('temple_safety_snapshot', null) 
-          || (await idbGet<any>('temple_backup_before_sync')) 
-          || loadJsonState<any>('temple_backup_before_sync', null);
-
-        if (backup && (backup.recordCount > 0 || (backup.households?.length > 0) || (backup.pastRecords?.length > 0))) {
+        // ★ 明示的な初期化読込指定（共有スプレッドシートへの強制リセット切替など）の場合のみ:
+        // 端末上のデータを初期化してからデータを読込
+        if (isCleanImport) {
           isImportingRef.current = true;
-          if (backup.households) setHouseholds(backup.households);
-          if (backup.pastRecords) setPastRecords(backup.pastRecords);
-          if (backup.memorialServices) setMemorialServices(backup.memorialServices);
-          if (backup.templeTodos) setTempleTodos(backup.templeTodos);
-          if (backup.transactions) setTransactions(backup.transactions);
-          if (backup.familyMembers) setFamilyMembers(backup.familyMembers);
-          if (backup.temples) setTemples(backup.temples);
-          if (backup.templeInfo) setTempleInfo(backup.templeInfo);
-          if (backup.masterOptions) setMasterOptions(backup.masterOptions);
-          if (backup.templeMasterOptionsMap) setTempleMasterOptionsMap(backup.templeMasterOptionsMap);
+          applyRemoteSheetsDataRef.current(remoteData, true /* isClean */);
+          const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+          setLastSyncTime(nowTime);
+          safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
+          setSyncStatus('synced');
+          setSyncErrorMessage(null);
+          return { success: true, count: remoteCount };
+        }
 
+        // ★ データ保護と照会同期ロジック:
+        // 1. リモートスプレッドシートにデータが1件以上存在する場合 -> 日時照会マージして即時反映＆Googleシート更新
+        if (remoteCount > 0) {
+          isImportingRef.current = true;
+          const mergeResult = applyRemoteSheetsDataRef.current(remoteData);
+
+          // マージ結果をGoogleシートにも即時反映（双方向の最新化）
           await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
             await exportToSheets(
               token,
               targetId,
-              backup.templeInfo || state.templeInfo,
-              backup.households || [],
-              backup.pastRecords || [],
-              backup.memorialServices || [],
-              backup.transactions || [],
-              backup.masterOptions || state.masterOptions,
-              state.noticeTemplates,
-              backup.templeTodos || [],
-              backup.temples || state.temples,
+              mergeResult.templeInfo,
+              mergeResult.households,
+              mergeResult.pastRecords,
+              mergeResult.memorialServices,
+              mergeResult.transactions,
+              mergeResult.masterOptions || state.masterOptions,
+              mergeResult.noticeTemplates || state.noticeTemplates,
+              mergeResult.templeTodos,
+              mergeResult.temples,
               {
                 targetTempleId: 'ALL',
-                templeMasterOptionsMap: backup.templeMasterOptionsMap || state.templeMasterOptionsMap,
-                priests: backup.priests || state.priests,
+                templeMasterOptionsMap: mergeResult.templeMasterOptionsMap || state.templeMasterOptionsMap,
+                priests: mergeResult.priests || state.priests,
                 deletedRecords: loadDeletedRecordsLog(),
                 batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
               }
             );
           });
-        } else {
-          // 完全新規の初期書き出し
+        } else if (localCount > 0) {
+          // 2. リモートが0件でローカルにデータが存在する場合 -> ローカルデータをスプレッドシートへ安全に書き出し（初期同期・データ保護）
           await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
             await exportToSheets(
               token, 
@@ -1246,29 +1258,100 @@ export default function App() {
               }
             );
           });
-        }
-      }
+        } else {
+          // 3. 両方とも0件の場合: セーフティバックアップが存在するか確認して復元を試みる
+          const backup = (await idbGet<any>('temple_safety_snapshot')) 
+            || loadJsonState<any>('temple_safety_snapshot', null) 
+            || (await idbGet<any>('temple_backup_before_sync')) 
+            || loadJsonState<any>('temple_backup_before_sync', null);
 
-      const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-      setLastSyncTime(nowTime);
-      safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
-      setSyncStatus('synced');
-      setSyncErrorMessage(null);
-      return { success: true, count: remoteCount > 0 ? remoteCount : localCount };
-    } catch (err: any) {
-      console.error('Google Sheets sync/load failed:', err);
-      setSyncStatus('error');
-      if (isAuthError(err)) {
-        setSyncErrorMessage('Google認証の有効期限が切れました。データ連携画面より再度ログインしてください。');
-      } else if (err?.isNetworkError || err?.message?.includes('fetch') || err?.message?.includes('NetworkError')) {
-        setSyncErrorMessage('Googleサーバーとの通信に失敗しました。ネットワーク環境をご確認ください。');
-      } else {
-        setSyncErrorMessage(err.message || '同期に失敗しました。');
+          if (backup && (backup.recordCount > 0 || (backup.households?.length > 0) || (backup.pastRecords?.length > 0))) {
+            isImportingRef.current = true;
+            if (backup.households) setHouseholds(backup.households);
+            if (backup.pastRecords) setPastRecords(backup.pastRecords);
+            if (backup.memorialServices) setMemorialServices(backup.memorialServices);
+            if (backup.templeTodos) setTempleTodos(backup.templeTodos);
+            if (backup.transactions) setTransactions(backup.transactions);
+            if (backup.familyMembers) setFamilyMembers(backup.familyMembers);
+            if (backup.temples) setTemples(backup.temples);
+            if (backup.templeInfo) setTempleInfo(backup.templeInfo);
+            if (backup.masterOptions) setMasterOptions(backup.masterOptions);
+            if (backup.templeMasterOptionsMap) setTempleMasterOptionsMap(backup.templeMasterOptionsMap);
+
+            await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
+              await exportToSheets(
+                token,
+                targetId,
+                backup.templeInfo || state.templeInfo,
+                backup.households || [],
+                backup.pastRecords || [],
+                backup.memorialServices || [],
+                backup.transactions || [],
+                backup.masterOptions || state.masterOptions,
+                state.noticeTemplates,
+                backup.templeTodos || [],
+                backup.temples || state.temples,
+                {
+                  targetTempleId: 'ALL',
+                  templeMasterOptionsMap: backup.templeMasterOptionsMap || state.templeMasterOptionsMap,
+                  priests: backup.priests || state.priests,
+                  deletedRecords: loadDeletedRecordsLog(),
+                  batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                }
+              );
+            });
+          } else {
+            // 完全新規の初期書き出し
+            await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
+              await exportToSheets(
+                token, 
+                targetId, 
+                state.templeInfo, 
+                state.households, 
+                state.pastRecords, 
+                state.memorialServices, 
+                state.transactions, 
+                state.masterOptions, 
+                state.noticeTemplates, 
+                state.templeTodos, 
+                state.temples, 
+                {
+                  targetTempleId: 'ALL',
+                  templeMasterOptionsMap: state.templeMasterOptionsMap,
+                  priests: state.priests,
+                  deletedRecords: loadDeletedRecordsLog(),
+                  batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                }
+              );
+            });
+          }
+        }
+
+        const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(nowTime);
+        safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
+        setSyncStatus('synced');
+        setSyncErrorMessage(null);
+        return { success: true, count: remoteCount > 0 ? remoteCount : localCount };
+      } catch (err: any) {
+        console.error('Google Sheets sync/load failed:', err);
+        setSyncStatus('error');
+        if (isAuthError(err)) {
+          setSyncErrorMessage('Google認証の有効期限が切れました。データ連携画面より再度ログインしてください。');
+        } else if (err?.isNetworkError || err?.message?.includes('fetch') || err?.message?.includes('NetworkError')) {
+          setSyncErrorMessage('Googleサーバーとの通信に失敗しました。ネットワーク環境をご確認ください。');
+        } else {
+          setSyncErrorMessage(err.message || '同期に失敗しました。');
+        }
+        throw err;
+      } finally {
+        isSyncInProgressRef.current = false;
+        activeSyncPromiseRef.current = null;
       }
-      throw err;
-    } finally {
-      setIsInitialLoaded(true);
-    }
+    };
+
+    activeSyncPromiseRef.current = runSyncTask();
+    return activeSyncPromiseRef.current;
   }, []);
 
   // Clean write local terminal data into Google Sheets (deleting existing file, creating brand new spreadsheet, and writing local data)
@@ -1429,15 +1512,14 @@ export default function App() {
   useEffect(() => {
     if (!isInitialLoaded) return;
 
-    if (isImportingRef.current || isCleanWritingRef.current) {
-      isImportingRef.current = false;
+    if (isImportingRef.current || isCleanWritingRef.current || isSyncInProgressRef.current) {
       return;
     }
 
     let timer: NodeJS.Timeout;
 
     const performAutoSync = async () => {
-      if (isCleanWritingRef.current) return;
+      if (isCleanWritingRef.current || isSyncInProgressRef.current || isImportingRef.current) return;
       const token = await getAccessToken();
       const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
       if (!token || !savedSheetInfo) return;
@@ -1451,48 +1533,27 @@ export default function App() {
         }
         setSyncStatus('syncing');
 
-        // 複数端末での最新更新を照会・マージするためにGoogleシートの最新を取得
-        let remoteData: SheetsImportResult | null = null;
-        try {
-          const res = await safeImportWithAutoRecovery(token, sheet.id);
-          remoteData = res.data;
-          sheet = res.sheet;
-        } catch (fetchErr) {
-          // ネットワークや一時的な取得エラー時はローカル直接送信にフォールバック
-        }
+        const curState = syncStateRef.current;
+        const currentHouseholds = (households && households.length > 0) ? households : (curState.households || []);
+        const currentPastRecords = (pastRecords && pastRecords.length > 0) ? pastRecords : (curState.pastRecords || []);
+        const currentMemorials = (memorialServices && memorialServices.length > 0) ? memorialServices : (curState.memorialServices || []);
+        const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (curState.templeTodos || []);
+        const currentTransactions = (transactions && transactions.length > 0) ? transactions : (curState.transactions || []);
 
-        let exportPayload = {
-          templeInfo,
-          households,
-          pastRecords,
-          memorialServices,
-          transactions,
-          masterOptions,
-          noticeTemplates,
-          templeTodos,
-          temples,
-          templeMasterOptionsMap,
-          priests,
-          batchAccountingData,
+        const exportPayload = {
+          templeInfo: curState.templeInfo || templeInfo,
+          households: currentHouseholds,
+          pastRecords: currentPastRecords,
+          memorialServices: currentMemorials,
+          transactions: currentTransactions,
+          masterOptions: curState.masterOptions || masterOptions,
+          noticeTemplates: curState.noticeTemplates || noticeTemplates,
+          templeTodos: currentTodos,
+          temples: (curState.temples && curState.temples.length > 0) ? curState.temples : temples,
+          templeMasterOptionsMap: curState.templeMasterOptionsMap || templeMasterOptionsMap,
+          priests: curState.priests || priests,
+          batchAccountingData: curState.batchAccountingData !== undefined ? curState.batchAccountingData : (getSavedBatchAccountingData() || undefined),
         };
-
-        if (remoteData && remoteData.totalRecordsCount > 0) {
-          const merged = applyRemoteSheetsData(remoteData);
-          exportPayload = {
-            templeInfo: merged.templeInfo,
-            households: merged.households,
-            pastRecords: merged.pastRecords,
-            memorialServices: merged.memorialServices,
-            transactions: merged.transactions,
-            masterOptions: merged.masterOptions || masterOptions,
-            noticeTemplates: merged.noticeTemplates || noticeTemplates,
-            templeTodos: merged.templeTodos,
-            temples: merged.temples || temples,
-            templeMasterOptionsMap: merged.templeMasterOptionsMap || templeMasterOptionsMap,
-            priests: merged.priests || priests,
-            batchAccountingData: syncStateRef.current.batchAccountingData !== undefined ? syncStateRef.current.batchAccountingData : batchAccountingData,
-          };
-        }
 
         await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
           await exportToSheets(
@@ -1539,8 +1600,10 @@ export default function App() {
       performAutoSync();
     }, 1500);
 
-    return () => clearTimeout(timer);
-  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, isInitialLoaded, applyRemoteSheetsData]);
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, isInitialLoaded]);
 
   // Manual Instant Sync Trigger (Bidirectional merge with audit priority & Push to Sheets)
   const handleManualSync = async () => {
@@ -2301,7 +2364,14 @@ export default function App() {
   // Handlers: Transactions CRUD
   const handleAddTransaction = (transaction: Transaction) => {
     recordHistory(`出納「${transaction.notes || transaction.category}」を追加`);
-    setTransactions((prev) => [withCreationAudit(transaction), ...prev]);
+    const defaultTempleId = isAccountingCombined
+      ? (mainTempleProfile?.id || 'temple-main')
+      : (activeTempleId === 'ALL' ? (mainTempleProfile?.id || 'temple-main') : activeTempleId);
+    const txWithTemple: Transaction = {
+      ...transaction,
+      templeId: transaction.templeId || defaultTempleId,
+    };
+    setTransactions((prev) => [withCreationAudit(txWithTemple), ...prev]);
   };
 
   const handleAddBatchTransactions = (newTransactions: Transaction[]) => {
@@ -2593,6 +2663,7 @@ export default function App() {
         pastRecords: [],
         memorialServices: [],
         transactions: [],
+        familyMembers: [],
         masterOptions: EMPTY_MASTER_OPTIONS,
         noticeTemplates: { higan: '', niibon: '' },
         templeTodos: [],
@@ -2989,9 +3060,9 @@ export default function App() {
         {activeTab === 'accounting' && (
           <AccountingManager
             transactions={activeTransactions}
-            households={activeHouseholds}
-            templeInfo={activeTempleInfo}
-            masterOptions={activeMasterOptions}
+            households={accountingHouseholds}
+            templeInfo={accountingTempleInfo}
+            masterOptions={accountingMasterOptions}
             batchAccountingData={batchAccountingData}
             onSaveBatchAccountingData={handleSaveBatchAccountingData}
             onAddTransaction={handleAddTransaction}

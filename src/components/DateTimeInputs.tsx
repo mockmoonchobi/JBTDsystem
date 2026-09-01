@@ -575,6 +575,7 @@ interface TimeSelectorInputProps {
   placeholder?: string;
   className?: string;
   id?: string;
+  allowAllDay?: boolean;
 }
 
 /**
@@ -605,11 +606,13 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
   placeholder = '11:00',
   className = '',
   id,
+  allowAllDay = true,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isDirectInput, setIsDirectInput] = useState(false);
   const [directText, setDirectText] = useState(value || '11:00');
   const [selectedHour, setSelectedHour] = useState<string>(() => {
+    if (value === '終日') return '終日';
     return (value || '11:00').split(':')[0] || '11';
   });
 
@@ -619,8 +622,12 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
   useEffect(() => {
     if (value) {
       setDirectText(value);
-      const h = value.split(':')[0];
-      if (h) setSelectedHour(h);
+      if (value === '終日') {
+        setSelectedHour('終日');
+      } else {
+        const h = value.split(':')[0];
+        if (h) setSelectedHour(h);
+      }
     }
   }, [value]);
 
@@ -648,6 +655,10 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
   }, [isDirectInput]);
 
   const normalizeTimeString = (raw: string): string => {
+    const trimmed = raw.trim();
+    if (trimmed === '終日' || trimmed.toLowerCase() === 'all' || trimmed.toLowerCase() === 'allday' || trimmed === '日中') {
+      return '終日';
+    }
     const cleaned = raw.replace(/[^\d:]/g, '').trim();
     if (!cleaned) return '11:00';
     if (cleaned.includes(':')) {
@@ -686,15 +697,15 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
       setIsDirectInput(false);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      handleStepMinutes(15);
+      if (directText !== '終日') handleStepMinutes(15);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      handleStepMinutes(-15);
+      if (directText !== '終日') handleStepMinutes(-15);
     }
   };
 
   const handleStepMinutes = (deltaMinutes: number) => {
-    const current = directText || value || '11:00';
+    const current = directText === '終日' ? '11:00' : (directText || value || '11:00');
     const nextTime = stepTime15Min(current, deltaMinutes);
     setDirectText(nextTime);
     onChange(nextTime);
@@ -708,22 +719,23 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
 
   const handleSelectHour = (h: string) => {
     setSelectedHour(h);
-    const curMinute = (value || '11:00').split(':')[1] || '00';
+    const curMinute = (value && value !== '終日') ? (value.split(':')[1] || '00') : '00';
     const newTime = `${h}:${curMinute}`;
     onChange(newTime);
     setDirectText(newTime);
   };
 
   const handleSelectMinute = (m: string) => {
-    const curHour = (value || '11:00').split(':')[0] || '11';
+    const curHour = (value && value !== '終日') ? (value.split(':')[0] || '11') : '11';
     const newTime = `${curHour}:${m}`;
     onChange(newTime);
     setDirectText(newTime);
     setIsOpen(false);
   };
 
-  const currentHour = (value || '11:00').split(':')[0] || '11';
-  const currentMinute = (value || '11:00').split(':')[1] || '00';
+  const isAllDayValue = value === '終日';
+  const currentHour = (!isAllDayValue && value) ? (value.split(':')[0] || '11') : '11';
+  const currentMinute = (!isAllDayValue && value) ? (value.split(':')[1] || '00') : '00';
 
   return (
     <div ref={containerRef} className={`relative space-y-1 ${className}`}>
@@ -800,13 +812,30 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
               setIsDirectInput(true);
             }}
             title="クリックで15分刻み選択 / ダブルクリックで直接手入力"
-            className="w-full p-2 bg-transparent font-mono text-xs font-bold text-[#1A1A1A] flex items-center justify-between cursor-pointer hover:bg-[#FAF7F0] select-none transition-colors"
+            className={`w-full p-2 bg-transparent font-mono text-xs font-bold flex items-center justify-between cursor-pointer select-none transition-colors ${
+              isAllDayValue ? 'bg-[#FFFDF5] hover:bg-[#FFF8E6] text-[#B8860B]' : 'text-[#1A1A1A] hover:bg-[#FAF7F0]'
+            }`}
           >
             <div className="flex items-center space-x-1.5">
-              <Clock className="w-3.5 h-3.5 text-[#8C2D19]" />
-              <span className="text-xs font-black tracking-wider">{value || placeholder}</span>
+              <Clock className={`w-3.5 h-3.5 ${isAllDayValue ? 'text-[#D4AF37]' : 'text-[#8C2D19]'}`} />
+              <span className={`text-xs font-black tracking-wider ${isAllDayValue ? 'text-[#8C2D19] bg-[#FAF089]/60 px-1.5 py-0.5 rounded font-sans' : ''}`}>
+                {value || placeholder}
+              </span>
             </div>
             <div className="flex items-center space-x-1 text-gray-400">
+              {allowAllDay && !isAllDayValue && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectTime('終日');
+                  }}
+                  className="px-1.5 py-0.5 bg-[#FAF7F0] hover:bg-[#D4AF37] hover:text-[#1A1A1A] text-[#8C2D19] border border-[#D4AF37]/60 text-[10px] font-bold rounded cursor-pointer transition-colors"
+                  title="終日に設定"
+                >
+                  終日
+                </button>
+              )}
               <button
                 type="button"
                 className="hover:text-[#8C2D19] cursor-pointer p-0.5"
@@ -926,6 +955,19 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
           <div className="pt-1.5 border-t border-[#E5E0D8] flex items-center justify-between text-[11px]">
             <span className="text-gray-500 font-bold">定番:</span>
             <div className="flex items-center space-x-1">
+              {allowAllDay && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectTime('終日')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer border ${
+                    isAllDayValue
+                      ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
+                      : 'bg-amber-50 hover:bg-amber-100 text-[#8C2D19] border-amber-300'
+                  }`}
+                >
+                  終日
+                </button>
+              )}
               {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map((preset) => (
                 <button
                   key={preset}

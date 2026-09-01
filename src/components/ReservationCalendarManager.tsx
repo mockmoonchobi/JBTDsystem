@@ -70,7 +70,8 @@ import {
   calculateYearlyMemorialSpirits,
   YearlyMemorialSpirit,
   getSpiritMemorialForDate,
-  getHouseholdNiibonStatus
+  getHouseholdNiibonStatus,
+  resolveSpiritMemorialType
 } from '../utils/memorialCalculator';
 import { DateInputWithEra, TimeSelectorInput } from './DateTimeInputs';
 import { SaveConfirmModal } from './SaveConfirmModal';
@@ -405,7 +406,7 @@ export interface TobaLineItem {
 }
 
 // Cleans up a raw toba line string to produce "<戒名> <忌日/回忌> 志主 <名字 名前>"
-export const formatSingleTobaLine = (rawLine: string): string => {
+export const formatSingleTobaLine = (rawLine: string, fallbackMemorial?: string): string => {
   let line = (rawLine || '').trim();
   if (!line) return '';
 
@@ -418,20 +419,25 @@ export const formatSingleTobaLine = (rawLine: string): string => {
   line = line.replace(/(回忌|法要種別)\s*[:：]\s*/g, ' ');
   line = line.replace(/本数\s*[:：]\s*\d+本?/g, ' ');
 
-  // 3. Replace punctuation, slashes, brackets, commas, quotes with spaces
+  // 3. Strip "塔婆供養", "卒塔婆", "塔婆作成", "塔婆依頼", "塔婆" words that could pollute the line or replace the 忌日
+  line = line.replace(/(塔婆供養|卒塔婆揮毫|塔婆揮毫|塔婆作成|塔婆依頼|卒塔婆|塔婆)/g, ' ');
+
+  // 4. Replace punctuation, slashes, brackets, commas, quotes with spaces
   line = line.replace(/[:：/／\[\]［］()（）【】,，"']/g, ' ');
   line = line.replace(/[\s\u3000]+/g, ' ').trim();
   if (!line) return '';
 
-  // 4. Extract memorialType (回忌・忌日) if present
+  // 5. Extract memorialType (回忌・忌日) if present
   let memorialType = '';
-  const memMatch = line.match(/(一周忌|三回忌|七回忌|十三回忌|十七回忌|二十三回忌|二十七回忌|三十三回忌|五十回忌|百回忌|百箇日|百ヶ日|四十九日|初七日|納骨法要|年忌法要|追善供養|新盆|盆供養|棚経|当年没|\d+回忌)/);
+  const memMatch = line.match(/(一周忌|三回忌|七回忌|十三回忌|十七回忌|二十三回忌|二十七回忌|三十三回忌|五十回忌|百回忌|百箇日|百ヶ日|四十九日|初七日|納骨法要|追善供養|年忌供養|先祖代々供養|年忌法要|新盆|初盆|盆供養|棚経|当年没|\d+回忌)/);
   if (memMatch) {
     memorialType = memMatch[1];
     line = line.replace(memorialType, ' ').trim();
+  } else if (fallbackMemorial && fallbackMemorial !== '塔婆供養' && fallbackMemorial !== '塔婆' && fallbackMemorial !== 'その他') {
+    memorialType = fallbackMemorial;
   }
 
-  // 5. Extract sponsorName (志主・施主) if present
+  // 6. Extract sponsorName (志主・施主) if present
   let sponsorName = '';
   const spMatch = line.match(/(志主|施主)\s*[:：]?\s*(.*)$/);
   if (spMatch) {
@@ -463,7 +469,7 @@ export const formatSingleTobaLine = (rawLine: string): string => {
     }
   }
 
-  // 6. Clean remaining line as dharmaName
+  // 7. Clean remaining line as dharmaName
   let dharmaName = line.replace(/[\s\u3000]+/g, ' ').trim();
 
   // If sponsorName is known, remove any duplicate sponsorName from dharmaName (preventing name duplication at front)
@@ -508,9 +514,17 @@ export const formatSingleTobaLine = (rawLine: string): string => {
     dharmaName = '先祖代々';
   }
 
+  // Always ensure a real memorial milestone (忌日) is present
+  if (!memorialType || memorialType === '塔婆供養' || memorialType === '塔婆') {
+    if (dharmaName.includes('先祖') || dharmaName.includes('代々')) {
+      memorialType = '追善供養';
+    } else {
+      memorialType = '追善供養';
+    }
+  }
+
   // Reassemble in exact requested order: 戒名　忌日　志主　名字　名前
-  const parts: string[] = [dharmaName];
-  if (memorialType) parts.push(memorialType);
+  const parts: string[] = [dharmaName, memorialType];
   if (sponsorName) {
     parts.push(`志主 ${sponsorName}`);
   }
@@ -523,28 +537,6 @@ export const extractTobaLines = (
   services?: MemorialService[],
   pastRecords?: PastRecord[]
 ): TobaLineItem[] => {
-  // 1. Check notes first for explicit 【塔婆明細】 section
-  const rawNotes = todo.notes || '';
-  const tobaDetailIndex = rawNotes.indexOf('【塔婆明細】');
-  if (tobaDetailIndex !== -1) {
-    const afterHeader = rawNotes.slice(tobaDetailIndex + '【塔婆明細】'.length);
-    const nextHeaderMatch = afterHeader.search(/\n\s*【/);
-    const detailSection = nextHeaderMatch !== -1 ? afterHeader.slice(0, nextHeaderMatch) : afterHeader;
-    const detailLines = detailSection.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-    
-    if (detailLines.length > 0) {
-      return detailLines.map((rawL) => {
-        const formatted = formatSingleTobaLine(rawL);
-        return {
-          formattedLine: formatted,
-          dharmaName: '',
-          memorialType: '',
-          sponsorName: '',
-        };
-      });
-    }
-  }
-
   // If relatedServiceId exists, retrieve true data from service
   let service: MemorialService | undefined;
   if (services && todo.relatedServiceId) {
@@ -565,13 +557,36 @@ export const extractTobaLines = (
     }
   }
 
+  // 1. Check notes first for explicit 【塔婆明細】 section
+  const rawNotes = todo.notes || '';
+  const tobaDetailIndex = rawNotes.indexOf('【塔婆明細】');
+  if (tobaDetailIndex !== -1) {
+    const afterHeader = rawNotes.slice(tobaDetailIndex + '【塔婆明細】'.length);
+    const nextHeaderMatch = afterHeader.search(/\n\s*【/);
+    const detailSection = nextHeaderMatch !== -1 ? afterHeader.slice(0, nextHeaderMatch) : afterHeader;
+    const detailLines = detailSection.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    
+    if (detailLines.length > 0) {
+      return detailLines.map((rawL) => {
+        const fallbackMem = resolveSpiritMemorialType(service?.memorialType, service?.dharmaName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
+        const formatted = formatSingleTobaLine(rawL, fallbackMem);
+        return {
+          formattedLine: formatted,
+          dharmaName: '',
+          memorialType: fallbackMem,
+          sponsorName: '',
+        };
+      });
+    }
+  }
+
   // 2. If service has explicit tobaItems (detailed list)
   if (service?.tobaItems && service.tobaItems.length > 0) {
     return service.tobaItems.map((item) => {
       const dName = item.dharmaName || item.tamegaki || service?.dharmaName || '先祖代々';
-      const mType = item.memorialType || service?.memorialType || '年忌法要';
+      const mType = resolveSpiritMemorialType(item.memorialType || service?.memorialType, dName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
       const sName = (item.sponsorName || service?.chiefMourner || todo.householdHeadName || '施主').replace(/(家|様)+$/g, '').trim();
-      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`);
+      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
       return {
         formattedLine: formatted,
         dharmaName: dName,
@@ -584,15 +599,15 @@ export const extractTobaLines = (
   // 3. If service has tobaSponsors array (multiple sponsors)
   if (service?.tobaSponsors && service.tobaSponsors.length > 0) {
     const mainDharma = service.dharmaName || (service.deceasedId && pastRecords?.find((p) => p.id === service.deceasedId)?.dharmaName) || (todo.householdHeadName ? `${todo.householdHeadName}家先祖代々` : '先祖代々');
-    const mainMemorial = service.memorialType || '年忌法要';
+    const mainMemorial = resolveSpiritMemorialType(service.memorialType, mainDharma, service.deceasedId, pastRecords, service.scheduledDate || todo.dueDate);
     const addDeceased = service.additionalDeceased || [];
 
     return service.tobaSponsors.map((sp, idx) => {
       const targetDeceased = idx === 0 ? null : addDeceased[idx - 1];
       const dName = targetDeceased?.dharmaName || mainDharma;
-      const mType = targetDeceased?.memorialType || mainMemorial;
+      const mType = targetDeceased ? resolveSpiritMemorialType(targetDeceased.memorialType, dName, targetDeceased.id, pastRecords, service?.scheduledDate || todo.dueDate) : mainMemorial;
       const sName = sp.replace(/(家|様)+$/g, '').trim() || service?.chiefMourner?.replace(/(家|様)+$/g, '').trim() || '施主';
-      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`);
+      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
 
       return {
         formattedLine: formatted,
@@ -609,10 +624,11 @@ export const extractTobaLines = (
   );
 
   if (candidateLines.length > 0 && candidateLines.some((l) => l.includes('志主') || l.includes('施主'))) {
+    const fallbackMem = resolveSpiritMemorialType(service?.memorialType, service?.dharmaName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
     return candidateLines.map((rawL) => ({
-      formattedLine: formatSingleTobaLine(rawL),
+      formattedLine: formatSingleTobaLine(rawL, fallbackMem),
       dharmaName: '',
-      memorialType: '',
+      memorialType: fallbackMem,
       sponsorName: '',
     }));
   }
@@ -620,9 +636,9 @@ export const extractTobaLines = (
   // 5. Fallback to single core info
   const core = extractTobaTaskCoreInfo(todo, services, pastRecords);
   const sName = (core.sponsorName || todo.householdHeadName || '施主').replace(/(家|様)+$/g, '').trim();
-  const mType = core.memorialType || '年忌法要';
+  const mType = resolveSpiritMemorialType(core.memorialType, core.dharmaName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
   const dName = core.dharmaName || '先祖代々';
-  const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`);
+  const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
   return [{
     formattedLine: formatted,
     dharmaName: dName,
@@ -664,6 +680,7 @@ export const extractServiceTobaLines = (
   // 2. If no matching ToDo in templeTodos, only check service properties if toba was explicitly configured on the service
   const hasExplicitToba = (service.tobaCount && service.tobaCount > 0) ||
     service.memorialType === '塔婆供養' ||
+    service.memorialType === '塔婆' ||
     (service.tobaItems && service.tobaItems.length > 0) ||
     (service.tobaSponsors && service.tobaSponsors.length > 0) ||
     (service.notes && service.notes.includes('【塔婆明細】'));
@@ -682,10 +699,11 @@ export const extractServiceTobaLines = (
     const detailLines = detailSection.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     
     if (detailLines.length > 0) {
+      const fallbackMem = resolveSpiritMemorialType(service.memorialType, service.dharmaName, service.deceasedId, pastRecords, service.scheduledDate);
       return detailLines.map((rawL) => ({
-        formattedLine: formatSingleTobaLine(rawL),
+        formattedLine: formatSingleTobaLine(rawL, fallbackMem),
         dharmaName: '',
-        memorialType: '',
+        memorialType: fallbackMem,
         sponsorName: '',
       }));
     }
@@ -695,9 +713,9 @@ export const extractServiceTobaLines = (
   if (service.tobaItems && service.tobaItems.length > 0) {
     return service.tobaItems.map((item) => {
       const dName = item.dharmaName || item.tamegaki || service.dharmaName || '先祖代々';
-      const mType = item.memorialType || service.memorialType || '年忌法要';
+      const mType = resolveSpiritMemorialType(item.memorialType || service.memorialType, dName, service.deceasedId, pastRecords, service.scheduledDate);
       const sName = (item.sponsorName || service.chiefMourner || '施主').replace(/(家|様)+$/g, '').trim();
-      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`);
+      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
       return {
         formattedLine: formatted,
         dharmaName: dName,
@@ -710,15 +728,15 @@ export const extractServiceTobaLines = (
   // 5. If service has tobaSponsors array
   if (service.tobaSponsors && service.tobaSponsors.length > 0) {
     const mainDharma = service.dharmaName || (service.deceasedId && pastRecords?.find((p) => p.id === service.deceasedId)?.dharmaName) || (service.chiefMourner ? `${service.chiefMourner.replace(/(家|様)+$/g, '')}家先祖代々` : '先祖代々');
-    const mainMemorial = service.memorialType || '年忌法要';
+    const mainMemorial = resolveSpiritMemorialType(service.memorialType, mainDharma, service.deceasedId, pastRecords, service.scheduledDate);
     const addDeceased = service.additionalDeceased || [];
 
     return service.tobaSponsors.map((sp, idx) => {
       const targetDeceased = idx === 0 ? null : addDeceased[idx - 1];
       const dName = targetDeceased?.dharmaName || mainDharma;
-      const mType = targetDeceased?.memorialType || mainMemorial;
+      const mType = targetDeceased ? resolveSpiritMemorialType(targetDeceased.memorialType, dName, targetDeceased.id, pastRecords, service.scheduledDate) : mainMemorial;
       const sName = sp.replace(/(家|様)+$/g, '').trim() || service.chiefMourner?.replace(/(家|様)+$/g, '').trim() || '施主';
-      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`);
+      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
       return {
         formattedLine: formatted,
         dharmaName: dName,
@@ -734,21 +752,22 @@ export const extractServiceTobaLines = (
   );
 
   if (candidateLines.length > 0 && candidateLines.some((l) => l.includes('志主') || l.includes('施主'))) {
+    const fallbackMem = resolveSpiritMemorialType(service.memorialType, service.dharmaName, service.deceasedId, pastRecords, service.scheduledDate);
     return candidateLines.map((rawL) => ({
-      formattedLine: formatSingleTobaLine(rawL),
+      formattedLine: formatSingleTobaLine(rawL, fallbackMem),
       dharmaName: '',
-      memorialType: '',
+      memorialType: fallbackMem,
       sponsorName: '',
     }));
   }
 
   // 7. If tobaCount > 0 or 塔婆供養, generate lines
-  const count = service.tobaCount || (service.memorialType === '塔婆供養' ? 1 : 0);
+  const count = service.tobaCount || (service.memorialType === '塔婆供養' || service.memorialType === '塔婆' ? 1 : 0);
   if (count > 0) {
     const sName = (service.chiefMourner || '施主').replace(/(家|様)+$/g, '').trim();
     const dName = service.dharmaName || (service.deceasedId && pastRecords?.find((p) => p.id === service.deceasedId)?.dharmaName) || '先祖代々';
-    const mType = service.memorialType || '年忌法要';
-    const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`);
+    const mType = resolveSpiritMemorialType(service.memorialType, dName, service.deceasedId, pastRecords, service.scheduledDate);
+    const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
     return Array.from({ length: count }, () => ({
       formattedLine: formatted,
       dharmaName: dName,
@@ -878,9 +897,17 @@ export const extractTobaTaskCoreInfo = (
       .trim();
   }
 
+  const resolvedMemorial = resolveSpiritMemorialType(
+    memorialType,
+    dharmaName,
+    service?.deceasedId,
+    pastRecords,
+    service?.scheduledDate || todo.dueDate
+  );
+
   return {
     dharmaName,
-    memorialType: memorialType || '年忌法要',
+    memorialType: resolvedMemorial,
     sponsorName: sponsorName || '施主',
     countInfo: countInfo || '',
   };
@@ -1876,24 +1903,26 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
   // Calculate accounting status for a service based on transactions
   const getServiceAccountingStatus = (service: MemorialService): {
-    status: '法要前' | '未入金' | '入金済';
+    status: '法要前' | '未入金' | '入金済' | '記載済';
     relatedTxs: Transaction[];
     totalPaid: number;
+    isRecorded: boolean;
   } => {
     const relatedTxs = transactions.filter(
       (t) => t.relatedServiceId === service.id || (service.transactionId && t.id === service.transactionId)
     );
     const totalPaid = relatedTxs.reduce((sum, t) => sum + (t.type === '収入' ? t.amount : -t.amount), 0);
+    const isRecorded = Boolean(service.accountingRecorded || relatedTxs.length > 0 || service.status === '入金済' || (service.status as any) === '記載済');
 
-    if (relatedTxs.length > 0) {
-      return { status: '入金済', relatedTxs, totalPaid };
+    if (isRecorded || relatedTxs.length > 0) {
+      return { status: '記載済', relatedTxs, totalPaid, isRecorded: true };
     }
 
     const normDate = normalizeDateInput(service.scheduledDate) || service.scheduledDate;
     if (normDate > todayStr) {
-      return { status: '法要前', relatedTxs: [], totalPaid: 0 };
+      return { status: '法要前', relatedTxs: [], totalPaid: 0, isRecorded: false };
     } else {
-      return { status: '未入金', relatedTxs: [], totalPaid: 0 };
+      return { status: '未入金', relatedTxs: [], totalPaid: 0, isRecorded: false };
     }
   };
 
@@ -1962,6 +1991,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   const normalizeTimeForSort = (time?: string): string => {
     if (!time) return '99:99';
     const clean = time.trim();
+    if (clean === '終日' || clean.toLowerCase() === 'all') return '00:00';
     if (clean.includes(':')) {
       const [h, m] = clean.split(':');
       return `${h.padStart(2, '0')}:${(m || '00').padStart(2, '0')}`;
@@ -2385,7 +2415,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
     const totalAmt = validRows.reduce((sum, r) => sum + Number(r.amount), 0);
     alert(
-      `【出納帳への記帳が完了しました】\n施主: ${s.chiefMourner} 様\n記帳件数: ${validRows.length}件\n合計金額: ${formatCurrency(totalAmt)}\n\n出納帳（会計管理）に連携登録し、法要ステータスを「入金済」に更新しました。`
+      `【出納帳への記帳が完了しました】\n施主: ${s.chiefMourner} 様\n記帳件数: ${validRows.length}件\n合計金額: ${formatCurrency(totalAmt)}\n\n出納帳（会計管理）に連携登録し、会計記帳状況を「記載済」に更新しました。`
     );
     setAccountingModalService(null);
   };
@@ -2763,7 +2793,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                               className={`text-[10px] px-1 py-0.2 truncate font-sans font-bold flex items-center gap-0.5 ${chipStyle.chipClass}`}
                               title={`${s.scheduledTime} ${chipStyle.isAffiliated ? `[${chipStyle.templeName}] ` : ''}${s.memorialType} - ${s.chiefMourner || s.dharmaName || ''}`}
                             >
-                              <span className="text-[8px] opacity-75">{s.scheduledTime?.slice(0, 5)}</span>
+                              <span className="text-[8px] opacity-75">{s.scheduledTime === '終日' || s.isAllDay ? '終日' : s.scheduledTime?.slice(0, 5)}</span>
                               <span className="truncate">{chipStyle.isAffiliated ? `[${chipStyle.templeName}] ` : ''}{s.chiefMourner || s.dharmaName || s.memorialType}</span>
                             </div>
                           );
@@ -2862,12 +2892,24 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                 ) : (
                   <div className="space-y-3">
                     {selectedDateServices.map((s) => {
-                      const { status: serviceStatus, totalPaid } = getServiceAccountingStatus(s);
+                      const { status: serviceStatus, totalPaid, isRecorded } = getServiceAccountingStatus(s);
                       const isHousehold = isHouseholdMemorialService(s);
                       const isAffiliated = isAffiliatedTempleService(s);
                       const templeMeta = getServiceTempleInfo(s);
                       const isFuneral = ['通夜', '葬儀', '枕経', '葬儀・枕経', '通夜・葬儀'].includes(s.memorialType || '');
                       const isOther = s.memorialType === 'その他' || ['その他', '寺院行事', '会合', '来客', '法務その他'].includes(s.memorialType || '');
+                      
+                      // 塔婆明細抽出 (ToDoと同じ明細から抽出)
+                      const serviceTobaLines = isOther || isFuneral ? [] : extractServiceTobaLines(s, pastRecords, templeTodos, memorialServices);
+
+                      const isToba = Boolean(
+                        s.memorialType === '塔婆供養' ||
+                        s.memorialType === '塔婆' ||
+                        s.memorialType === '塔婆依頼' ||
+                        (s.memorialType && s.memorialType.includes('塔婆')) ||
+                        ((s.tobaCount || 0) > 0 && (!s.attendeeCount || s.attendeeCount === 0) && (!s.venue || s.venue === '本堂' || s.venue === '') && !isFuneral && !isOther) ||
+                        (serviceTobaLines.length > 0 && (!s.attendeeCount || s.attendeeCount === 0) && (!s.venue || s.venue === '本堂' || s.venue === '') && !isFuneral && !isOther)
+                      );
                       const displayVenue = (s.venue || '').trim();
                       const mapSearchQuery = getServiceMapSearchQuery(s);
                       
@@ -2881,9 +2923,6 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       // メイン精霊と回忌
                       const mainDharma = s.dharmaName || (s.deceasedName ? `俗名: ${s.deceasedName}` : (s.notes || ''));
                       const mainMemType = s.memorialType || '';
-                      
-                      // 塔婆明細抽出 (ToDoと同じ明細から抽出)
-                      const serviceTobaLines = extractServiceTobaLines(s, pastRecords, templeTodos, memorialServices);
 
                       return (
                         <div
@@ -2894,7 +2933,9 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-[#EBE5DA]">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-gray-900 text-sm sm:text-base font-sans">
-                                {s.scheduledTime || '時間未定'}〜{s.endTime || calculateEndTime(s.scheduledTime, 60)}
+                                {s.scheduledTime === '終日' || s.isAllDay
+                                  ? '【終日】'
+                                  : `${s.scheduledTime || '時間未定'}〜${s.endTime || calculateEndTime(s.scheduledTime, 60)}`}
                               </span>
                               {isAffiliated && (
                                 <span className="text-xs font-bold px-2 py-0.5 font-sans bg-gray-100 text-gray-800 border border-gray-300 rounded-2xs">
@@ -2927,53 +2968,57 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                             </div>
                           </div>
 
-                          {/* 2行目: 赤色文字のイベント題名 */}
-                          <div className="space-y-1 py-0.5">
-                            {isFuneral ? (
-                              <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-                                {s.memorialType || '葬儀'}　施主　{cleanChiefMourner || '施主未定'}
-                              </div>
-                            ) : isOther ? (
-                              <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-                                {cleanChiefMourner || s.notes || s.memorialType || 'その他予定'}
-                              </div>
-                            ) : (
-                              <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-                                {mainDharma ? `${mainDharma}　` : ''}{mainMemType}{cleanChiefMourner ? `　施主 ${cleanChiefMourner}` : ''}
-                              </div>
-                            )}
-                            {!isFuneral && !isOther && s.additionalDeceased && s.additionalDeceased.length > 0 && (
-                              <div className="space-y-0.5 pt-0.5">
-                                {s.additionalDeceased.map((sub, idx) => (
-                                  <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-purple-950 leading-snug tracking-wide">
-                                    {sub.dharmaName || sub.deceasedName}　{sub.memorialType || ''} (併修)
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          {/* 2行目: 赤色文字のイベント題名 (塔婆のみの場合は非表示) */}
+                          {!isToba && (
+                            <div className="space-y-1 py-0.5">
+                              {isFuneral ? (
+                                <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
+                                  {s.memorialType || '葬儀'}　施主　{cleanChiefMourner || '施主未定'}
+                                </div>
+                              ) : isOther ? (
+                                <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
+                                  {cleanChiefMourner || s.notes || s.memorialType || 'その他予定'}
+                                </div>
+                              ) : (
+                                <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
+                                  {mainDharma ? `${mainDharma}　` : ''}{mainMemType}{cleanChiefMourner ? `　施主 ${cleanChiefMourner}` : ''}
+                                </div>
+                              )}
+                              {!isFuneral && !isOther && s.additionalDeceased && s.additionalDeceased.length > 0 && (
+                                <div className="space-y-0.5 pt-0.5">
+                                  {s.additionalDeceased.map((sub, idx) => (
+                                    <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-purple-950 leading-snug tracking-wide">
+                                      {sub.dharmaName || sub.deceasedName}　{sub.memorialType || ''} (併修)
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                          {/* 3行目: 小文字で参列　⚫️名　会場　⚫️⚫️　GoogleMap */}
-                          <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-3 flex-wrap">
-                            {!isOther && s.attendeeCount && s.attendeeCount > 0 ? (
-                              <span>参列 {s.attendeeCount}名</span>
-                            ) : null}
-                            {displayVenue ? <span>会場 {displayVenue}</span> : null}
-                            {displayVenue && mapSearchQuery ? (
-                              <a
-                                href={getGoogleMapsSearchUrl(mapSearchQuery)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-bold bg-blue-50 px-2 py-0.5 rounded-2xs border border-blue-200 transition-colors cursor-pointer"
-                                title="Googleマップで開く"
-                              >
-                                <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                                <span>GoogleMap</span>
-                              </a>
-                            ) : null}
-                          </div>
+                          {/* 3行目: 小文字で参列　⚫️名　会場　⚫️⚫️　GoogleMap (塔婆のみの場合は参列非表示) */}
+                          {!isToba && (
+                            <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-3 flex-wrap">
+                              {!isOther && s.attendeeCount && s.attendeeCount > 0 ? (
+                                <span>参列 {s.attendeeCount}名</span>
+                              ) : null}
+                              {displayVenue ? <span>会場 {displayVenue}</span> : null}
+                              {displayVenue && mapSearchQuery ? (
+                                <a
+                                  href={getGoogleMapsSearchUrl(mapSearchQuery)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-bold bg-blue-50 px-2 py-0.5 rounded-2xs border border-blue-200 transition-colors cursor-pointer"
+                                  title="Googleマップで開く"
+                                >
+                                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>GoogleMap</span>
+                                </a>
+                              ) : null}
+                            </div>
+                          )}
 
-                          {/* 4行目: 塔婆はTodoと同じ感じだけど文字を少々小さくして（こちらも高さ制限なしで縦に並べてください） */}
+                          {/* 4行目: 塔婆明細枠 */}
                           {serviceTobaLines.length > 0 && (
                             <div className="space-y-1.5 bg-[#FAF8F5] p-2.5 rounded-xs border border-[#E5DFD5] w-full">
                               <div className="text-xs font-bold text-[#8C2D19] flex items-center gap-1">
@@ -2996,12 +3041,18 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           <div className="flex items-center justify-between pt-2 border-t border-[#E5E0D8] font-sans text-xs gap-2 flex-wrap">
                             <a
                               href={generateGoogleCalendarUrl({
-                                title: isHousehold ? `${s.memorialType} - ${cleanChiefMourner} (${s.dharmaName || s.deceasedName || ''})` : `${s.memorialType} - ${cleanChiefMourner}`,
+                                title: isToba
+                                  ? `塔婆供養 - ${cleanChiefMourner || '志主'}${serviceTobaLines.length > 0 ? ` (${serviceTobaLines.map((t) => t.formattedLine).join(', ')})` : ''}`
+                                  : isHousehold
+                                  ? `${s.memorialType} - ${cleanChiefMourner} (${s.dharmaName || s.deceasedName || ''})`
+                                  : `${s.memorialType} - ${cleanChiefMourner}`,
                                 startDate: s.scheduledDate,
                                 startTime: s.scheduledTime,
                                 endTime: s.endTime,
-                                details: isHousehold
-                                  ? `【施主】${cleanChiefMourner}\n【戒名】${s.dharmaName || s.deceasedName || ''}\n【参列】${s.attendeeCount || 0}名\n【塔婆】${serviceTobaLines.length > 0 ? serviceTobaLines.map(t => t.formattedLine).join('\n') : 'なし'}\n【備考】${s.notes || ''}`
+                                details: isToba
+                                  ? `【種別】塔婆供養\n【施主/志主】${cleanChiefMourner}\n【塔婆明細】\n${serviceTobaLines.map((t) => t.formattedLine).join('\n')}\n【備考】${s.notes || ''}`
+                                  : isHousehold
+                                  ? `【施主】${cleanChiefMourner}\n【戒名】${s.dharmaName || s.deceasedName || ''}\n【参列】${s.attendeeCount || 0}名\n【塔婆】${serviceTobaLines.length > 0 ? serviceTobaLines.map((t) => t.formattedLine).join('\n') : 'なし'}\n【備考】${s.notes || ''}`
                                   : `【用務・行事】${cleanChiefMourner}\n【場所】${displayVenue}\n【備考】${s.notes || ''}`,
                                 location: s.venue === '自宅' ? (s.address || '施主宅') : (s.venue || '本堂'),
                               })}
@@ -3014,18 +3065,27 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                             </a>
 
                             {isHousehold && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAccountingModal(s)}
-                                className={`px-2.5 py-1.5 font-bold rounded-xs flex items-center gap-1 transition-colors cursor-pointer text-xs ${
-                                  serviceStatus === '入金済'
-                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
-                                    : 'bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] hover:bg-[#FDE047]'
-                                }`}
-                              >
-                                <DollarSign className="w-3.5 h-3.5" />
-                                <span>会計入力{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
-                              </button>
+                              isRecorded ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAccountingModal(s)}
+                                  className="px-2 py-1 font-bold rounded-xs flex items-center gap-1 transition-colors cursor-pointer text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                  title="出納帳に記帳済み（クリックで明細の確認・編集・削除）"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>記載済{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAccountingModal(s)}
+                                  className="px-2.5 py-1.5 font-bold rounded-xs flex items-center gap-1 transition-colors cursor-pointer text-xs bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] hover:bg-[#FDE047]"
+                                  title="出納帳（会計管理）へ記帳"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  <span>会計入力</span>
+                                </button>
+                              )
                             )}
                           </div>
                         </div>
@@ -3237,13 +3297,17 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   </tr>
                 ) : (
                   filteredServices.map((s) => {
-                    const { status: currentStatus, relatedTxs, totalPaid } = getServiceAccountingStatus(s);
+                    const { status: currentStatus, relatedTxs, totalPaid, isRecorded } = getServiceAccountingStatus(s);
 
                     return (
                       <tr key={s.id} className="hover:bg-[#FFFDF5] transition-colors">
                         <td className="p-2.5 whitespace-nowrap font-bold text-[#1A1A1A]">
                           <div>{s.scheduledDate}</div>
-                          <div className="text-[11px] text-[#777777] font-normal">{s.scheduledTime}〜{s.endTime || calculateEndTime(s.scheduledTime, 60)}</div>
+                          <div className="text-[11px] text-[#777777] font-normal">
+                            {s.scheduledTime === '終日' || s.isAllDay
+                              ? '終日'
+                              : `${s.scheduledTime}〜${s.endTime || calculateEndTime(s.scheduledTime, 60)}`}
+                          </div>
                         </td>
                         <td className="p-2.5 whitespace-nowrap">
                           <span
@@ -3311,15 +3375,27 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           )}
                         </td>
                         <td className="p-2.5 whitespace-nowrap text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenAccountingModal(s)}
-                            className="px-3 py-1 font-bold rounded-xs text-[11px] cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-1 mx-auto bg-[#FEF3C7] hover:bg-[#FDE047] text-[#92400E] border border-[#FDE68A]"
-                            title="塔婆・布施・法事の科目を個別入力・出納帳へ連携"
-                          >
-                            <DollarSign className="w-3.5 h-3.5" />
-                            <span>会計入力{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
-                          </button>
+                          {isRecorded ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAccountingModal(s)}
+                              className="px-2.5 py-1 font-bold rounded-xs text-[11px] cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-1 mx-auto bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
+                              title="出納帳に記帳済み（クリックで明細の確認・編集・削除）"
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>記載済{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenAccountingModal(s)}
+                              className="px-3 py-1 font-bold rounded-xs text-[11px] cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-1 mx-auto bg-[#FEF3C7] hover:bg-[#FDE047] text-[#92400E] border border-[#FDE68A]"
+                              title="塔婆・布施・法事の科目を個別入力・出納帳へ連携"
+                            >
+                              <DollarSign className="w-3.5 h-3.5" />
+                              <span>会計入力</span>
+                            </button>
+                          )}
                         </td>
                         <td className="p-2.5 whitespace-nowrap text-center">
                           <div className="flex items-center justify-center space-x-1.5">
@@ -5025,7 +5101,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                         出納帳に記帳済みの明細 (合計: {formatCurrency(currentTotal)})
                       </span>
                       <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded-xs text-[10px]">
-                        入金済
+                        記載済
                       </span>
                     </div>
                     <div className="space-y-1.5">
@@ -5050,6 +5126,14 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                             type="button"
                             onClick={() => {
                               onDeleteTransaction(tx.id);
+                              if (existing.length <= 1) {
+                                onUpdateService({
+                                  ...s,
+                                  accountingRecorded: false,
+                                  status: '未入金',
+                                  transactionId: undefined,
+                                });
+                              }
                             }}
                             className="px-2 py-1 text-red-600 hover:bg-red-50 border border-red-200 rounded-xs font-bold text-[10px] cursor-pointer flex items-center gap-0.5"
                             title="この明細を出納帳から削除"

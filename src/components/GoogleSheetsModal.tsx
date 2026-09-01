@@ -175,7 +175,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   if (!isOpen) return null;
 
   // Handle Google Login & Setup Auto-Sync
-  const handleLogin = async () => {
+  const handleLogin = async (isCleanImport: boolean = false) => {
+    const clean = typeof isCleanImport === 'boolean' ? isCleanImport : false;
     setLoading(true);
     setStatusMessage({ type: 'loading', text: 'Googleアカウント認証中...' });
     try {
@@ -193,7 +194,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         loadPermissions(sheet.id);
 
         if (onSyncWithGoogleDrive) {
-          const syncRes = await onSyncWithGoogleDrive(res.accessToken, sheet.id);
+          const syncRes = await onSyncWithGoogleDrive(res.accessToken, sheet.id, clean);
           setStatusMessage({ 
             type: 'success', 
             text: `ログイン成功: ${res.user.email} (GoogleDriveデータ連携完了: ${syncRes?.count ?? 0}件)` 
@@ -246,8 +247,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       if (onResetDatabase) {
         await onResetDatabase();
       }
-      // 初期化後にGoogleアカウント認証・自動同期を開始
-      await handleLogin();
+      // 初期化後にGoogleアカウント認証・初期化読込を開始
+      await handleLogin(true /* isCleanImport */);
     } catch (err: any) {
       console.error(err);
       setStatusMessage({ type: 'error', text: `読込エラー: ${err.message || '初期化読込に失敗しました。'}` });
@@ -810,7 +811,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         </div>
                         <button
                           type="button"
-                          onClick={handleLogin}
+                          onClick={() => handleLogin(false)}
                           disabled={loading}
                           className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-[#1A1A1A] hover:bg-[#333333] disabled:opacity-50 text-[#D4AF37] font-bold text-xs flex items-center justify-center space-x-2 transition-colors border border-[#D4AF37]/50 cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
                           title="現在の端末データを保持してGoogleアカウントと自動同期を開始します"

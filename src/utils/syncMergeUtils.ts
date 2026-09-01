@@ -137,6 +137,7 @@ export function parseDateAndTimeToMs(dateStr?: string, timeStr?: string): number
  * Extracts the most recent audit timestamp (modification or creation) as a numeric timestamp (ms).
  */
 export function getRecordAuditTimestamp(item?: {
+  id?: string;
   createdDate?: string;
   createdTime?: string;
   updatedDate?: string;
@@ -164,6 +165,17 @@ export function getRecordAuditTimestamp(item?: {
   if (item.createdDate) {
     const ms = parseDateAndTimeToMs(item.createdDate, item.createdTime);
     if (ms > 0) return ms;
+  }
+
+  // 3. Fallback: Check if ID contains a timestamp (e.g. HH-1700000000000, MS-1700000000000)
+  if (item.id) {
+    const match = item.id.match(/\d{12,14}/);
+    if (match) {
+      const ms = parseInt(match[0], 10);
+      if (!isNaN(ms) && ms > 1500000000000 && ms < 2500000000000) {
+        return ms;
+      }
+    }
   }
 
   return 0;

@@ -21,7 +21,7 @@ export function formatToGCalDateTime(dateStr: string, timeStr?: string): string 
   const m = parts[1].padStart(2, '0');
   const d = parts[2].padStart(2, '0');
 
-  if (!timeStr) {
+  if (!timeStr || timeStr === '終日') {
     // All day
     return `${y}${m}${d}`;
   }
@@ -82,6 +82,7 @@ export function generateGoogleCalendarUrl(options: {
  * Calculate simple end time given HH:mm and duration in minutes
  */
 export function calculateEndTime(startTime: string, durationMinutes: number = 60): string {
+  if (startTime === '終日' || !startTime) return '終日';
   const parts = startTime.split(':');
   if (parts.length < 2) return '12:00';
   let hours = parseInt(parts[0], 10);

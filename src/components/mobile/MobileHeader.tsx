@@ -43,7 +43,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 
   // Mode rules (exact match with PC version):
   // 1. Calendar & ToDo: Merged all temples only (Fixed)
-  const isMergedOnlyTab = activeTab === 'calendar' || activeTab === 'todos';
+  const isMergedOnlyTab = activeTab === 'schedule' || activeTab === 'calendar' || activeTab === 'todos';
 
   // 2. Kakocho: Merge allowed (Can switch between ALL and individual temples)
   const isMergeAllowedTab = activeTab === 'kakocho';
@@ -85,20 +85,21 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
         {/* Left: Temple Selector / Brand */}
         <div className="relative flex-1 min-w-0" ref={dropdownRef}>
           {isMergedOnlyTab ? (
-            /* Fixed Merged Tab (Calendar & ToDo) - Clean display */
+            /* Fixed Merged Tab (Calendar & ToDo) - Clean display fixed to 全寺院合算表示 */
             <div
               className="flex items-center gap-2 text-left w-full py-1 px-1"
-              title="予定表・ToDoは全寺院の情報を合算して全件表示しています"
+              title="予定表・ToDoは全寺院の情報を合算して全件表示しています（固定）"
             >
-              <div className="w-8 h-8 rounded-xs flex items-center justify-center shrink-0 border bg-[#2A2A2A] border-[#D4AF37]/80 text-[#D4AF37] shadow-xs">
-                <span className="text-sm font-black leading-none">本</span>
+              <div className="w-8 h-8 rounded-xs flex items-center justify-center shrink-0 border bg-amber-950/90 border-amber-400 text-amber-300 shadow-xs">
+                <Layers className="w-4 h-4" />
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate">
-                  <span className="text-base sm:text-lg font-serif font-black text-[#F9F7F2] truncate tracking-tight">
-                    {mainTemple.name || templeInfo.name || '（寺院名未設定）'}
-                  </span>
-                </div>
+              <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                <span className="text-base sm:text-lg font-serif font-black text-[#F9F7F2] truncate tracking-tight">
+                  全寺院合算表示
+                </span>
+                <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold rounded-xs border border-amber-500/40 shrink-0">
+                  合算
+                </span>
               </div>
             </div>
           ) : temples.length > 1 ? (

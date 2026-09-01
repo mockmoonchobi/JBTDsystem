@@ -39,16 +39,16 @@ interface A4TemplateModalProps {
 export const A4_NOTICE_TAGS = [
   { tag: '{施主名}', description: '施主名（「様」無し）' },
   { tag: '{彼岸}', description: '直近の彼岸（「秋彼岸」または「春彼岸」・年無し）' },
-  { tag: '{次彼岸}', description: '直近の彼岸の次（「春彼岸」または「秋彼岸」・年無し）' },
+  { tag: '{次彼岸}', description: '直近の彼岸の次（「来年の春彼岸」または「秋彼岸」）' },
   { tag: '{本年}', description: '今年（例: 「令和八年」）' },
   { tag: '{次年}', description: '次の年（例: 「令和九年」）' },
   { tag: '{故人名}', description: '対象故人の俗名（「様」無し）' },
   { tag: '{精霊一覧}', description: '該当精霊一覧（九月二十三日　戒名　霊位　五十回忌）' },
   { tag: '{寺院名}', description: '寺院名（例: 光明寺）' },
   { tag: '{山号}', description: '寺院の山号（例: 補陀落山）' },
-  { tag: '{集金項目１}', description: '集金項目1（例: 護持会費　一金、三，〇〇〇円也）' },
-  { tag: '{集金項目２}', description: '集金項目2（例: 墓地管理費　一金、五，〇〇〇円也）' },
-  { tag: '{集金項目３}', description: '集金項目3（例: 志納金　一金、一〇，〇〇〇円也）' },
+  { tag: '{集金項目１}', description: '集金項目1（例: 護持会費　一金、五，〇〇〇円也）' },
+  { tag: '{集金項目２}', description: '集金項目2（例: 墓地管理費　一金、三，〇〇〇円也）' },
+  { tag: '{集金項目３}', description: '集金項目3（例: 境内整備費　一金、二，〇〇〇円也）' },
   { tag: '{檀信徒QRコード}', description: '檀信徒個別の受付QRコード（「御檀家様QR」表示・大きめ印刷）' },
   { tag: '{寺院サイトQRコード}', description: '寺院公式ホームページ・案内のQRコード' },
 ];
@@ -282,7 +282,7 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
     onClose();
   };
 
-  // Sample household for preview
+  // Sample household for preview with dummy fee amounts
   const sampleHousehold: Household = {
     id: 'H001',
     familyHead: '山田太郎',
@@ -297,6 +297,28 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
     familyMembers: [],
     createdAt: '2026-01-01',
     notes: '',
+    fee1: String(templeInfo?.feeType1DefaultAmount || 5000),
+    fee1Amount: templeInfo?.feeType1DefaultAmount || 5000,
+    fee2: String(templeInfo?.feeType2DefaultAmount || 3000),
+    fee2Amount: templeInfo?.feeType2DefaultAmount || 3000,
+    fee3: String(templeInfo?.feeType3DefaultAmount || 2000),
+    fee3Amount: templeInfo?.feeType3DefaultAmount || 2000,
+  };
+
+  // Preview temple info: use configured fee types if present, otherwise fallback to standard dummy names
+  const previewTempleInfo: TempleInfo = {
+    ...(templeInfo || ({} as TempleInfo)),
+    id: templeInfo?.id || 'temple-preview',
+    name: templeInfo?.name || '光明寺',
+    mountainName: templeInfo?.mountainName || '補陀落山',
+    address: templeInfo?.address || '東京都港区芝公園4-7-35',
+    phone: templeInfo?.phone || '03-3432-1234',
+    postalCode: templeInfo?.postalCode || '105-0011',
+    chiefPriest: templeInfo?.chiefPriest || '住職 山田光徳',
+    sect: templeInfo?.sect || '浄土宗',
+    feeType1: templeInfo?.feeType1?.trim() ? templeInfo.feeType1.trim() : '護持会費',
+    feeType2: templeInfo?.feeType2?.trim() ? templeInfo.feeType2.trim() : '墓地管理費',
+    feeType3: templeInfo?.feeType3?.trim() ? templeInfo.feeType3.trim() : '境内整備費',
   };
 
   // Preview text with sample data
@@ -311,7 +333,7 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
     ],
     '令和八年 秋彼岸',
     '山田太郎',
-    templeInfo,
+    previewTempleInfo,
     '山田太郎',
     sampleHousehold
   );

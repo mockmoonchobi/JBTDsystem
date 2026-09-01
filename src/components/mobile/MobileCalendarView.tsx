@@ -492,6 +492,18 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
   const isFuneral = ['通夜', '葬儀', '枕経', '葬儀・枕経', '通夜・葬儀'].includes(service.memorialType || '');
   const isOther = service.memorialType === 'その他' || ['その他', '寺院行事', '会合', '来客', '法務その他'].includes(service.memorialType || '');
 
+  // 塔婆明細抽出 (ToDoと同じ明細から抽出)
+  const serviceTobaLines = isOther || isFuneral ? [] : extractServiceTobaLines(service, pastRecords, templeTodos, memorialServices);
+
+  const isToba = Boolean(
+    service.memorialType === '塔婆供養' ||
+    service.memorialType === '塔婆' ||
+    service.memorialType === '塔婆依頼' ||
+    (service.memorialType && service.memorialType.includes('塔婆')) ||
+    ((service.tobaCount || 0) > 0 && (!service.attendeeCount || service.attendeeCount === 0) && (!service.venue || service.venue === '本堂' || service.venue === '') && !isFuneral && !isOther) ||
+    (serviceTobaLines.length > 0 && (!service.attendeeCount || service.attendeeCount === 0) && (!service.venue || service.venue === '本堂' || service.venue === '') && !isFuneral && !isOther)
+  );
+
   const displayVenue = (service.venue || '').trim();
   const searchAddress = (service.address || '').trim() || displayVenue;
   const mapUrl = searchAddress ? getGoogleMapsSearchUrl(searchAddress) : null;
@@ -504,9 +516,6 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
   // メイン精霊と回忌
   const mainDharma = service.dharmaName || (service.deceasedName ? `俗名: ${service.deceasedName}` : (service.notes || ''));
   const mainMemType = service.memorialType || '';
-
-  // 塔婆明細抽出 (ToDoと同じ明細から抽出)
-  const serviceTobaLines = isOther || isFuneral ? [] : extractServiceTobaLines(service, pastRecords, templeTodos, memorialServices);
 
   return (
     <div
@@ -521,7 +530,9 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
             </span>
           )}
           <span className="font-bold text-gray-900 text-sm sm:text-base font-sans">
-            {service.scheduledTime || '時間未定'}〜{service.endTime || ''}
+            {service.scheduledTime === '終日' || service.isAllDay
+              ? '【終日】'
+              : `${service.scheduledTime || '時間未定'}〜${service.endTime || ''}`}
           </span>
           {isAffiliated && (
             <span className="text-xs font-bold px-2 py-0.5 font-sans bg-gray-100 text-gray-800 border border-gray-300 rounded-2xs">
@@ -555,52 +566,56 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
         </div>
       </div>
 
-      {/* 2行目: 赤色文字のイベント題名 */}
-      <div className="space-y-1 py-0.5">
-        {isFuneral ? (
-          <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-            {service.memorialType || '葬儀'}　施主　{cleanChiefMourner || '施主未定'}
-          </div>
-        ) : isOther ? (
-          <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-            {cleanChiefMourner || service.notes || service.memorialType || 'その他予定'}
-          </div>
-        ) : (
-          <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-            {mainDharma ? `${mainDharma}　` : ''}{mainMemType}{cleanChiefMourner ? `　施主 ${cleanChiefMourner}` : ''}
-          </div>
-        )}
+      {/* 2行目: 赤色文字のイベント題名 (塔婆のみの場合は非表示) */}
+      {!isToba && (
+        <div className="space-y-1 py-0.5">
+          {isFuneral ? (
+            <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
+              {service.memorialType || '葬儀'}　施主　{cleanChiefMourner || '施主未定'}
+            </div>
+          ) : isOther ? (
+            <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
+              {cleanChiefMourner || service.notes || service.memorialType || 'その他予定'}
+            </div>
+          ) : (
+            <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
+              {mainDharma ? `${mainDharma}　` : ''}{mainMemType}{cleanChiefMourner ? `　施主 ${cleanChiefMourner}` : ''}
+            </div>
+          )}
 
-        {!isFuneral && !isOther && service.additionalDeceased && service.additionalDeceased.length > 0 && (
-          <div className="space-y-0.5 pt-0.5">
-            {service.additionalDeceased.map((sub, idx) => (
-              <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-[#8C2D19]/90 leading-snug tracking-wide">
-                {sub.dharmaName || sub.deceasedName}　{sub.memorialType || ''} (併修)
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          {!isFuneral && !isOther && service.additionalDeceased && service.additionalDeceased.length > 0 && (
+            <div className="space-y-0.5 pt-0.5">
+              {service.additionalDeceased.map((sub, idx) => (
+                <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-[#8C2D19]/90 leading-snug tracking-wide">
+                  {sub.dharmaName || sub.deceasedName}　{sub.memorialType || ''} (併修)
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* 3行目: 小文字で参列　⚫️名　会場　⚫️⚫️　GoogleMap */}
-      <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-3 flex-wrap">
-        {!isOther && service.attendeeCount && service.attendeeCount > 0 ? (
-          <span>参列 {service.attendeeCount}名</span>
-        ) : null}
-        {displayVenue ? <span>会場 {displayVenue}</span> : null}
-        {mapUrl ? (
-          <a
-            href={mapUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-bold bg-blue-50 px-2 py-0.5 rounded-2xs border border-blue-200 transition-colors cursor-pointer"
-            title="Googleマップで開く"
-          >
-            <MapPin className="w-3.5 h-3.5 text-blue-600" />
-            <span>GoogleMap</span>
-          </a>
-        ) : null}
-      </div>
+      {/* 3行目: 小文字で参列　⚫️名　会場　⚫️⚫️　GoogleMap (塔婆のみの場合は参列非表示) */}
+      {!isToba && (
+        <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-3 flex-wrap">
+          {!isOther && service.attendeeCount && service.attendeeCount > 0 ? (
+            <span>参列 {service.attendeeCount}名</span>
+          ) : null}
+          {displayVenue ? <span>会場 {displayVenue}</span> : null}
+          {mapUrl ? (
+            <a
+              href={mapUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-bold bg-blue-50 px-2 py-0.5 rounded-2xs border border-blue-200 transition-colors cursor-pointer"
+              title="Googleマップで開く"
+            >
+              <MapPin className="w-3.5 h-3.5 text-blue-600" />
+              <span>GoogleMap</span>
+            </a>
+          ) : null}
+        </div>
+      )}
 
       {/* 4行目: 塔婆明細 */}
       {serviceTobaLines.length > 0 && (
@@ -625,7 +640,9 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
       <div className="flex items-center justify-between pt-2 border-t border-[#E5E0D8] font-sans text-xs gap-2 flex-wrap">
         <a
           href={generateGoogleCalendarUrl({
-            title: isFuneral
+            title: isToba
+              ? `塔婆供養 - ${cleanChiefMourner || '志主'}${serviceTobaLines.length > 0 ? ` (${serviceTobaLines.map((t) => t.formattedLine).join(', ')})` : ''}`
+              : isFuneral
               ? `${service.memorialType || '葬儀'} 施主 ${cleanChiefMourner || '施主未定'}`
               : isOther
               ? (cleanChiefMourner || service.notes || 'その他予定')
@@ -633,7 +650,9 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
             startDate: service.scheduledDate,
             startTime: service.scheduledTime,
             endTime: service.endTime,
-            details: isOther
+            details: isToba
+              ? `【種別】塔婆供養\n【施主/志主】${cleanChiefMourner}\n【塔婆明細】\n${serviceTobaLines.map((t) => t.formattedLine).join('\n')}\n【備考】${service.notes || ''}`
+              : isOther
               ? `【件名】${cleanChiefMourner || 'その他予定'}\n【会場】${displayVenue || '未定'}\n【備考】${service.notes || ''}`
               : isFuneral
               ? `【種別】${service.memorialType || '葬儀'}\n【施主】${cleanChiefMourner}\n【会場】${displayVenue || '未定'}\n【住所】${service.address || ''}\n【備考】${service.notes || ''}`

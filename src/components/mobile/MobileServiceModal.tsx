@@ -33,7 +33,9 @@ import {
   getKanaRow,
   getKanaColumn,
   getHouseholdSponsorName,
-  getHouseholdSponsorInfo
+  getHouseholdSponsorInfo,
+  resolveSpiritMemorialType,
+  normalizeMemorialType
 } from '../../utils/memorialCalculator';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
 
@@ -56,6 +58,28 @@ interface MobileServiceModalProps {
 
 // Wizard steps for mobile service creation
 type WizardStep = 'step_temple' | 'step_category' | 'step_select_mode' | 'step_household_search' | 'step_spirit_candidates' | 'step_details';
+
+export const MEMORIAL_TYPE_OPTIONS = [
+  '四十九日',
+  '百ヶ日',
+  '一周忌',
+  '三回忌',
+  '七回忌',
+  '十三回忌',
+  '十七回忌',
+  '二十三回忌',
+  '二十七回忌',
+  '三十三回忌',
+  '五十回忌',
+  '百回忌',
+  '初七日',
+  '年忌法要',
+  '納骨法要',
+  '新盆・初盆',
+  '施餓鬼法要',
+  '塔婆供養',
+  'その他',
+];
 
 export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
   isOpen,
@@ -388,7 +412,9 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
     } else {
       setFormData((prev) => ({
         ...prev,
-        memorialType: '一周忌',
+        memorialType: prev.memorialType && prev.memorialType !== 'その他' && prev.memorialType !== '通夜' && prev.memorialType !== '塔婆供養'
+          ? normalizeMemorialType(prev.memorialType)
+          : '年忌法要',
         venue: prev.venue || templeName,
         address: prev.address || templeAddr,
       }));
@@ -440,13 +466,25 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       const s0 = spirits[0];
       const targetDate = formData.scheduledDate || todayStr;
       const kaiki = s0.deathDate ? getSpiritMemorialForDate(s0.deathDate, targetDate) : '';
-      setFormData((prev) => ({
-        ...prev,
-        deceasedId: s0.id,
-        dharmaName: s0.dharmaName || '',
-        deceasedName: s0.secularName || '',
-        memorialType: (kaiki && kaiki !== '当年没' ? kaiki : prev.memorialType) as any,
-      }));
+      const normKaiki = kaiki && kaiki !== '当年没' ? normalizeMemorialType(kaiki) : (formData.memorialType || '年忌法要');
+      setFormData((prev) => {
+        const curToba = [...(prev.tobaItems || [])];
+        if (curToba.length > 0 && normKaiki) {
+          curToba[0] = {
+            ...curToba[0],
+            memorialType: normKaiki,
+            dharmaName: s0.dharmaName || curToba[0].dharmaName || '',
+          };
+        }
+        return {
+          ...prev,
+          deceasedId: s0.id,
+          dharmaName: s0.dharmaName || '',
+          deceasedName: s0.secularName || '',
+          memorialType: (majorCategory === '塔婆' ? '塔婆供養' : (normKaiki || prev.memorialType)) as any,
+          tobaItems: curToba,
+        };
+      });
     }
 
     setCurrentStep('step_details');
@@ -463,19 +501,31 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
     const curVenue = (formData.venue || '本堂').trim();
     const isAtTemple = curVenue === '本堂' || curVenue === '客殿' || curVenue.includes('本堂');
     const autoAddress = isAtTemple ? templeAddr : (hh?.address || '');
+    const candMemType = normalizeMemorialType(cand.memorialType || formData.memorialType || '年忌法要');
 
-    setFormData((prev) => ({
-      ...prev,
-      scheduledDate: cand.scheduledDate || prev.scheduledDate,
-      memorialType: (cand.memorialType as any) || prev.memorialType,
-      householdId: p.householdId || prev.householdId || '',
-      deceasedId: p.id,
-      dharmaName: p.dharmaName || '',
-      deceasedName: p.secularName || '',
-      chiefMourner: headName || prev.chiefMourner || '施主様',
-      address: autoAddress,
-      templeId: p.templeId || hh?.templeId || prev.templeId || 'temple-main',
-    }));
+    setFormData((prev) => {
+      const curToba = [...(prev.tobaItems || [])];
+      if (curToba.length > 0) {
+        curToba[0] = {
+          ...curToba[0],
+          memorialType: candMemType,
+          dharmaName: p.dharmaName || curToba[0].dharmaName || '',
+        };
+      }
+      return {
+        ...prev,
+        scheduledDate: prev.scheduledDate || initialDate || todayStr,
+        memorialType: (majorCategory === '塔婆' ? '塔婆供養' : candMemType) as any,
+        householdId: p.householdId || prev.householdId || '',
+        deceasedId: p.id,
+        dharmaName: p.dharmaName || '',
+        deceasedName: p.secularName || '',
+        chiefMourner: headName || prev.chiefMourner || '施主様',
+        address: autoAddress,
+        templeId: p.templeId || hh?.templeId || prev.templeId || 'temple-main',
+        tobaItems: curToba,
+      };
+    });
 
     setCurrentStep('step_details');
   };
@@ -542,83 +592,48 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       while (finalTobaItems.length < finalTobaCount) {
         const idx = finalTobaItems.length;
         const subTarget = (formData.additionalDeceased || [])[idx - 1];
+        const targetDharma = subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : '');
+        const targetDeceasedId = subTarget ? subTarget.id : (idx === 0 ? formData.deceasedId : undefined);
+        const defaultItemMem = resolveSpiritMemorialType(
+          subTarget ? (subTarget.memorialType || formData.memorialType) : formData.memorialType,
+          targetDharma,
+          targetDeceasedId,
+          pastRecords,
+          formData.scheduledDate || todayStr
+        );
         finalTobaItems.push({
           id: `TOBA-${Date.now()}-${idx}`,
           sponsorName: idx === 0 ? (formData.chiefMourner || '') : '',
-          memorialType: subTarget ? (subTarget.memorialType || '一周忌') : (formData.memorialType || '一周忌'),
-          dharmaName: subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : ''),
+          memorialType: defaultItemMem,
+          dharmaName: targetDharma,
           tobaType: finalTobaType as any,
         });
       }
     }
 
-    // 【塔婆予約の場合】予定（MemorialService）は登録せず、Todoの塔婆作成のみを指定日に登録する
-    if (!isEditing && majorCategory === '塔婆') {
-      const targetDate = formData.scheduledDate || todayStr;
+    const isAllDaySelected = formData.scheduledTime === '終日' || formData.isAllDay;
+    const finalScheduledTime = isAllDaySelected ? '終日' : (formData.scheduledTime || (majorCategory === '塔婆' ? '09:00' : '11:00'));
+    const finalEndTime = isAllDaySelected ? '終日' : (formData.endTime || calculateEndTime(finalScheduledTime, 60));
 
-      // 精霊名の要約（主精霊 + 併修精霊）
-      const spiritsList: string[] = [];
-      if (formData.dharmaName?.trim() || formData.deceasedName?.trim()) {
-        spiritsList.push(formData.dharmaName?.trim() || formData.deceasedName?.trim() || '');
-      }
-      (formData.additionalDeceased || []).forEach((sub) => {
-        if (sub.dharmaName?.trim() || sub.deceasedName?.trim()) {
-          spiritsList.push(sub.dharmaName?.trim() || sub.deceasedName?.trim() || '');
-        }
-      });
-      const dharmaSummary = spiritsList.filter(Boolean).join('・');
-
-      // 志主名の要約
-      const validSponsors = finalTobaItems.map((item) => item.sponsorName?.trim()).filter(Boolean);
-      const sponsorsSummary = validSponsors.length > 0
-        ? validSponsors.join('・')
-        : (formData.chiefMourner ? `${formData.chiefMourner.replace(/(家|様)+$/g, '').trim()}様` : '施主');
-
-      // ToDoタイトル
-      let todoTitle = '';
-      if (dharmaSummary) {
-        todoTitle = `${dharmaSummary} 塔婆作成`;
-      } else if (formData.chiefMourner) {
-        todoTitle = `${formData.chiefMourner.replace(/(家|様)+$/g, '').trim()}様 塔婆作成`;
-      } else {
-        todoTitle = '塔婆作成';
-      }
-
-      // 塔婆明細の備考テキスト生成
-      let tobaDetailNotes = `本数: ${finalTobaCount}本 (${finalTobaType})\n志主: ${sponsorsSummary}`;
-      if (finalTobaItems.length > 0) {
-        tobaDetailNotes += '\n【塔婆明細】\n' + finalTobaItems.map((item, i) => {
-          const dName = item.dharmaName || item.tamegaki || formData.dharmaName || '先祖代々';
-          const mType = item.memorialType || '';
-          const sName = (item.sponsorName || formData.chiefMourner || '施主').replace(/(家|様)+$/g, '').trim();
-          return `${i + 1}. ${dName} ${mType} 志主: ${sName}`.replace(/\s+/g, ' ').trim();
-        }).join('\n');
-      }
-      if (formData.notes && formData.notes.trim()) {
-        tobaDetailNotes += `\n【備考】\n${formData.notes.trim()}`;
-      }
-
-      const newTobaTodo: TempleTodo = {
-        id: `TD-TOBA-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        templeId: targetTempleId,
-        title: todoTitle,
-        dueDate: targetDate, // 指定日に入力
-        dueTime: '17:00',
-        priority: 'high',
-        category: '塔婆揮毫',
-        completed: false,
-        householdId: formData.householdId || undefined,
-        householdHeadName: sponsorsSummary,
-        notes: tobaDetailNotes,
-        createdAt: todayStr,
-      };
-
-      if (onSaveTodo) {
-        onSaveTodo(newTobaTodo);
-      }
-      onClose();
-      return;
+    // 精霊名の要約（主精霊 + 併修精霊）
+    const spiritsList: string[] = [];
+    if (formData.dharmaName?.trim() || formData.deceasedName?.trim()) {
+      spiritsList.push(formData.dharmaName?.trim() || formData.deceasedName?.trim() || '');
     }
+    (formData.additionalDeceased || []).forEach((sub) => {
+      if (sub.dharmaName?.trim() || sub.deceasedName?.trim()) {
+        spiritsList.push(sub.dharmaName?.trim() || sub.deceasedName?.trim() || '');
+      }
+    });
+    const dharmaSummary = spiritsList.filter(Boolean).join('・');
+
+    // 志主名の要約
+    const validSponsors = finalTobaItems.map((item) => item.sponsorName?.trim()).filter(Boolean);
+    const sponsorsSummary = validSponsors.length > 0
+      ? validSponsors.join('・')
+      : (formData.chiefMourner ? `${formData.chiefMourner.replace(/(家|様)+$/g, '').trim()}様` : '施主');
+
+    const calculatedTobaFee = Number(formData.tobaFee) || (finalTobaCount > 0 ? finalTobaCount * 3000 : 0);
 
     const savedService: MemorialService = {
       id: service?.id || `MS-${Date.now()}`,
@@ -627,18 +642,20 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       deceasedId: formData.deceasedId || '',
       dharmaName: formData.dharmaName?.trim() || '',
       deceasedName: formData.deceasedName?.trim() || '',
-      memorialType: formData.memorialType || (majorCategory === 'その他' ? 'その他' : '年忌法要'),
+      memorialType: majorCategory === '塔婆' ? '塔婆供養' : (formData.memorialType || (majorCategory === 'その他' ? 'その他' : '年忌法要')),
       scheduledDate: formData.scheduledDate || todayStr,
-      scheduledTime: formData.scheduledTime || '11:00',
-      endTime: formData.endTime || (formData.scheduledTime ? calculateEndTime(formData.scheduledTime, 60) : '12:00'),
+      scheduledTime: finalScheduledTime,
+      endTime: finalEndTime,
+      isAllDay: isAllDaySelected,
       venue: curVenue,
       address: finalAddress,
       status: ((service?.status as any) === '案内未送' ? '未入金' : service?.status) || '未入金',
-      chiefMourner: formData.chiefMourner?.trim() || (majorCategory === 'その他' ? '' : '施主様'),
-      attendeeCount: Number(formData.attendeeCount) || (majorCategory === 'その他' ? 0 : 10),
-      offeringAmount: Number(formData.offeringAmount) || 0,
+      chiefMourner: formData.chiefMourner?.trim() || sponsorsSummary || (majorCategory === 'その他' ? '' : '施主様'),
+      attendeeCount: Number(formData.attendeeCount) || (majorCategory === 'その他' || majorCategory === '塔婆' ? 0 : 10),
+      offeringAmount: Number(formData.offeringAmount) || (majorCategory === '塔婆' ? 0 : 0),
       tobaCount: finalTobaCount,
       tobaType: finalTobaType,
+      tobaFee: calculatedTobaFee,
       tobaSponsors: finalTobaItems.map((i) => i.sponsorName),
       tobaItems: finalTobaItems,
       additionalDeceased: formData.additionalDeceased || [],
@@ -1202,8 +1219,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                       {/* Top Bar: Target Date & Milestone Badge */}
                       <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-black font-serif text-[#8C2D19]">
-                            📅 {cand.scheduledDate}
+                          <span className="text-xs font-bold font-serif text-[#8C2D19] bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-2xs">
+                            祥月/忌日: {cand.scheduledDate}
                           </span>
                           <span className="text-xs font-bold px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-2xs">
                             {cand.memorialType}
@@ -1319,55 +1336,71 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                 />
               </div>
 
-              {majorCategory !== '塔婆' && (
-                <>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block font-bold text-sm text-[#1A1A1A] mb-1 flex items-center gap-1">
+              <div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block font-bold text-sm text-[#1A1A1A] mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
                         <Clock className="w-4 h-4 text-[#8C2D19]" />
-                        開始時刻
-                      </label>
-                      <TimeSelectorInput
-                        value={formData.scheduledTime || '11:00'}
-                        onChange={(val) => {
-                          const newEnd = calculateEndTime(val, 60);
-                          setFormData({ ...formData, scheduledTime: val, endTime: newEnd });
-                        }}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-bold text-sm text-[#555555] mb-1">終了予定</label>
-                      <TimeSelectorInput
-                        value={formData.endTime || '12:00'}
-                        onChange={(val) => setFormData({ ...formData, endTime: val })}
-                        className="w-full"
-                      />
-                    </div>
+                        時間帯 / 開始時刻
+                      </span>
+                    </label>
+                    <TimeSelectorInput
+                      value={formData.scheduledTime || (majorCategory === '塔婆' ? '終日' : '11:00')}
+                      allowAllDay={true}
+                      onChange={(val) => {
+                        const isAll = val === '終日';
+                        const newEnd = isAll ? '終日' : calculateEndTime(val, 60);
+                        setFormData({ ...formData, scheduledTime: val, endTime: newEnd, isAllDay: isAll });
+                      }}
+                      className="w-full"
+                    />
                   </div>
+                  <div>
+                    <label className="block font-bold text-sm text-[#555555] mb-1">終了予定</label>
+                    <TimeSelectorInput
+                      value={formData.endTime || (formData.scheduledTime === '終日' ? '終日' : '12:00')}
+                      allowAllDay={true}
+                      onChange={(val) => setFormData({ ...formData, endTime: val })}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
 
-                  {/* Quick time chips */}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {['10:00', '11:00', '13:00', '14:00', '15:00'].map((time) => (
-                      <button
-                        key={time}
-                        type="button"
-                        onClick={() => {
-                          const end = calculateEndTime(time, 60);
-                          setFormData({ ...formData, scheduledTime: time, endTime: end });
-                        }}
-                        className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border ${
-                          formData.scheduledTime === time
-                            ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
-                            : 'bg-[#FAF8F5] text-[#555555] border-[#D1CEC7]'
-                        }`}
-                      >
-                        {time}〜
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+                {/* Quick time chips including 終日 */}
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData({ ...formData, scheduledTime: '終日', endTime: '終日', isAllDay: true });
+                    }}
+                    className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border transition-colors ${
+                      formData.scheduledTime === '終日' || formData.isAllDay
+                        ? 'bg-[#8C2D19] text-white border-[#8C2D19] shadow-2xs'
+                        : 'bg-amber-50 text-[#8C2D19] border-amber-300 hover:bg-amber-100'
+                    }`}
+                  >
+                    終日
+                  </button>
+                  {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map((time) => (
+                    <button
+                      key={time}
+                      type="button"
+                      onClick={() => {
+                        const end = calculateEndTime(time, 60);
+                        setFormData({ ...formData, scheduledTime: time, endTime: end, isAllDay: false });
+                      }}
+                      className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border ${
+                        formData.scheduledTime === time && !formData.isAllDay
+                          ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
+                          : 'bg-[#FAF8F5] text-[#555555] border-[#D1CEC7] hover:bg-[#F3EDE2]'
+                      }`}
+                    >
+                      {time}〜
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Service Type Selection */}
@@ -1401,26 +1434,41 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                 <label className="block font-bold text-sm text-[#1A1A1A]">
                   法要種別・区分
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
                   {[
-                    '一周忌', '三回忌', '七回忌',
-                    '十三回忌', '十七回忌', '三十三回忌',
-                    '四十九日', '納骨法要', '塔婆供養',
-                    '年忌法要', '新盆・初盆', '施餓鬼法要'
-                  ].map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, memorialType: type as any })}
-                      className={`py-2 px-1 rounded-xs text-xs font-bold border transition-colors cursor-pointer text-center ${
-                        formData.memorialType === type
-                          ? 'bg-[#8C2D19] text-white border-[#8C2D19] shadow-2xs'
-                          : 'bg-[#FAF8F5] text-[#333333] border-[#D1CEC7] hover:bg-[#F0ECE1]'
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
+                    '四十九日', '百ヶ日', '一周忌', '三回忌',
+                    '七回忌', '十三回忌', '十七回忌', '二十三回忌',
+                    '二十七回忌', '三十三回忌', '五十回忌', '納骨法要',
+                    '塔婆供養', '年忌法要', '新盆・初盆', '施餓鬼法要'
+                  ].map((type) => {
+                    const normCur = normalizeMemorialType(formData.memorialType || '');
+                    const isSelected = normCur === type || formData.memorialType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => {
+                          const oldType = formData.memorialType;
+                          const curTobaItems = [...(formData.tobaItems || [])];
+                          if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
+                            curTobaItems[0] = { ...curTobaItems[0], memorialType: type };
+                          }
+                          setFormData({
+                            ...formData,
+                            memorialType: type as any,
+                            tobaItems: curTobaItems,
+                          });
+                        }}
+                        className={`py-2 px-1 rounded-xs text-xs font-bold border transition-colors cursor-pointer text-center ${
+                          isSelected
+                            ? 'bg-[#8C2D19] text-white border-[#8C2D19] shadow-2xs'
+                            : 'bg-[#FAF8F5] text-[#333333] border-[#D1CEC7] hover:bg-[#F0ECE1]'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1618,7 +1666,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                         const subIdx = (formData.additionalDeceased || []).findIndex((s) => s.id === p.id);
                         const isSelected = isMain || subIdx >= 0;
                         const targetDate = formData.scheduledDate || todayStr;
-                        const kaiki = p.deathDate ? getSpiritMemorialForDate(p.deathDate, targetDate) : '';
+                        const kaikiRaw = p.deathDate ? getSpiritMemorialForDate(p.deathDate, targetDate) : '';
+                        const kaiki = kaikiRaw && kaikiRaw !== '当年没' ? normalizeMemorialType(kaikiRaw) : '';
 
                         return (
                           <button
@@ -1626,19 +1675,29 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                             type="button"
                             onClick={() => {
                               const curSubs = [...(formData.additionalDeceased || [])];
-                              const autoMemType = kaiki && kaiki !== '当年没' ? kaiki : (formData.memorialType || '年忌法要');
+                              const autoMemType = kaiki || normalizeMemorialType(formData.memorialType) || '年忌法要';
 
                               if (isMain) {
                                 // Unset main. Promote first sub-spirit if exists
                                 if (curSubs.length > 0) {
                                   const [firstSub, ...restSubs] = curSubs;
+                                  const nextMem = normalizeMemorialType(firstSub.memorialType || formData.memorialType || '年忌法要');
+                                  const curToba = [...(formData.tobaItems || [])];
+                                  if (curToba.length > 0) {
+                                    curToba[0] = {
+                                      ...curToba[0],
+                                      memorialType: nextMem,
+                                      dharmaName: firstSub.dharmaName || curToba[0].dharmaName || '',
+                                    };
+                                  }
                                   setFormData({
                                     ...formData,
                                     deceasedId: firstSub.id || '',
                                     dharmaName: firstSub.dharmaName || '',
                                     deceasedName: firstSub.deceasedName || '',
-                                    memorialType: (firstSub.memorialType as any) || formData.memorialType,
+                                    memorialType: nextMem as any,
                                     additionalDeceased: restSubs,
+                                    tobaItems: curToba,
                                   });
                                 } else {
                                   setFormData({
@@ -1659,12 +1718,21 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                                 // Not selected
                                 if (!formData.deceasedId && !formData.dharmaName) {
                                   // Set as Main
+                                  const curToba = [...(formData.tobaItems || [])];
+                                  if (curToba.length > 0) {
+                                    curToba[0] = {
+                                      ...curToba[0],
+                                      memorialType: autoMemType,
+                                      dharmaName: p.dharmaName || curToba[0].dharmaName || '',
+                                    };
+                                  }
                                   setFormData({
                                     ...formData,
                                     deceasedId: p.id,
                                     dharmaName: p.dharmaName || '',
                                     deceasedName: p.secularName || '',
-                                    memorialType: autoMemType as any,
+                                    memorialType: (majorCategory === '塔婆' ? '塔婆供養' : autoMemType) as any,
+                                    tobaItems: curToba,
                                   });
                                 } else {
                                   // Add as Sub-spirit (併修)
@@ -1754,11 +1822,23 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                       <div className="sm:col-span-4">
                         <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌・法要種別</label>
                         <select
-                          value={formData.memorialType || '年忌法要'}
-                          onChange={(e) => setFormData({ ...formData, memorialType: e.target.value as any })}
+                          value={normalizeMemorialType(formData.memorialType || '年忌法要')}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            const oldType = formData.memorialType;
+                            const curTobaItems = [...(formData.tobaItems || [])];
+                            if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
+                              curTobaItems[0] = { ...curTobaItems[0], memorialType: newType };
+                            }
+                            setFormData({
+                              ...formData,
+                              memorialType: newType as any,
+                              tobaItems: curTobaItems,
+                            });
+                          }}
                           className="w-full p-2 border border-[#D1CEC7] bg-white font-bold text-xs rounded-xs"
                         >
-                          {['一周忌', '三回忌', '七回忌', '十三回忌', '十七回忌', '二十三回忌', '二十七回忌', '三十三回忌', '五十回忌', '百回忌', '四十九日', '百箇日', '年忌法要', '納骨法要', '新盆・初盆', '施餓鬼法要', '塔婆供養', 'その他'].map((type) => (
+                          {MEMORIAL_TYPE_OPTIONS.map((type) => (
                             <option key={type} value={type}>{type}</option>
                           ))}
                         </select>
@@ -1810,7 +1890,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                         <div className="sm:col-span-4">
                           <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌</label>
                           <select
-                            value={sub.memorialType || '七回忌'}
+                            value={normalizeMemorialType(sub.memorialType || '七回忌')}
                             onChange={(e) => {
                               const curSubs = [...(formData.additionalDeceased || [])];
                               curSubs[idx] = { ...curSubs[idx], memorialType: e.target.value };
@@ -1818,7 +1898,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                             }}
                             className="w-full p-2 border border-[#D1CEC7] bg-white font-bold text-xs rounded-xs"
                           >
-                            {['一周忌', '三回忌', '七回忌', '十三回忌', '十七回忌', '二十三回忌', '二十七回忌', '三十三回忌', '五十回忌', '百回忌', '四十九日', '百箇日', '年忌法要', '納骨法要', '新盆・初盆', '施餓鬼法要', 'その他'].map((type) => (
+                            {MEMORIAL_TYPE_OPTIONS.map((type) => (
                               <option key={type} value={type}>{type}</option>
                             ))}
                           </select>
@@ -1970,11 +2050,20 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                           while (curItems.length < newCount) {
                             const idx = curItems.length;
                             const subTarget = (formData.additionalDeceased || [])[idx - 1];
+                            const targetDharma = subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : '');
+                            const targetDeceasedId = subTarget ? subTarget.id : (idx === 0 ? formData.deceasedId : undefined);
+                            const defaultItemMem = resolveSpiritMemorialType(
+                              subTarget ? (subTarget.memorialType || formData.memorialType) : formData.memorialType,
+                              targetDharma,
+                              targetDeceasedId,
+                              pastRecords,
+                              formData.scheduledDate || todayStr
+                            );
                             curItems.push({
                               id: `TOBA-${Date.now()}-${idx}`,
                               sponsorName: idx === 0 ? (formData.chiefMourner || '') : '',
-                              memorialType: subTarget ? (subTarget.memorialType || '一周忌') : (formData.memorialType || '一周忌'),
-                              dharmaName: subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : ''),
+                              memorialType: defaultItemMem,
+                              dharmaName: targetDharma,
                               tobaType: (formData.tobaType as any) || '大塔婆',
                             });
                           }
@@ -1995,11 +2084,20 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                           const curItems = [...(formData.tobaItems || [])];
                           const idx = curItems.length;
                           const subTarget = (formData.additionalDeceased || [])[idx - 1];
+                          const targetDharma = subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : '');
+                          const targetDeceasedId = subTarget ? subTarget.id : (idx === 0 ? formData.deceasedId : undefined);
+                          const defaultItemMem = resolveSpiritMemorialType(
+                            subTarget ? (subTarget.memorialType || formData.memorialType) : formData.memorialType,
+                            targetDharma,
+                            targetDeceasedId,
+                            pastRecords,
+                            formData.scheduledDate || todayStr
+                          );
                           curItems.push({
                             id: `TOBA-${Date.now()}-${idx}`,
                             sponsorName: idx === 0 ? (formData.chiefMourner || '') : '',
-                            memorialType: subTarget ? (subTarget.memorialType || '一周忌') : (formData.memorialType || '一周忌'),
-                            dharmaName: subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : ''),
+                            memorialType: defaultItemMem,
+                            dharmaName: targetDharma,
                             tobaType: (formData.tobaType as any) || '大塔婆',
                           });
                           setFormData({
@@ -2062,11 +2160,20 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                             while (curItems.length < newCount) {
                               const idx = curItems.length;
                               const subTarget = (formData.additionalDeceased || [])[idx - 1];
+                              const targetDharma = subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : '');
+                              const targetDeceasedId = subTarget ? subTarget.id : (idx === 0 ? formData.deceasedId : undefined);
+                              const defaultItemMem = resolveSpiritMemorialType(
+                                subTarget ? (subTarget.memorialType || formData.memorialType) : formData.memorialType,
+                                targetDharma,
+                                targetDeceasedId,
+                                pastRecords,
+                                formData.scheduledDate || todayStr
+                              );
                               curItems.push({
                                 id: `TOBA-${Date.now()}-${idx}`,
                                 sponsorName: idx === 0 ? (formData.chiefMourner || '') : '',
-                                memorialType: subTarget ? (subTarget.memorialType || '一周忌') : (formData.memorialType || '一周忌'),
-                                dharmaName: subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : ''),
+                                memorialType: defaultItemMem,
+                                dharmaName: targetDharma,
                                 tobaType: (formData.tobaType as any) || '大塔婆',
                               });
                             }
@@ -2087,11 +2194,20 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                             const curItems = [...(formData.tobaItems || [])];
                             const idx = curItems.length;
                             const subTarget = (formData.additionalDeceased || [])[idx - 1];
+                            const targetDharma = subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : '');
+                            const targetDeceasedId = subTarget ? subTarget.id : (idx === 0 ? formData.deceasedId : undefined);
+                            const defaultItemMem = resolveSpiritMemorialType(
+                              subTarget ? (subTarget.memorialType || formData.memorialType) : formData.memorialType,
+                              targetDharma,
+                              targetDeceasedId,
+                              pastRecords,
+                              formData.scheduledDate || todayStr
+                            );
                             curItems.push({
                               id: `TOBA-${Date.now()}-${idx}`,
                               sponsorName: idx === 0 ? (formData.chiefMourner || '') : '',
-                              memorialType: subTarget ? (subTarget.memorialType || '一周忌') : (formData.memorialType || '一周忌'),
-                              dharmaName: subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : ''),
+                              memorialType: defaultItemMem,
+                              dharmaName: targetDharma,
                               tobaType: (formData.tobaType as any) || '大塔婆',
                             });
                             setFormData({
@@ -2150,11 +2266,20 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                           const curItems = [...(formData.tobaItems || [])];
                           const idx = curItems.length;
                           const subTarget = (formData.additionalDeceased || [])[idx - 1];
+                          const targetDharma = subTarget ? (subTarget.dharmaName || '') : (idx === 0 ? (formData.dharmaName || '') : '');
+                          const targetDeceasedId = subTarget ? subTarget.id : (idx === 0 ? formData.deceasedId : undefined);
+                          const defaultItemMem = resolveSpiritMemorialType(
+                            subTarget ? (subTarget.memorialType || formData.memorialType) : formData.memorialType,
+                            targetDharma,
+                            targetDeceasedId,
+                            pastRecords,
+                            formData.scheduledDate || todayStr
+                          );
                           curItems.push({
                             id: `TOBA-${Date.now()}-${idx}`,
                             sponsorName: '',
-                            memorialType: subTarget ? (subTarget.memorialType || '一周忌') : (formData.memorialType || '一周忌'),
-                            dharmaName: subTarget ? (subTarget.dharmaName || '') : (formData.dharmaName || ''),
+                            memorialType: defaultItemMem,
+                            dharmaName: targetDharma,
                             tobaType: (formData.tobaType as any) || '大塔婆',
                           });
                           setFormData({
@@ -2173,10 +2298,11 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
 
                     <div className="space-y-2.5 max-h-80 overflow-y-auto pr-0.5">
                       {Array.from({ length: formData.tobaCount || 0 }).map((_, idx) => {
+                        const defaultMem = normalizeMemorialType(formData.memorialType || '一周忌');
                         const item = (formData.tobaItems && formData.tobaItems[idx]) || {
                           id: `TOBA-${idx}`,
                           sponsorName: formData.tobaSponsors?.[idx] || (idx === 0 ? formData.chiefMourner || '' : ''),
-                          memorialType: formData.memorialType || '一周忌',
+                          memorialType: defaultMem,
                           dharmaName: idx === 0 ? formData.dharmaName || '' : '',
                           tobaType: formData.tobaType || '大塔婆',
                         };
@@ -2187,7 +2313,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                             cur.push({
                               id: `TOBA-${Date.now()}-${cur.length}`,
                               sponsorName: '',
-                              memorialType: formData.memorialType || '一周忌',
+                              memorialType: defaultMem,
                               dharmaName: '',
                               tobaType: (formData.tobaType as any) || '大塔婆',
                             });
@@ -2202,11 +2328,21 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
 
                         const presets: { label: string; value: string; memType?: string }[] = [];
                         if (formData.dharmaName) {
-                          presets.push({ label: `[主] ${formData.dharmaName}`, value: formData.dharmaName, memType: formData.memorialType });
+                          const mainMem = normalizeMemorialType(formData.memorialType || '');
+                          presets.push({
+                            label: `[主] ${formData.dharmaName}${mainMem ? ` (${mainMem})` : ''}`,
+                            value: formData.dharmaName,
+                            memType: mainMem,
+                          });
                         }
                         (formData.additionalDeceased || []).forEach((sub, subI) => {
                           if (sub.dharmaName) {
-                            presets.push({ label: `[副${subI + 1}] ${sub.dharmaName}`, value: sub.dharmaName, memType: sub.memorialType });
+                            const subMem = normalizeMemorialType(sub.memorialType || formData.memorialType || '');
+                            presets.push({
+                              label: `[副${subI + 1}] ${sub.dharmaName}${subMem ? ` (${subMem})` : ''}`,
+                              value: sub.dharmaName,
+                              memType: subMem,
+                            });
                           }
                         });
                         const cleanHead = (formData.chiefMourner || '施主').replace(/(家|様)+$/g, '').trim();
@@ -2257,11 +2393,11 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                               <div className="sm:col-span-3">
                                 <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌・法要</label>
                                 <select
-                                  value={item.memorialType || formData.memorialType || '一周忌'}
+                                  value={normalizeMemorialType(item.memorialType || formData.memorialType || '一周忌')}
                                   onChange={(e) => updateTobaItem({ memorialType: e.target.value })}
                                   className="w-full p-1.5 border border-[#D1CEC7] bg-white font-bold text-xs rounded-xs"
                                 >
-                                  {['一周忌', '三回忌', '七回忌', '十三回忌', '十七回忌', '二十三回忌', '二十七回忌', '三十三回忌', '五十回忌', '百回忌', '四十九日', '百箇日', '年忌法要', '納骨法要', '新盆・初盆', '施餓鬼法要', 'その他'].map((type) => (
+                                  {MEMORIAL_TYPE_OPTIONS.map((type) => (
                                     <option key={type} value={type}>{type}</option>
                                   ))}
                                 </select>
@@ -2289,7 +2425,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                                     onClick={() => {
                                       updateTobaItem({
                                         dharmaName: p.value,
-                                        memorialType: p.memType || item.memorialType,
+                                        memorialType: p.memType || item.memorialType || formData.memorialType,
                                       });
                                     }}
                                     className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-[10px] text-[#8C2D19] font-bold rounded-2xs cursor-pointer truncate max-w-full"

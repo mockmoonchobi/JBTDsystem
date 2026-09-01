@@ -87,12 +87,29 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isCalendarTab = activeTab === 'reservations' || activeTab === 'memorial';
 
+  const isAccountingTabCombined =
+    activeTab === 'accounting' &&
+    (templeInfo?.accountingMode === 'combined' || temples.find((t) => t.isMain)?.accountingMode === 'combined');
+
   const isAllTemplesAllowed = 
     activeTab === 'kakocho' || 
     activeTab === 'daily_memorial';
 
+  const mainTemple = temples.find((t) => t.isMain) || temples[0] || templeInfo;
+
   const isAllTemples = isCalendarTab || (isAllTemplesAllowed && activeTempleId === 'ALL');
-  const currentTemple = isAllTemples
+  const currentTemple = isCalendarTab
+    ? {
+        id: 'ALL',
+        name: '全寺院合算表示',
+        sect: templeInfo.sect || '',
+        mountainName: '',
+        isMain: true,
+        color: '#D4AF37',
+      }
+    : isAccountingTabCombined
+    ? mainTemple
+    : isAllTemples
     ? {
         id: 'ALL',
         name: '全寺院合算表示',
@@ -138,6 +155,10 @@ export const Header: React.FC<HeaderProps> = ({
               {isCalendarTab ? (
                 <span className="text-[10px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 font-sans font-bold border border-amber-500/40">
                   全寺院合算（固定）
+                </span>
+              ) : isAccountingTabCombined ? (
+                <span className="text-[10px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 font-sans font-bold border border-amber-500/40">
+                  全寺院合算（本寺扱い）
                 </span>
               ) : isAllTemples ? (
                 <span className="text-[10px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 font-sans font-bold border border-amber-500/40">
@@ -234,7 +255,11 @@ export const Header: React.FC<HeaderProps> = ({
                   {temples.length > 1 && !isAllTemplesAllowed && (
                     <div className="px-3 py-2 bg-[#1A1A1A] border-b border-[#333333] text-[10px] text-[#888888] flex items-center gap-1.5">
                       <span className="text-[#D4AF37] font-bold">※</span>
-                      <span>檀家名簿・会計は個別寺院管理のため合算不可（過去帳・法事で合算可能）</span>
+                      <span>
+                        {isAccountingTabCombined
+                          ? '会計処理は現在「全寺院合算（本寺集約）」に設定されています'
+                          : '檀家名簿・個別会計は寺院ごとに管理されています（過去帳・法事で合算可能）'}
+                      </span>
                     </div>
                   )}
 

@@ -1603,7 +1603,7 @@ export function getHouseholdFamilyHeadName(household?: Household | null): string
  * Supported tags:
  * - {施主名} / ｛施主名｝ : 施主名（「様」無し、家族構成で施主指定された人物、なければ世帯主名。例: 佐藤 太郎）
  * - {彼岸} / ｛彼岸｝ : 直近の彼岸（例: 「秋彼岸」または「春彼岸」・年無し）
- * - {次彼岸} / ｛次彼岸｝ : 直近の彼岸の次（例: 「春彼岸」または「秋彼岸」・年無し）
+ * - {次彼岸} / ｛次彼岸｝ : 直近の彼岸の次（例: 「来年の春彼岸」または「秋彼岸」）
  * - {本年} / ｛本年｝ : 今年（例: 「令和八年」）
  * - {次年} / ｛次年｝ : 次の年（例: 「令和九年」）
  * - {故人名} / ｛故人名｝ : 俗名（「様」無し）
@@ -1636,16 +1636,16 @@ export function applyNoticeTemplate(
     : (cleanHead !== '' ? cleanHead : '檀信徒');
 
   // ｛彼岸｝＝直近の彼岸　「秋彼岸」or「春彼岸」（年無し）
-  // ｛次彼岸｝＝直近の彼岸の次　「春彼岸」or「秋彼岸」（年無し）
+  // ｛次彼岸｝＝直近の彼岸の次　「来年の春彼岸」or「秋彼岸」
   let higanCurrent = '秋彼岸';
-  let higanNext = '春彼岸';
+  let higanNext = '来年の春彼岸';
 
   if (higanPeriodLabel && (higanPeriodLabel.includes('春彼岸') || higanPeriodLabel.includes('春'))) {
     higanCurrent = '春彼岸';
     higanNext = '秋彼岸';
   } else if (higanPeriodLabel && (higanPeriodLabel.includes('秋彼岸') || higanPeriodLabel.includes('秋'))) {
     higanCurrent = '秋彼岸';
-    higanNext = '春彼岸';
+    higanNext = '来年の春彼岸';
   } else {
     const now = new Date();
     const m = now.getMonth() + 1;
@@ -1653,7 +1653,7 @@ export function applyNoticeTemplate(
     // 春分(3/21)〜秋分(9/23)の期間は直近彼岸が「秋彼岸」、それ以外は「春彼岸」
     if ((m === 3 && d >= 22) || (m > 3 && m < 9) || (m === 9 && d <= 23)) {
       higanCurrent = '秋彼岸';
-      higanNext = '春彼岸';
+      higanNext = '来年の春彼岸';
     } else {
       higanCurrent = '春彼岸';
       higanNext = '秋彼岸';
@@ -2649,9 +2649,9 @@ export function calculateUpcomingMilestonesRange(
 
   // Config for chuin (中陰) days
   const chuinDays: { daysToAdd: number; label: string; cat: '中陰' | '百ヶ日' }[] = [
-    { daysToAdd: 6, label: '初七日忌', cat: '中陰' },
-    { daysToAdd: 48, label: '四十九日忌', cat: '中陰' },
-    { daysToAdd: 99, label: '百ヶ日忌', cat: '百ヶ日' },
+    { daysToAdd: 6, label: '初七日', cat: '中陰' },
+    { daysToAdd: 48, label: '四十九日', cat: '中陰' },
+    { daysToAdd: 99, label: '百ヶ日', cat: '百ヶ日' },
   ];
 
   // Config for ninki (年回忌)
@@ -2948,5 +2948,68 @@ export function getSpiritMemorialForDate(deathDateStr?: string, targetDateStr?: 
 
   // 該当する実際の忌日・年回忌がない場合は表示しない
   return '';
+}
+
+export function normalizeMemorialType(type?: string): string {
+  if (!type) return '';
+  const t = type.trim();
+  if (t === '四十九日忌' || t === '四十九日' || t.includes('四十九日') || t.includes('七七日') || t.includes('満中陰')) return '四十九日';
+  if (t === '百ヶ日忌' || t === '百箇日忌' || t === '百ヶ日' || t === '百箇日' || t.includes('百ヶ日') || t.includes('百箇日')) return '百ヶ日';
+  if (t === '初七日忌' || t === '初七日') return '初七日';
+  return t;
+}
+
+/**
+ * 塔婆供養や法事において、精霊の正確な忌日（一周忌、三回忌、七回忌、四十九日等）を導出する。
+ * 「塔婆供養」などのカテゴリ名で忌日が上書き・消失してしまうのを防ぎ、必ず適切な忌日・回忌を返す。
+ */
+export function resolveSpiritMemorialType(
+  rawMemorialType?: string,
+  dharmaName?: string,
+  deceasedId?: string,
+  pastRecords?: PastRecord[],
+  targetDateStr?: string
+): string {
+  const norm = normalizeMemorialType(rawMemorialType || '');
+  const nonMilestones = [
+    '塔婆供養',
+    '塔婆',
+    '塔婆作成',
+    '塔婆揮毫',
+    '塔婆依頼',
+    'その他',
+    '法事',
+    '法要',
+    '',
+  ];
+
+  if (norm && !nonMilestones.includes(norm)) {
+    return norm;
+  }
+
+  // pastRecordsから没年月日を特定して回忌・忌日を計算
+  let record: PastRecord | undefined;
+  if (deceasedId && pastRecords && pastRecords.length > 0) {
+    record = pastRecords.find((p) => p.id === deceasedId);
+  }
+  if (!record && dharmaName && pastRecords && pastRecords.length > 0) {
+    const cleanD = dharmaName.replace(/\s+/g, '');
+    record = pastRecords.find(
+      (p) => p.dharmaName && p.dharmaName.replace(/\s+/g, '') === cleanD
+    );
+  }
+
+  if (record?.deathDate) {
+    const calc = getSpiritMemorialForDate(record.deathDate, targetDateStr);
+    if (calc && calc !== '当年没') {
+      return normalizeMemorialType(calc);
+    }
+  }
+
+  if (dharmaName && (dharmaName.includes('先祖') || dharmaName.includes('代々'))) {
+    return '追善供養';
+  }
+
+  return '追善供養';
 }
 

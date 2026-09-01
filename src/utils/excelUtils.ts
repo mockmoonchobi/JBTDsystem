@@ -142,6 +142,7 @@ export function exportToExcel(
     'ホームページ',
     '銀行振込口座',
     'お盆時期',
+    '会計処理方法',
     '会計年度開始月',
     '会計年度開始日',
     '会計年度終了月',
@@ -181,6 +182,7 @@ export function exportToExcel(
     t.website || '',
     t.bankInfo || '',
     t.bonSeason || '8月盆',
+    t.accountingMode === 'combined' ? '全寺院合算（本寺扱い）' : '各寺院個別',
     t.fiscalYearStartMonth ?? 4,
     t.fiscalYearStartDay ?? 1,
     t.fiscalYearEndMonth ?? 3,
@@ -897,6 +899,7 @@ export async function importFromExcel(
     const websiteIdx = findColIdx(templeHeaders, ['ホームページ', 'HP', 'ウェブサイト', 'website']);
     const bankInfoIdx = findColIdx(templeHeaders, ['銀行振込口座', '口座情報', '振込先', '銀行口座']);
     const bonSeasonIdx = findColIdx(templeHeaders, ['お盆時期', 'お盆', '盆時期', 'bonSeason']);
+    const accountingModeIdx = findColIdx(templeHeaders, ['会計処理方法', '会計処理', '会計モード', 'accountingMode']);
     const fyStartMIdx = findColIdx(templeHeaders, ['会計年度開始月', '年度開始月', 'fiscalYearStartMonth']);
     const fyStartDIdx = findColIdx(templeHeaders, ['会計年度開始日', '年度開始日', 'fiscalYearStartDay']);
     const fyEndMIdx = findColIdx(templeHeaders, ['会計年度終了月', '年度終了月', 'fiscalYearEndMonth']);
@@ -936,6 +939,9 @@ export async function importFromExcel(
       const bonSeasonRaw = String((bonSeasonIdx !== -1 ? row[bonSeasonIdx] : '') || '').trim();
       const bonSeason = bonSeasonRaw.includes('7') ? '7月盆' : '8月盆';
 
+      const acModeRaw = String((accountingModeIdx !== -1 ? row[accountingModeIdx] : '') || '').trim();
+      const accountingMode: 'individual' | 'combined' = (acModeRaw.includes('合算') || acModeRaw.includes('combined')) ? 'combined' : 'individual';
+
       const fyStartM = fyStartMIdx !== -1 && row[fyStartMIdx] ? parseInt(String(row[fyStartMIdx]), 10) : undefined;
       const fyStartD = fyStartDIdx !== -1 && row[fyStartDIdx] ? parseInt(String(row[fyStartDIdx]), 10) : undefined;
       const fyEndM = fyEndMIdx !== -1 && row[fyEndMIdx] ? parseInt(String(row[fyEndMIdx]), 10) : undefined;
@@ -973,6 +979,7 @@ export async function importFromExcel(
         website,
         bankInfo,
         bonSeason,
+        accountingMode,
         fiscalYearStartMonth: !isNaN(Number(fyStartM)) && fyStartM ? Number(fyStartM) : 4,
         fiscalYearStartDay: !isNaN(Number(fyStartD)) && fyStartD ? Number(fyStartD) : 1,
         fiscalYearEndMonth: !isNaN(Number(fyEndM)) && fyEndM ? Number(fyEndM) : 3,
@@ -1054,6 +1061,7 @@ export async function importFromExcel(
       website: infoMap.get('ホームページ') || INITIAL_TEMPLE_INFO.website,
       bankInfo: infoMap.get('銀行振込口座') || INITIAL_TEMPLE_INFO.bankInfo,
       bonSeason: bonSeasonRaw === '7月盆' ? '7月盆' : '8月盆',
+      accountingMode: (infoMap.get('会計処理方法') || '').includes('合算') ? 'combined' : 'individual',
       fiscalYearStartMonth: isNaN(fyStartM) ? 4 : fyStartM,
       fiscalYearStartDay: isNaN(fyStartD) ? 1 : fyStartD,
       fiscalYearEndMonth: isNaN(fyEndM) ? 3 : fyEndM,

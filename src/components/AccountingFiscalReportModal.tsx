@@ -126,6 +126,15 @@ export const AccountingFiscalReportModal: React.FC<AccountingFiscalReportModalPr
                 <h3 className="text-lg font-bold text-[#F9F7F2] tracking-wider">
                   会計年度 決算書・出納帳 印刷出力
                 </h3>
+                {templeInfo?.accountingMode === 'combined' ? (
+                  <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/60 text-amber-300 text-[10px] font-sans font-bold">
+                    全寺院合算（本寺集約）
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] text-[10px] font-sans font-bold">
+                    {templeInfo.name}
+                  </span>
+                )}
                 <span className="px-2 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37] text-[#D4AF37] text-[10px] font-sans font-bold">
                   省インク・シンプル印刷対応
                 </span>
@@ -199,7 +208,7 @@ export const AccountingFiscalReportModal: React.FC<AccountingFiscalReportModalPr
             {/* Title & Temple Info Header */}
             <div className="text-center border-b-2 border-[#1A1A1A] pb-4 print:pb-2 space-y-1 print:space-y-0.5">
               <p className="text-xs text-[#555555] tracking-widest font-sans print:text-[10px]">
-                宗教法人 {templeInfo.name} 会計計算書類
+                宗教法人 {templeInfo.name} 会計計算書類{templeInfo?.accountingMode === 'combined' ? '（全寺院合算）' : ''}
               </p>
               <h1 className="text-2xl font-bold tracking-widest text-[#1A1A1A] print:text-xl">
                 {reportType === 'settlement'

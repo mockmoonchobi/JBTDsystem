@@ -157,6 +157,7 @@ export type ReservationCategory =
   | '年忌法要'
   | '納骨法要'
   | '塔婆供養'
+  | '塔婆依頼'
   | '棚経'
   | '枕経'
   | '通夜'
@@ -203,8 +204,9 @@ export interface MemorialService {
   memorialType: MemorialMilestoneType | '命日法要' | '彼岸会' | '盆法要' | '特別法要' | ReservationCategory;
   additionalDeceased?: ServiceDeceasedTarget[]; // 複数精霊（併修・合修）供養情報
   scheduledDate: string; // YYYY/MM/DD or YYYY-MM-DD
-  scheduledTime: string; // HH:mm
-  endTime?: string; // HH:mm
+  scheduledTime: string; // HH:mm or '終日'
+  endTime?: string; // HH:mm or '終日'
+  isAllDay?: boolean; // 終日フラグ
   venue: string; // 本堂, 客殿, 墓前, 自宅, 斎場, etc.
   address?: string; // 訪問先住所 (棚経・自宅法要用)
   status: MemorialStatus;
@@ -322,6 +324,7 @@ export interface TempleInfo {
   websiteUrl?: string; // 互換プロパティ
   bankInfo?: string;
   bonSeason?: '7月盆' | '8月盆'; // お盆の時期 (7月盆 / 8月盆)
+  accountingMode?: 'individual' | 'combined'; // 会計処理方法 ('individual': 各寺院個別, 'combined': 全寺院合算)
   fiscalYearStartMonth?: number; // 会計年度開始月 (1〜12, デフォルト: 4)
   fiscalYearStartDay?: number;   // 会計年度開始日 (1〜31, デフォルト: 1)
   fiscalYearEndMonth?: number;   // 会計年度終了月 (1〜12, デフォルト: 3)
