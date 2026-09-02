@@ -123,7 +123,55 @@ export function cleanAndNormalizeHouseholdId(
 }
 
 /**
- * Generates the next available 5-digit Household ID for a temple (e.g. DK-01009, K1-02003, DK-00001).
+ * Checks whether an ID belongs to a dummy / sample dataset (e.g. DK-99001, K1-99001, 99xxx).
+ */
+export function isDummyHouseholdId(id?: string): boolean {
+  if (!id) return false;
+  const clean = id.trim().toUpperCase();
+  // Matches DK-99xxx, K1-99xxx, K0-99xxx, TEMPLE-DK-99xxx, or numbers starting with 99
+  return /(?:DK|K\d+)-99\d{3}/.test(clean) || /^99\d{3}$/.test(clean) || clean.includes('-9900') || clean.includes('-990');
+}
+
+/**
+ * Checks if a household is dummy sample data.
+ */
+export function isDummyHousehold(household: Household): boolean {
+  return isDummyHouseholdId(household.id) || isDummyHouseholdId(household.qrToken);
+}
+
+/**
+ * Checks if all households in the dataset are dummy sample data (returns false if empty).
+ */
+export function isAllDummyHouseholds(households: Household[]): boolean {
+  if (!households || households.length === 0) return false;
+  return households.every((h) => isDummyHousehold(h));
+}
+
+/**
+ * Checks if the dataset contains any real (non-dummy) households.
+ */
+export function hasRealHouseholds(households: Household[]): boolean {
+  if (!households || households.length === 0) return false;
+  return households.some((h) => !isDummyHousehold(h));
+}
+
+/**
+ * Filters out dummy households and any dummy-linked records.
+ */
+export function filterOutDummyDatasets<T extends { householdId?: string; id?: string }>(
+  records: T[]
+): T[] {
+  if (!records || records.length === 0) return [];
+  return records.filter((r) => {
+    if (r.householdId && isDummyHouseholdId(r.householdId)) return false;
+    if (r.id && isDummyHouseholdId(r.id)) return false;
+    return true;
+  });
+}
+
+/**
+ * Generates the next available 5-digit Household ID for a temple (e.g. DK-00001, DK-01001, K1-00001).
+ * Dummy IDs (99xxx) are excluded from the numbering sequence.
  */
 export function generateNewHouseholdId(
   templeId: string,
@@ -135,20 +183,23 @@ export function generateNewHouseholdId(
 
   existingHouseholds.forEach((h) => {
     if (!h.id) return;
+    // Skip dummy households from number pool calculation
+    if (isDummyHousehold(h)) return;
+
     const hPrefix = getTemplePrefix(h.templeId, temples);
     if (h.id.startsWith(prefix) || hPrefix === prefix) {
       const cleanId = cleanAndNormalizeHouseholdId(h.id, h.templeId || templeId, temples);
       const match = cleanId.replace(/^[A-Z0-9]+-/, '').match(/\d+/);
       if (match) {
         const num = parseInt(match[0], 10);
-        if (!isNaN(num)) {
+        if (!isNaN(num) && num < 90000) {
           existingNumbers.add(num);
         }
       }
     }
   });
 
-  // If there are existing numbers, find highest + 1; otherwise start from 1 (or 1001 if main temple legacy, but 1 is cleanest)
+  // If there are existing numbers, find highest + 1; otherwise start from 1
   let candidateNum = 1;
   if (existingNumbers.size > 0) {
     const maxNum = Math.max(...Array.from(existingNumbers));

@@ -1463,51 +1463,84 @@ export function formatFormalKanjiMoney(amount: number | string): string {
 
 /**
  * Formats fee tag placeholder {集金項目１}〜{集金項目３}
- * Format: "項目名　一金、三，〇〇〇円也"
+ * Format: "項目名　一金、五，〇〇〇円也"
+ * 寺院情報設定が空欄の場合は、集金項目１:「護持会費」、集金項目２:「墓地管理費」、集金項目３:「境内整備費」を表示
  */
 export function formatFeeTag(
   slotNum: 1 | 2 | 3,
-  templeInfo?: { feeType1?: string; feeType2?: string; feeType3?: string } | null,
-  household?: { fee1?: string | number; fee2?: string | number; fee3?: string | number; fee1Amount?: number; fee2Amount?: number; fee3Amount?: number } | null
+  templeInfo?: {
+    feeType1?: string;
+    feeType2?: string;
+    feeType3?: string;
+    feeType1DefaultAmount?: number;
+    feeType2DefaultAmount?: number;
+    feeType3DefaultAmount?: number;
+  } | null,
+  household?: {
+    fee1?: string | number;
+    fee2?: string | number;
+    fee3?: string | number;
+    fee1Amount?: number;
+    fee2Amount?: number;
+    fee3Amount?: number;
+  } | null
 ): string {
-  let name = '';
+  let defaultName = '護持会費';
+  let fallbackAmount = 5000;
+  let customName = '';
   let amount: number | undefined;
 
   if (slotNum === 1) {
-    name = (templeInfo?.feeType1 || '').trim();
-    if (household?.fee1Amount !== undefined && household.fee1Amount > 0) {
+    defaultName = '護持会費';
+    customName = (templeInfo?.feeType1 || '').trim();
+    fallbackAmount =
+      templeInfo?.feeType1DefaultAmount && templeInfo.feeType1DefaultAmount > 0
+        ? templeInfo.feeType1DefaultAmount
+        : 5000;
+
+    if (household?.fee1Amount !== undefined && !isNaN(household.fee1Amount) && household.fee1Amount > 0) {
       amount = household.fee1Amount;
-    } else if (household?.fee1 !== undefined && household.fee1 !== '' && !isNaN(Number(household.fee1))) {
+    } else if (household?.fee1 !== undefined && household.fee1 !== '' && !isNaN(Number(household.fee1)) && Number(household.fee1) > 0) {
       amount = Number(household.fee1);
+    } else {
+      amount = fallbackAmount;
     }
   } else if (slotNum === 2) {
-    name = (templeInfo?.feeType2 || '').trim();
-    if (household?.fee2Amount !== undefined && household.fee2Amount > 0) {
+    defaultName = '墓地管理費';
+    customName = (templeInfo?.feeType2 || '').trim();
+    fallbackAmount =
+      templeInfo?.feeType2DefaultAmount && templeInfo.feeType2DefaultAmount > 0
+        ? templeInfo.feeType2DefaultAmount
+        : 3000;
+
+    if (household?.fee2Amount !== undefined && !isNaN(household.fee2Amount) && household.fee2Amount > 0) {
       amount = household.fee2Amount;
-    } else if (household?.fee2 !== undefined && household.fee2 !== '' && !isNaN(Number(household.fee2))) {
+    } else if (household?.fee2 !== undefined && household.fee2 !== '' && !isNaN(Number(household.fee2)) && Number(household.fee2) > 0) {
       amount = Number(household.fee2);
+    } else {
+      amount = fallbackAmount;
     }
   } else if (slotNum === 3) {
-    name = (templeInfo?.feeType3 || '').trim();
-    if (household?.fee3Amount !== undefined && household.fee3Amount > 0) {
+    defaultName = '境内整備費';
+    customName = (templeInfo?.feeType3 || '').trim();
+    fallbackAmount =
+      templeInfo?.feeType3DefaultAmount && templeInfo.feeType3DefaultAmount > 0
+        ? templeInfo.feeType3DefaultAmount
+        : 2000;
+
+    if (household?.fee3Amount !== undefined && !isNaN(household.fee3Amount) && household.fee3Amount > 0) {
       amount = household.fee3Amount;
-    } else if (household?.fee3 !== undefined && household.fee3 !== '' && !isNaN(Number(household.fee3))) {
+    } else if (household?.fee3 !== undefined && household.fee3 !== '' && !isNaN(Number(household.fee3)) && Number(household.fee3) > 0) {
       amount = Number(household.fee3);
+    } else {
+      amount = fallbackAmount;
     }
   }
 
-  if (!name && (amount === undefined || isNaN(amount) || amount <= 0)) {
-    return '';
-  }
-
-  const displayName = name || `集金項目${toKanjiNumber(slotNum)}`;
-
-  if (amount !== undefined && !isNaN(amount) && amount > 0) {
-    const kanjiMoney = formatFormalKanjiMoney(amount);
-    return `${displayName}　${kanjiMoney}`;
-  }
-
-  return displayName;
+  const displayName = customName || defaultName;
+  const finalAmount = amount && amount > 0 ? amount : fallbackAmount;
+  const kanjiMoney = formatFormalKanjiMoney(finalAmount);
+  return `${displayName}　${kanjiMoney}`;
 }
 
 /**
@@ -1756,7 +1789,7 @@ export function applyNoticeTemplate(
   result = result.replace(/\{精霊一覧\}|｛精霊一覧｝/g, deceasedList);
   result = result.replace(/\{寺院名\}|｛寺院名｝/g, templeInfo?.name || '当寺');
   result = result.replace(/\{山号\}|｛山号｝/g, templeInfo?.mountainName || '当山');
-  result = result.replace(/\{集金項目１\}|\{集金項目1\}|｛集金項目１｝|｛集金項目1｝/g, fee1Formatted);
+  result = result.replace(/\{集金項目１\}|\{集金項目1\}|｛集金項目１｝|｛集金項目1｝|\{集金項目\}|｛集金項目｝/g, fee1Formatted);
   result = result.replace(/\{集金項目２\}|\{集金項目2\}|｛集金項目２｝|｛集金項目2｝/g, fee2Formatted);
   result = result.replace(/\{集金項目３\}|\{集金項目3\}|｛集金項目３｝|｛集金項目3｝/g, fee3Formatted);
   result = result.replace(/\{檀信徒QRコード\}|\{檀信徒QR\}|｛檀信徒QRコード｝|｛檀信徒QR｝|\{檀家QRコード\}|\{檀家QR\}|｛檀家QRコード｝|｛檀家QR｝|\{受付QRコード\}|\{受付QR\}|｛受付QRコード｝|｛受付QR｝/g, '[[QR_HOUSEHOLD]]');

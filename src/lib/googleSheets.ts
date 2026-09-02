@@ -34,6 +34,12 @@ import { getAuditRowValues, normalizeAuditDate, normalizeAuditTime, getCurrentAu
 import { sanitizeAppDataset } from '../utils/sanitizeDataUtils';
 import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH } from '../utils/deletedRecordsLog';
 import { 
+  isDummyHousehold, 
+  isDummyHouseholdId, 
+  hasRealHouseholds, 
+  filterOutDummyDatasets 
+} from '../utils/dankaIdUtils';
+import { 
   getSavedBatchAccountingData, 
   getSavedBatchAccountingConfig,
   saveBatchAccountingConfig,
@@ -854,30 +860,38 @@ export async function exportToSheets(
     return cleanId;
   };
 
+  // If dataset contains real (non-dummy) households, ensure dummy sample records (DK-99xxx) are excluded from Sheets export
+  const containsRealData = hasRealHouseholds(households);
+  const cleanBaseHouseholds = containsRealData ? households.filter((h) => !isDummyHousehold(h)) : households;
+  const cleanBasePastRecords = containsRealData ? filterOutDummyDatasets(pastRecords) : pastRecords;
+  const cleanBaseMemorials = containsRealData ? filterOutDummyDatasets(memorialServices || []) : (memorialServices || []);
+  const cleanBaseTodos = containsRealData ? filterOutDummyDatasets(templeTodos || []) : (templeTodos || []);
+  const cleanBaseTransactions = containsRealData ? filterOutDummyDatasets(transactions || []) : (transactions || []);
+
   // Filter datasets if individual temple export is specified
   const filteredHouseholds = isIndividualExport
-    ? households.filter((h) => (h.templeId || 'temple-main') === targetTempleId)
-    : households;
+    ? cleanBaseHouseholds.filter((h) => (h.templeId || 'temple-main') === targetTempleId)
+    : cleanBaseHouseholds;
 
   const filteredPastRecords = isIndividualExport
-    ? pastRecords.filter((r) => {
-        const hh = households.find((h) => h.id === r.householdId);
+    ? cleanBasePastRecords.filter((r) => {
+        const hh = cleanBaseHouseholds.find((h) => h.id === r.householdId);
         const effectiveId = r.templeId || hh?.templeId || 'temple-main';
         return effectiveId === targetTempleId;
       })
-    : pastRecords;
+    : cleanBasePastRecords;
 
   const filteredMemorialServices = isIndividualExport
-    ? (memorialServices || []).filter((s) => (s.templeId || 'temple-main') === targetTempleId)
-    : (memorialServices || []);
+    ? cleanBaseMemorials.filter((s) => (s.templeId || 'temple-main') === targetTempleId)
+    : cleanBaseMemorials;
 
   const filteredTodos = isIndividualExport
-    ? (templeTodos || []).filter((t) => (t.templeId || 'temple-main') === targetTempleId)
-    : (templeTodos || []);
+    ? cleanBaseTodos.filter((t) => (t.templeId || 'temple-main') === targetTempleId)
+    : cleanBaseTodos;
 
   const filteredTransactions = isIndividualExport
-    ? transactions.filter((t) => (t.templeId || 'temple-main') === targetTempleId)
-    : transactions;
+    ? cleanBaseTransactions.filter((t) => (t.templeId || 'temple-main') === targetTempleId)
+    : cleanBaseTransactions;
 
   // 1. Temple Profiles List (寺院一覧（本寺・兼務） / 寺院情報)
   const templeHeaders = [

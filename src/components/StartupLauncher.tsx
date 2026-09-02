@@ -195,7 +195,7 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
                     <span>Googleシートとデータ連携</span>
                   </h3>
                   <p className="text-xs text-[#AAAAAA] mt-1 leading-relaxed">
-                    現在の端末データを保持したままGoogleアカウントと認証連携し、Googleスプレッドシートとの自動同期を開始します。
+                    Googleシートのデータを読み込み、Googleアカウントと認証連携して自動同期を開始します。
                   </p>
                 </div>
               </div>
