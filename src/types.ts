@@ -360,7 +360,7 @@ export type TempleProfile = TempleInfo;
 
 export interface Priest {
   id: string;
-  name: string; // 僧侶名 (例: 廣瀬 宗徳, 佐藤 賢道)
+  name: string; // 僧侶名 (例: 智山 真福, 智山 福徳)
   furigana?: string; // フリガナ (例: ヒロセ ソウトク)
   role: string; // 役職・区分 (例: 本寺住職, 兼務寺住職, 住職, 副住職, 助法僧侶, 衆僧, 随身, 客僧, その他)
   templeId?: string; // 所属寺院ID (temple-main, temple-sub-0, または external 等)

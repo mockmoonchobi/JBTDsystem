@@ -32,7 +32,6 @@ import {
   SheetsImportResult 
 } from './lib/googleSheets';
 import { mergeDatasetsWithAuditPriority, MergedDatasetResult } from './utils/syncMergeUtils';
-import { isAllDummyHouseholds, hasRealHouseholds } from './utils/dankaIdUtils';
 import { exportToExcel, importFromExcel } from './utils/excelUtils';
 import { ImportTargetType } from './utils/externalImportUtils';
 import { mergeMasterOptionsWithData, getTempleMasterOptions, mergeAllTempleMasterOptions } from './utils/masterOptionsUtils';
@@ -932,15 +931,12 @@ export default function App() {
       idbSet('temple_backup_before_sync', backupSnapshot).catch((e) => console.warn('Backup save error:', e));
     }
 
-    // 照会・競合解消: 完全初期化モード、またはローカルが初期ダミーデータのみでリモートにデータがあるなら空のローカル状態を基準にし、スプレッドシートデータを100%取り込む
-    const isPureDummyLocal = isAllDummyHouseholds(currentHouseholds);
-    const effectiveIsClean = isClean || (isPureDummyLocal && remoteTotal > 0);
-
-    if (effectiveIsClean) {
+    // 照会・競合解消: 完全初期化モードなら空のローカル状態を基準にし、スプレッドシートデータを100%取り込む
+    if (isClean) {
       clearDeletedRecordsLog();
     }
 
-    const currentLocalState = effectiveIsClean
+    const currentLocalState = isClean
       ? {
           templeInfo: EMPTY_TEMPLE_INFO,
           temples: [],

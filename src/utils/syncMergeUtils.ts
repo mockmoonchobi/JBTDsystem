@@ -21,13 +21,6 @@ import {
   mergeDeletedRecordsLogs,
   loadDeletedRecordsLog 
 } from './deletedRecordsLog';
-import {
-  isDummyHousehold,
-  isDummyHouseholdId,
-  isAllDummyHouseholds,
-  hasRealHouseholds,
-  filterOutDummyDatasets
-} from './dankaIdUtils';
 
 export interface SyncMergeStats {
   householdsUpdated: number;
@@ -614,61 +607,25 @@ export function mergeDatasetsWithAuditPriority(
   const mergedDeletedRecords = mergeDeletedRecordsLogs(localDeleted, remoteDeleted);
   const deletedMap = buildDeletedTimestampMap(mergedDeletedRecords);
 
-  // Check if remote contains real households or data, or if local is purely dummy data
-  const remoteHasData = (remoteData.households && remoteData.households.length > 0) ||
-                        (remoteData.pastRecords && remoteData.pastRecords.length > 0) ||
-                        (remoteData.memorialServices && remoteData.memorialServices.length > 0);
-  const remoteHasReal = hasRealHouseholds(remoteData.households || []);
-  const localIsAllDummy = isAllDummyHouseholds(localState.households || []);
-
-  // If remote has real data or local is entirely dummy, purge dummy data from local state before merging
-  const shouldPurgeLocalDummy = remoteHasData && (remoteHasReal || localIsAllDummy);
-
-  const localHouseholdsToMerge = shouldPurgeLocalDummy
-    ? (localState.households || []).filter((h) => !isDummyHousehold(h))
-    : (localState.households || []);
-
-  const localPastRecordsToMerge = shouldPurgeLocalDummy
-    ? filterOutDummyDatasets(localState.pastRecords || [])
-    : (localState.pastRecords || []);
-
-  const localMemorialsToMerge = shouldPurgeLocalDummy
-    ? filterOutDummyDatasets(localState.memorialServices || [])
-    : (localState.memorialServices || []);
-
-  const localTodosToMerge = shouldPurgeLocalDummy
-    ? filterOutDummyDatasets(localState.templeTodos || [])
-    : (localState.templeTodos || []);
-
-  const localTransactionsToMerge = shouldPurgeLocalDummy
-    ? filterOutDummyDatasets(localState.transactions || [])
-    : (localState.transactions || []);
-
-  const localFamilyMembersToMerge = shouldPurgeLocalDummy
-    ? filterOutDummyDatasets(localState.familyMembers || [])
-    : (localState.familyMembers || []);
-
   // 1. Merge Households and nested FamilyMembers
-  const hhMerge = mergeHouseholds(localHouseholdsToMerge, remoteData.households || [], deletedMap);
+  const hhMerge = mergeHouseholds(localState.households || [], remoteData.households || [], deletedMap);
 
   // Extract merged family members from households and standalone lists
-  const localFamilies = localFamilyMembersToMerge.length > 0
-    ? localFamilyMembersToMerge
-    : (localHouseholdsToMerge.flatMap((h) => h.familyMembers || []));
+  const localFamilies = localState.familyMembers || (localState.households ? localState.households.flatMap((h) => h.familyMembers || []) : []);
   const remoteFamilies = remoteData.familyMembers || (remoteData.households ? remoteData.households.flatMap((h) => h.familyMembers || []) : []);
   const fmMerge = mergeFamilyMembers(localFamilies, remoteFamilies, deletedMap);
 
   // 2. Merge PastRecords
-  const prMerge = mergeGenericEntityList<PastRecord>(localPastRecordsToMerge, remoteData.pastRecords || [], deletedMap);
+  const prMerge = mergeGenericEntityList<PastRecord>(localState.pastRecords || [], remoteData.pastRecords || [], deletedMap);
 
   // 3. Merge MemorialServices
-  const msMerge = mergeGenericEntityList<MemorialService>(localMemorialsToMerge, remoteData.memorialServices || [], deletedMap);
+  const msMerge = mergeGenericEntityList<MemorialService>(localState.memorialServices || [], remoteData.memorialServices || [], deletedMap);
 
   // 4. Merge TempleTodos
-  const tdMerge = mergeGenericEntityList<TempleTodo>(localTodosToMerge, remoteData.templeTodos || [], deletedMap);
+  const tdMerge = mergeGenericEntityList<TempleTodo>(localState.templeTodos || [], remoteData.templeTodos || [], deletedMap);
 
   // 5. Merge Transactions
-  const txMerge = mergeGenericEntityList<Transaction>(localTransactionsToMerge, remoteData.transactions || [], deletedMap);
+  const txMerge = mergeGenericEntityList<Transaction>(localState.transactions || [], remoteData.transactions || [], deletedMap);
 
   // 6. Merge Temples & TempleInfo
   const mergedTemples = mergeTemples(localState.temples || [], remoteData.temples || []);
