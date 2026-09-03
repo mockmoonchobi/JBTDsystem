@@ -45,6 +45,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Household, PastRecord, Transaction, TransactionCategory, MasterOptions, FamilyMember, TempleInfo, TempleProfile, MemorialService, TempleTodo } from '../types';
 import { calculateMemorialMilestones, getJapaneseEra, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions, calculateNiibonFromDeathDate, isRelevantNiibon, sortHouseholds, formatCurrency, getHouseholdSponsorName, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, toggleHouseholdSponsorSegakiToba, getHouseholdNiibonStatus } from '../utils/memorialCalculator';
 import { SingleHouseholdKakochoImportModal } from './SingleHouseholdKakochoImportModal';
+import { useVirtualScroll } from '../hooks/useVirtualScroll';
 
 export type ListColumnKey =
   | 'idTomb'         // ID/墓地
@@ -1072,6 +1073,20 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   const sortedHouseholds = useMemo(() => {
     return sortHouseholds(filteredHouseholds, sortKey, sortOrder, masterOptions, pastRecords, templeInfo?.bonSeason || '8月盆', activeTobaType, activeFeeType, transactions);
   }, [filteredHouseholds, sortKey, sortOrder, masterOptions, pastRecords, templeInfo?.bonSeason, activeTobaType, activeFeeType, transactions]);
+
+  // 仮想スクロール (Virtual Scroll) による高速描画
+  const {
+    topSpacerHeight: householdTopSpacerHeight,
+    bottomSpacerHeight: householdBottomSpacerHeight,
+    virtualIndices: householdVirtualIndices,
+  } = useVirtualScroll({
+    count: sortedHouseholds.length,
+    estimateItemHeight: 52,
+    overscan: 60,
+    containerRef: tableContainerRef,
+    defaultContainerHeight: 600,
+    disableThreshold: 800,
+  });
 
   // Current selected individual household
   const currentHouseholdIndex = sortedHouseholds.findIndex((h) => h.id === selectedIndividualId);
@@ -2188,23 +2203,34 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     </td>
                   </tr>
                 ) : (
-                  sortedHouseholds.map((household, hIdx) => {
-                    const isSelected = selectedIdsForPrint.includes(household.id);
-                    const enabledCols = listColumns.filter((c) => c.enabled);
-                    const stickyCellBg = isSelected
-                      ? 'bg-[#FEF9EE] group-hover:bg-[#FDF3D8]'
-                      : 'bg-white group-hover:bg-[#F9F7F2]';
+                  <>
+                    {householdTopSpacerHeight > 0 && (
+                      <tr style={{ height: `${householdTopSpacerHeight}px` }} aria-hidden="true">
+                        <td
+                          colSpan={listColumns.filter((c) => c.enabled).length + 3}
+                          style={{ height: `${householdTopSpacerHeight}px`, padding: 0, border: 0 }}
+                        />
+                      </tr>
+                    )}
+                    {householdVirtualIndices.map((hIdx) => {
+                      const household = sortedHouseholds[hIdx];
+                      if (!household) return null;
+                      const isSelected = selectedIdsForPrint.includes(household.id);
+                      const enabledCols = listColumns.filter((c) => c.enabled);
+                      const stickyCellBg = isSelected
+                        ? 'bg-[#FEF9EE] group-hover:bg-[#FDF3D8]'
+                        : 'bg-white group-hover:bg-[#F9F7F2]';
 
-                    return (
-                      <tr
-                        key={`household-row-${household.id || hIdx}-${hIdx}`}
-                        id={`household-row-${household.id}`}
-                        onDoubleClick={() => handleSelectIndividualHousehold(household.id)}
-                        className={`transition-colors cursor-pointer group ${
-                          isSelected ? 'bg-[#FEF9EE] hover:bg-[#FDF3D8]' : 'hover:bg-[#F9F7F2]'
-                        }`}
-                        title="ダブルクリックで個別表示へ切り替え"
-                      >
+                      return (
+                        <tr
+                          key={`household-row-${household.id || hIdx}-${hIdx}`}
+                          id={`household-row-${household.id}`}
+                          onDoubleClick={() => handleSelectIndividualHousehold(household.id)}
+                          className={`transition-colors cursor-pointer group ${
+                            isSelected ? 'bg-[#FEF9EE] hover:bg-[#FDF3D8]' : 'hover:bg-[#F9F7F2]'
+                          }`}
+                          title="ダブルクリックで個別表示へ切り替え"
+                        >
                         {/* Checkbox (常時表示・最左・固定) */}
                         <td
                           className={`sticky left-0 z-10 px-2 py-2 text-center w-10 min-w-10 max-w-10 transition-colors ${stickyCellBg}`}
@@ -2564,9 +2590,18 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                         </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
+                  })}
+                  {householdBottomSpacerHeight > 0 && (
+                    <tr style={{ height: `${householdBottomSpacerHeight}px` }} aria-hidden="true">
+                      <td
+                        colSpan={listColumns.filter((c) => c.enabled).length + 3}
+                        style={{ height: `${householdBottomSpacerHeight}px`, padding: 0, border: 0 }}
+                      />
+                    </tr>
+                  )}
+                </>
+              )}
+            </tbody>
             </table>
           </div>
         </div>

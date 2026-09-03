@@ -55,20 +55,38 @@ export const SPREADSHEET_NAME = '寺院管理・檀家過去帳データ';
 
 /**
  * Robust fetch wrapper with automatic retries for transient network failures,
- * rate limits (429), and Google API server errors (500, 502, 503, 504).
+ * rate limits (429), Google API server errors (500, 502, 503, 504), and timeout handling.
  */
 export async function fetchWithRetry(
   url: string,
   options?: RequestInit,
   maxRetries: number = 3,
-  initialBackoffMs: number = 600
+  initialBackoffMs: number = 600,
+  timeoutMs: number = 35000
 ): Promise<Response> {
   let attempt = 0;
   let lastError: any = null;
 
   while (attempt < maxRetries) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+
     try {
-      const res = await fetch(url, options);
+      if (options?.signal) {
+        if (options.signal.aborted) {
+          controller.abort();
+        } else {
+          options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+        }
+      }
+
+      const res = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
 
       // Retry on 429 (Too Many Requests) or 5xx server errors
       if (
@@ -83,14 +101,23 @@ export async function fetchWithRetry(
 
       return res;
     } catch (err: any) {
+      clearTimeout(timer);
       lastError = err;
       attempt++;
-      if (attempt < maxRetries) {
+      if (attempt < maxRetries && !options?.signal?.aborted) {
         const delay = initialBackoffMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200);
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
     }
+  }
+
+  const isTimeout = lastError?.name === 'AbortError' || lastError?.message?.includes('aborted');
+  if (isTimeout) {
+    const timeoutErr = new Error('Googleサーバーとの通信がタイムアウトしました。通信環境をご確認の上、再度お試しください。');
+    (timeoutErr as any).isTimeout = true;
+    (timeoutErr as any).isNetworkError = true;
+    throw timeoutErr;
   }
 
   const isFetchError =
@@ -168,62 +195,106 @@ const BASE_REQUIRED_SHEETS = [
 // Helper to search for an existing spreadsheet or create one
 export async function findOrCreateSpreadsheet(
   accessToken: string,
-  forceCreateNew: boolean = false
+  forceCreateNew: boolean = false,
+  options?: {
+    preferredSheetId?: string;
+    onProgress?: (message: string) => void;
+  }
 ): Promise<{ id: string; url: string; isExisting: boolean }> {
+  const onProgress = options?.onProgress;
+
   if (!forceCreateNew) {
-    // 1. Search in Google Drive for existing file (Newest first, full drive support)
+    // 0. Fast-path: Check preferredSheetId or cached sheet info in localStorage (~200ms)
+    const preferredId = options?.preferredSheetId || (() => {
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = localStorage.getItem('temple_google_sheet_info');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            return parsed?.id;
+          }
+        }
+      } catch {}
+      return null;
+    })();
+
+    if (preferredId) {
+      try {
+        if (onProgress) onProgress('保存済みのGoogleスプレッドシートを確認中...');
+        const testUrl = `https://sheets.googleapis.com/v4/spreadsheets/${preferredId}?fields=spreadsheetId,properties.title,sheets.properties(sheetId,title)`;
+        const testRes = await fetchWithRetry(testUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }, 2, 500, 8000);
+
+        if (testRes.ok) {
+          const sheetMeta = await testRes.json();
+          const sheetTitles: string[] = (sheetMeta.sheets || []).map((s: any) => s.properties?.title || '');
+          const coreMatches = BASE_REQUIRED_SHEETS.filter((s) => sheetTitles.includes(s)).length;
+          // If this saved sheet has at least one matching core sheet or correct title
+          if (coreMatches >= 1 || sheetMeta.properties?.title === SPREADSHEET_NAME) {
+            if (onProgress) onProgress('シート構成を確認中...');
+            await ensureAllSheetsExist(accessToken, preferredId);
+            return {
+              id: preferredId,
+              url: `https://docs.google.com/spreadsheets/d/${preferredId}`,
+              isExisting: true,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('Saved spreadsheet check failed or not found, falling back to Drive search:', err);
+      }
+    }
+
+    // 1. Search in Google Drive for existing file (Newest first, lightweight query)
     try {
+      if (onProgress) onProgress('Google Drive内の既存データを検索中...');
       const escapedName = SPREADSHEET_NAME.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const driveQuery = `name = '${escapedName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`;
       const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(
         driveQuery
-      )}&orderBy=modifiedTime desc&pageSize=30&supportsAllDrives=true&includeItemsFromAllDrives=true&fields=files(id,name,webViewLink,createdTime,modifiedTime,size,description)`;
+      )}&orderBy=modifiedTime desc&pageSize=5&fields=files(id,name,webViewLink,createdTime,modifiedTime)`;
 
       const response = await fetchWithRetry(searchUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      }, 2, 500, 8000);
 
       if (response.ok) {
         const data = await response.json();
         if (data.files && data.files.length > 0) {
-          // If multiple files exist (e.g. created previously), inspect them and pick the primary one with highest data quality / sheets
+          if (onProgress) onProgress('最新のスプレッドシートデータを確認中...');
+          const candidateFiles = data.files.slice(0, 3);
           let bestCandidate: { id: string; url: string; score: number } | null = null;
 
-          for (const file of data.files) {
-            try {
-              const testMetaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${file.id}?fields=spreadsheetId,properties.title,sheets.properties(title,gridProperties(rowCount,columnCount))`;
+          // Check files in parallel to prevent sequential stalling
+          const checkResults = await Promise.allSettled(
+            candidateFiles.map(async (file: any) => {
+              const testMetaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${file.id}?fields=spreadsheetId,properties.title,sheets.properties(sheetId,title)`;
               const testRes = await fetchWithRetry(testMetaUrl, {
                 headers: { Authorization: `Bearer ${accessToken}` },
-              });
-              if (testRes.ok) {
-                const sheetMeta = await testRes.json();
-                const sheetTitles: string[] = (sheetMeta.sheets || []).map((s: any) => s.properties?.title || '');
-                
-                // Calculate match score: how many core app sheets exist in this file
-                const coreSheetMatches = BASE_REQUIRED_SHEETS.filter((s) => sheetTitles.includes(s)).length;
-                let estimatedTotalRows = 0;
-                (sheetMeta.sheets || []).forEach((s: any) => {
-                  const rows = s.properties?.gridProperties?.rowCount || 0;
-                  if (rows > 1) estimatedTotalRows += rows;
-                });
+              }, 2, 500, 6000);
+              if (!testRes.ok) return null;
+              const sheetMeta = await testRes.json();
+              const sheetTitles: string[] = (sheetMeta.sheets || []).map((s: any) => s.properties?.title || '');
+              const coreSheetMatches = BASE_REQUIRED_SHEETS.filter((s) => sheetTitles.includes(s)).length;
+              return {
+                id: file.id,
+                url: file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}`,
+                score: coreSheetMatches,
+              };
+            })
+          );
 
-                // Weight: core sheets match heavily, then estimated rows, then order in search (modifiedTime)
-                const score = coreSheetMatches * 10000 + Math.min(estimatedTotalRows, 50000);
-
-                if (!bestCandidate || score > bestCandidate.score) {
-                  bestCandidate = {
-                    id: file.id,
-                    url: file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}`,
-                    score,
-                  };
-                }
+          for (const res of checkResults) {
+            if (res.status === 'fulfilled' && res.value) {
+              if (!bestCandidate || res.value.score > bestCandidate.score) {
+                bestCandidate = res.value;
               }
-            } catch (checkErr) {
-              console.warn(`File ${file.id} check failed, skipping:`, checkErr);
             }
           }
 
-          if (bestCandidate) {
+          if (bestCandidate && bestCandidate.score >= 1) {
+            if (onProgress) onProgress('スプレッドシートのシート構成を確認中...');
             await ensureAllSheetsExist(accessToken, bestCandidate.id);
             return {
               id: bestCandidate.id,
@@ -235,19 +306,14 @@ export async function findOrCreateSpreadsheet(
       } else {
         const errJson = await response.json().catch(() => ({}));
         console.warn('Google Drive search response not ok:', response.status, errJson);
-        if (response.status === 401 || response.status === 403) {
-          throw new Error(`Google Driveの検索権限エラー (${response.status})。再ログインをお試しください。`);
-        }
       }
     } catch (driveErr: any) {
-      console.warn('Google Drive search failed:', driveErr);
-      if (driveErr?.message?.includes('再ログイン') || driveErr?.message?.includes('権限')) {
-        throw driveErr;
-      }
+      console.warn('Google Drive search encountered issue, proceeding to create/verify:', driveErr);
     }
   }
 
   // 2. If not found or forced, create a new spreadsheet with all required sheet tabs
+  if (onProgress) onProgress('新しい寺院データ用スプレッドシートを作成中...');
   return await createNewSpreadsheet(accessToken, SPREADSHEET_NAME);
 }
 
@@ -530,15 +596,16 @@ export async function ensureAllSheetsExist(
   accessToken: string, 
   spreadsheetId: string, 
   temples?: TempleProfile[],
-  exportOptions?: { targetTempleId?: string | 'ALL'; templeMasterOptionsMap?: Record<string, MasterOptions> }
-): Promise<void> {
+  exportOptions?: { targetTempleId?: string | 'ALL'; templeMasterOptionsMap?: Record<string, MasterOptions> },
+  sheetCapacities?: { sheetName: string; requiredRows: number; requiredCols: number }[]
+): Promise<{ existingTitles: string[]; sheets: { sheetId: number; title: string; rowCount: number; columnCount: number }[] }> {
   try {
     const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))`;
     const res = await fetchWithRetry(metaUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    }, 3, 600, 30000);
 
-    if (!res.ok) return;
+    if (!res.ok) return { existingTitles: [], sheets: [] };
 
     const data = await res.json();
     const existingSheets: { sheetId: number; title: string; rowCount: number; columnCount: number }[] = (data.sheets || []).map((s: any) => ({
@@ -586,32 +653,82 @@ export async function ensureAllSheetsExist(
       return true;
     });
 
+    const updateRequests: any[] = [];
+
+    // 1. Add missing sheets with adequate row/col capacities
     if (missingTitles.length > 0) {
-      const batchUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
-      // Create new sheets with generous default dimensions (10000 rows, 50 columns) so large datasets never exceed bounds
-      const requests = missingTitles.map((title) => ({
-        addSheet: {
-          properties: {
-            title,
-            gridProperties: {
-              rowCount: 10000,
-              columnCount: 50,
+      for (const title of missingTitles) {
+        const cap = sheetCapacities?.find((c) => c.sheetName === title);
+        const rowCount = cap ? Math.max(cap.requiredRows + 200, 1000) : 1000;
+        const columnCount = cap ? Math.max(cap.requiredCols + 10, 30) : 30;
+        updateRequests.push({
+          addSheet: {
+            properties: {
+              title,
+              gridProperties: {
+                rowCount,
+                columnCount,
+              },
             },
           },
-        },
-      }));
+        });
+      }
+    }
 
+    // 2. Expand existing sheets in the same batch request if sheetCapacities specified
+    if (sheetCapacities && sheetCapacities.length > 0) {
+      for (const cap of sheetCapacities) {
+        const target = existingSheets.find(
+          (s) =>
+            s.title === cap.sheetName ||
+            s.title === `'${cap.sheetName}'` ||
+            (cap.sheetName === '法事予約' && s.title === '法事・予約一覧') ||
+            (cap.sheetName === '寺院ToDo' && s.title === '寺院タスク・ToDo') ||
+            (cap.sheetName === 'マスタ設定（総合）' && s.title === 'マスタ設定')
+        );
+
+        if (!target) continue;
+
+        const neededRows = Math.max(cap.requiredRows + 200, 1000);
+        const neededCols = Math.max(cap.requiredCols + 10, 30);
+
+        const needsRowExpansion = target.rowCount < neededRows;
+        const needsColExpansion = target.columnCount < neededCols;
+
+        if (needsRowExpansion || needsColExpansion) {
+          updateRequests.push({
+            updateSheetProperties: {
+              properties: {
+                sheetId: target.sheetId,
+                gridProperties: {
+                  rowCount: Math.max(target.rowCount, neededRows),
+                  columnCount: Math.max(target.columnCount, neededCols),
+                },
+              },
+              fields: 'gridProperties(rowCount,columnCount)',
+            },
+          });
+        }
+      }
+    }
+
+    if (updateRequests.length > 0) {
+      const batchUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
       await fetchWithRetry(batchUpdateUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ requests }),
-      });
+        body: JSON.stringify({ requests: updateRequests }),
+      }, 3, 600, 35000);
     }
+
+    const allTitles = [...existingTitles, ...missingTitles];
+    return { existingTitles: allTitles, sheets: existingSheets };
   } catch (err) {
     console.warn('Failed to ensure sheet tabs exist:', err);
+    return { existingTitles: [], sheets: [] };
   }
 }
 
@@ -772,8 +889,6 @@ export async function exportToSheets(
     targetTablesOnly?: string[];
   }
 ): Promise<void> {
-  await ensureAllSheetsExist(accessToken, spreadsheetId, temples, exportOptions);
-
   const targetTablesFilter = exportOptions?.targetTablesOnly && exportOptions.targetTablesOnly.length > 0
     ? new Set(exportOptions.targetTablesOnly.map((t) => t.trim()))
     : null;
@@ -1577,55 +1692,52 @@ export async function exportToSheets(
   const { headers: disasterHeaders, rows: disasterRows } = convertDisasterEventsToRows(disasterEvents);
   addChunkedUpdates('戦没・災害物故者命日設定', [disasterHeaders, ...disasterRows]);
 
-  // 1. Ensure sheet grid capacities (rows & columns) are dynamically expanded so no max bound error occurs
-  await ensureSheetGridCapacities(accessToken, spreadsheetId, sheetCapacities);
+  // 1. Ensure all sheet tabs exist and have sufficient row/col capacity in a single metadata pass & batch update
+  const { existingTitles } = await ensureAllSheetsExist(
+    accessToken,
+    spreadsheetId,
+    temples,
+    exportOptions,
+    sheetCapacities
+  );
 
-  // 2. Clear ranges completely using actual existing sheet titles from spreadsheet metadata
+  // 2. Clear ranges completely using known existing sheet titles
   try {
-    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
-    const metaRes = await fetchWithRetry(metaUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (metaRes.ok) {
-      const metaData = await metaRes.json();
-      const existingSheetTitles: string[] = (metaData.sheets || []).map((s: any) => s.properties?.title || '').filter(Boolean);
+    const titlesToClear = existingTitles.length > 0 ? existingTitles : BASE_REQUIRED_SHEETS;
+    let rangesToClear: string[] = [];
+    if (!targetTablesFilter) {
+      // Full export: clear all existing sheets in the spreadsheet
+      rangesToClear = titlesToClear.map((title) => `'${title.replace(/'/g, "''")}'`);
+    } else {
+      // Specific table export: only clear existing sheets that match the filter
+      rangesToClear = titlesToClear
+        .filter((title) => shouldIncludeSheet(title))
+        .map((title) => `'${title.replace(/'/g, "''")}'`);
+    }
 
-      // Determine ranges to clear based on whether it's a specific table export or a full export
-      let rangesToClear: string[] = [];
-      if (!targetTablesFilter) {
-        // Full export: clear all existing sheets in the spreadsheet
-        rangesToClear = existingSheetTitles.map((title) => `'${title.replace(/'/g, "''")}'`);
-      } else {
-        // Specific table export: only clear existing sheets that match the filter
-        rangesToClear = existingSheetTitles
-          .filter((title) => shouldIncludeSheet(title))
-          .map((title) => `'${title.replace(/'/g, "''")}'`);
-      }
+    if (rangesToClear.length > 0) {
+      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`;
+      const clearRes = await fetchWithRetry(clearUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ranges: rangesToClear }),
+      }, 3, 600, 35000);
 
-      if (rangesToClear.length > 0) {
-        const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`;
-        const clearRes = await fetchWithRetry(clearUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ ranges: rangesToClear }),
-        });
-
-        if (!clearRes.ok) {
-          console.warn('batchClear returned non-ok, falling back to per-sheet clear in exportToSheets');
-          for (const title of existingSheetTitles) {
-            if (targetTablesFilter && !shouldIncludeSheet(title)) continue;
-            const singleClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(title)}':clear`;
-            await fetchWithRetry(singleClearUrl, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-            }).catch((e) => console.warn(`Failed to clear sheet ${title}:`, e));
-          }
+      if (!clearRes.ok) {
+        console.warn('batchClear returned non-ok, falling back to per-sheet clear in exportToSheets');
+        for (const title of titlesToClear) {
+          if (targetTablesFilter && !shouldIncludeSheet(title)) continue;
+          const singleClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(title)}':clear`;
+          await fetchWithRetry(singleClearUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }, 2, 500, 15000).catch((e) => console.warn(`Failed to clear sheet ${title}:`, e));
         }
       }
     }
@@ -1633,16 +1745,13 @@ export async function exportToSheets(
     console.warn('Batch clear warning:', clearErr);
   }
 
-  // 3. Batch update with new data (chunk requests if total payload is large)
+  // 3. Batch update with new data in a single request for optimal speed (with automatic chunking fallback if payload is large)
   const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
-  const BATCH_CHUNK_SIZE = 5; // send up to 5 sheet chunks per HTTP POST request to avoid HTTP 413
-  for (let i = 0; i < updateDataList.length; i += BATCH_CHUNK_SIZE) {
-    const chunkUpdates = updateDataList.slice(i, i + BATCH_CHUNK_SIZE);
+  try {
     const payload = {
       valueInputOption: 'USER_ENTERED',
-      data: chunkUpdates,
+      data: updateDataList,
     };
-
     const res = await fetchWithRetry(updateUrl, {
       method: 'POST',
       headers: {
@@ -1650,11 +1759,33 @@ export async function exportToSheets(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    });
+    }, 3, 600, 45000);
 
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
       handleGoogleApiError(res, errJson, 'Google スプレッドシートへの書き込みに失敗しました');
+    }
+  } catch (updateErr: any) {
+    // If request failed because payload was too large (HTTP 413), fallback to chunking
+    if (updateErr?.message?.includes('413') || updateErr?.status === 413) {
+      const BATCH_CHUNK_SIZE = 5;
+      for (let i = 0; i < updateDataList.length; i += BATCH_CHUNK_SIZE) {
+        const chunkUpdates = updateDataList.slice(i, i + BATCH_CHUNK_SIZE);
+        const res = await fetchWithRetry(updateUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: chunkUpdates }),
+        }, 3, 600, 45000);
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          handleGoogleApiError(res, errJson, 'Google スプレッドシートへの書き込みに失敗しました');
+        }
+      }
+    } else {
+      throw updateErr;
     }
   }
 }
@@ -1751,25 +1882,64 @@ export async function importFromSheets(
   }
 
   // 2. Fetch all sheet data safely:
-  // For sheets with large row counts (e.g. tens of thousands of rows for Accounting, PastRecords, Todos, Households),
-  // chunk by row ranges (e.g. 2,000 rows per request) to prevent Google Sheets API 10MB payload / timeout limits.
+  // Use batchGet for normal-sized sheets (< 2,000 rows) in one round trip.
+  // For larger sheets, chunk by row ranges (2,000 rows per request).
   const sheetDataMap = new Map<string, { headers: string[]; rows: string[][] }>();
   const CHUNK_ROW_SIZE = 2000;
+
+  const normalSheets = rawSheets.filter((s: any) => {
+    const title = s.properties?.title;
+    const rCount = s.properties?.gridProperties?.rowCount || 1000;
+    return Boolean(title) && rCount <= CHUNK_ROW_SIZE;
+  });
+
+  if (normalSheets.length > 0) {
+    try {
+      const rangesParam = normalSheets
+        .map((s: any) => `ranges=${encodeURIComponent(`'${s.properties.title.replace(/'/g, "''")}'`)}`)
+        .join('&');
+      const batchGetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${rangesParam}&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+      const batchRes = await fetchWithRetry(batchGetUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }, 3, 600, 35000);
+
+      if (batchRes.ok) {
+        const batchData = await batchRes.json();
+        const valueRanges: any[] = batchData.valueRanges || [];
+        for (let i = 0; i < normalSheets.length; i++) {
+          const sheetTitle = normalSheets[i]?.properties?.title;
+          const vr = valueRanges[i];
+          if (!sheetTitle) continue;
+          const values: string[][] = vr?.values || [];
+          if (values.length > 0) {
+            const headers = (values[0] || []).map((h) => String(h || '').trim());
+            const rows = values.slice(1);
+            sheetDataMap.set(sheetTitle, { headers, rows });
+          } else {
+            sheetDataMap.set(sheetTitle, { headers: [], rows: [] });
+          }
+        }
+      }
+    } catch (batchErr) {
+      console.warn('Fast batchGet failed, falling back to per-sheet fetching:', batchErr);
+    }
+  }
 
   for (const sheetObj of rawSheets) {
     const title = sheetObj.properties?.title;
     if (!title) continue;
+    if (sheetDataMap.has(title)) continue;
 
     const rowCount = sheetObj.properties?.gridProperties?.rowCount || 1000;
     const escapedTitle = title.replace(/'/g, "''");
 
-    // If sheet has 2,000 rows or fewer, fetch whole sheet in one request
+    // If sheet has 2,000 rows or fewer and wasn't populated by batchGet, fetch whole sheet in one request
     if (rowCount <= CHUNK_ROW_SIZE) {
       try {
         const singleUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${escapedTitle}'`)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
         const singleRes = await fetchWithRetry(singleUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
-        });
+        }, 3, 600, 35000);
         if (singleRes.ok) {
           const data = await singleRes.json();
           const values: string[][] = data.values || [];

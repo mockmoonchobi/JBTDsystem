@@ -134,6 +134,24 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
     safeStorage.setItem('temple_print_show_household_qrcode', String(val));
   };
 
+  // 料金別納郵便マーク印刷の有無設定 (封筒宛名専用・デフォルトON)
+  const [showBetsunoStamp, setShowBetsunoStamp] = useState<boolean>(() => {
+    try {
+      const saved = safeStorage.getItem('temple_print_show_betsuno_stamp');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch (e) {
+      // ignore
+    }
+    return true;
+  });
+
+  const handleToggleBetsunoStamp = (val: boolean) => {
+    setShowBetsunoStamp(val);
+    safeStorage.setItem('temple_print_show_betsuno_stamp', String(val));
+  };
+
   // Reload saved templates
   const reloadTemplates = () => {
     const loaded = getAllSavedNoticeTemplates();
@@ -659,6 +677,24 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               </div>
             )}
 
+            {/* 封筒宛名用の料金別納郵便マーク */}
+            {docType === 'envelope' && envelopeTab === 'address' && (
+              <div className="pt-2 border-t border-[#F0EFEA]">
+                <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
+                  <input
+                    type="checkbox"
+                    checked={showBetsunoStamp}
+                    onChange={(e) => handleToggleBetsunoStamp(e.target.checked)}
+                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-4 w-4 accent-[#1A1A1A] cursor-pointer"
+                  />
+                  <span className="font-bold text-xs">「料金別納郵便」マークを印刷する</span>
+                </label>
+                <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
+                  ※ 封筒切手貼付位置（左上）に四角形の料金別納マークを印刷
+                </span>
+              </div>
+            )}
+
             {/* 施主QRコード印刷の有無 (封筒・はがき共通) */}
             <div className={`pt-2 ${docType === 'envelope' ? '' : 'border-t border-[#F0EFEA]'}`}>
               <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
@@ -955,6 +991,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   fontSizeOffset={docType === 'envelope' ? a4FontSizeOffset : fontSizeOffset}
                   showTempleQrCode={showTempleQrCode}
                   showHouseholdQrCode={showHouseholdQrCode}
+                  showBetsunoStamp={showBetsunoStamp}
                   milestoneTargetsMap={milestoneTargetsMap}
                   milestonePeriodLabel={milestonePeriodLabel}
                 />
@@ -985,6 +1022,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               fontSizeOffset={item.effectiveDocType === 'a4_notice' ? a4FontSizeOffset : fontSizeOffset}
               showTempleQrCode={showTempleQrCode}
               showHouseholdQrCode={showHouseholdQrCode}
+              showBetsunoStamp={showBetsunoStamp}
               isPrint
               isLast={index === printItems.length - 1}
               milestoneTargetsMap={milestoneTargetsMap}
@@ -1041,6 +1079,7 @@ interface PreviewCanvasProps {
   fontSizeOffset?: number;
   showTempleQrCode?: boolean;
   showHouseholdQrCode?: boolean;
+  showBetsunoStamp?: boolean;
   isPrint?: boolean;
   isLast?: boolean;
   milestoneTargetsMap?: Record<string, MemorialNoticeTarget[]>;
@@ -1320,6 +1359,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   fontSizeOffset = 0,
   showTempleQrCode = true,
   showHouseholdQrCode = true,
+  showBetsunoStamp = true,
   isPrint = false,
   isLast = false,
   milestoneTargetsMap,
@@ -1366,6 +1406,66 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             transform: 'translate(2mm, 2mm)',
           }}
         >
+          {/* 切手貼付枠：料金別納郵便 マーク (四角形・切手大) */}
+          {showBetsunoStamp && (
+            <div
+              id="envelope-betsuno-stamp"
+              className="absolute bg-white select-none pointer-events-none"
+              style={{
+                top: '4mm',
+                left: '0mm',
+                width: '20mm',
+                height: '28mm',
+                border: '1px solid #1c1917',
+                display: 'flex',
+                flexDirection: 'column',
+                boxSizing: 'border-box',
+              }}
+            >
+              {/* 上部スペース (約1/3の高さ、空欄) */}
+              <div
+                style={{
+                  height: '8.5mm',
+                  borderBottom: '1px solid #1c1917',
+                  boxSizing: 'border-box',
+                  width: '100%',
+                }}
+              />
+
+              {/* 下部：料金別納 郵便 */}
+              <div
+                className="flex-1 flex flex-col items-center justify-center font-serif text-stone-900"
+                style={{
+                  boxSizing: 'border-box',
+                }}
+              >
+                <div
+                  className="font-medium text-center whitespace-nowrap"
+                  style={{
+                    fontSize: '8pt',
+                    letterSpacing: '0.04em',
+                    textIndent: '0.04em',
+                    lineHeight: '1.2',
+                  }}
+                >
+                  料金別納
+                </div>
+                <div
+                  className="font-medium text-center whitespace-nowrap"
+                  style={{
+                    fontSize: '8pt',
+                    letterSpacing: '0.28em',
+                    textIndent: '0.28em',
+                    lineHeight: '1.2',
+                    marginTop: '1mm',
+                  }}
+                >
+                  郵便
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 郵便番号枠 (7桁・右揃え) */}
           <div
             className="absolute flex items-center justify-end"

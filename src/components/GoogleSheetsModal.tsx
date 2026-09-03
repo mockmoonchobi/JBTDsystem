@@ -186,7 +186,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         setStatusMessage({ type: 'loading', text: 'GoogleDrive上のデータを確認・連携中...' });
 
         // Auto-detect or create Google Sheet
-        const sheet = await findOrCreateSpreadsheet(res.accessToken);
+        const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
+          preferredSheetId: spreadsheetInfo?.id,
+          onProgress: (text) => setStatusMessage({ type: 'loading', text }),
+        });
         setSpreadsheetInfo(sheet);
         saveJsonState('temple_google_sheet_info', sheet);
         

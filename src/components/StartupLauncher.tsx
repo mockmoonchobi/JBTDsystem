@@ -20,6 +20,7 @@ interface StartupLauncherProps {
   onStartWithTutorial: () => void;
   onStartWithFile: (file: File) => Promise<void>;
   onStartWithGoogleSheets: () => Promise<void> | void;
+  onCancelLoading?: () => void;
   isLoading?: boolean;
   loadingMessage?: string;
 }
@@ -30,6 +31,7 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
   onStartWithTutorial,
   onStartWithFile,
   onStartWithGoogleSheets,
+  onCancelLoading,
   isLoading = false,
   loadingMessage = 'データを読み込み中...',
 }) => {
@@ -124,9 +126,20 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
 
         {/* Error / Loading Notification */}
         {isLoading && (
-          <div className="bg-amber-950/80 border-b border-amber-500/60 p-4 text-center text-amber-200 text-sm font-bold flex items-center justify-center gap-2">
-            <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
-            <span>{loadingMessage}</span>
+          <div className="bg-amber-950/80 border-b border-amber-500/60 p-4 text-center text-amber-200 text-sm font-bold flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full animate-spin shrink-0" />
+              <span className="truncate">{loadingMessage}</span>
+            </div>
+            {onCancelLoading && (
+              <button
+                type="button"
+                onClick={onCancelLoading}
+                className="text-xs bg-amber-900/80 hover:bg-amber-800 text-amber-100 border border-amber-500/40 px-3 py-1 rounded transition-colors shrink-0"
+              >
+                中断
+              </button>
+            )}
           </div>
         )}
 

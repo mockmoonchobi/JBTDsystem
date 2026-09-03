@@ -111,6 +111,20 @@ import {
   INITIAL_PRIESTS,
 } from './data/initialData';
 
+function computePayloadSignature(payload: any): string {
+  if (!payload) return '';
+  try {
+    const str = JSON.stringify(payload);
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
+    }
+    return `${hash >>> 0}_${str.length}`;
+  } catch {
+    return String(Date.now());
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('households');
   const [calendarTargetDate, setCalendarTargetDate] = useState<string | undefined>(undefined);
@@ -754,13 +768,25 @@ export default function App() {
       }
 
       setStartupLoadingMsg('Googleスプレッドシートを確認・連携中...');
-      const sheet = await findOrCreateSpreadsheet(res.accessToken);
+      const savedInfo = safeStorage.getItem('temple_google_sheet_info');
+      let preferredSheetId: string | undefined;
+      if (savedInfo) {
+        try {
+          preferredSheetId = JSON.parse(savedInfo)?.id;
+        } catch {}
+      }
+
+      const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
+        preferredSheetId,
+        onProgress: (msg) => setStartupLoadingMsg(msg),
+      });
       saveJsonState('temple_google_sheet_info', sheet);
 
       setStartupLoadingMsg('Googleシートとデータを同期中...');
       await syncWithGoogleDrive(res.accessToken, sheet.id);
 
       setIsStartupLauncherOpen(false);
+      setIsInitialLoaded(true);
       recordHistory(`Googleシート連携（${res.user.email}）で起動`);
     } catch (err: any) {
       console.error('Google sign in / sync error from startup launcher:', err);
@@ -825,6 +851,7 @@ export default function App() {
   const pendingCleanImportRef = useRef(false);
   const isSyncInProgressRef = useRef(false);
   const activeSyncPromiseRef = useRef<Promise<any> | null>(null);
+  const lastSyncedSignatureRef = useRef<string>('');
 
   // Continuously maintain an automatic safety backup snapshot whenever valid records exist
   useEffect(() => {
@@ -1330,6 +1357,20 @@ export default function App() {
         const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         setLastSyncTime(nowTime);
         safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
+        lastSyncedSignatureRef.current = computePayloadSignature({
+          templeInfo: syncStateRef.current.templeInfo,
+          households: syncStateRef.current.households,
+          pastRecords: syncStateRef.current.pastRecords,
+          memorialServices: syncStateRef.current.memorialServices,
+          transactions: syncStateRef.current.transactions,
+          masterOptions: syncStateRef.current.masterOptions,
+          noticeTemplates: syncStateRef.current.noticeTemplates,
+          templeTodos: syncStateRef.current.templeTodos,
+          temples: syncStateRef.current.temples,
+          templeMasterOptionsMap: syncStateRef.current.templeMasterOptionsMap,
+          priests: syncStateRef.current.priests,
+          batchAccountingData: syncStateRef.current.batchAccountingData,
+        });
         setSyncStatus('synced');
         setSyncErrorMessage(null);
         return { success: true, count: remoteCount > 0 ? remoteCount : localCount };
@@ -1405,6 +1446,20 @@ export default function App() {
       const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
       setLastSyncTime(nowTime);
       safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
+      lastSyncedSignatureRef.current = computePayloadSignature({
+        templeInfo: state.templeInfo,
+        households: state.households,
+        pastRecords: state.pastRecords,
+        memorialServices: state.memorialServices,
+        transactions: state.transactions,
+        masterOptions: state.masterOptions,
+        noticeTemplates: state.noticeTemplates,
+        templeTodos: state.templeTodos,
+        temples: state.temples,
+        templeMasterOptionsMap: state.templeMasterOptionsMap,
+        priests: state.priests,
+        batchAccountingData: state.batchAccountingData,
+      });
       setSyncStatus('synced');
       setSyncErrorMessage(null);
       return { success: true, count: localCount, sheetInfo: newSheet };
@@ -1488,6 +1543,7 @@ export default function App() {
         // Do not auto-import from Google Sheets if launcher is still open or clean write is underway
         if (isStartupLauncherOpenRef.current || isCleanWritingRef.current) {
           setSyncStatus('synced');
+          lastSyncedSignatureRef.current = computePayloadSignature(syncStateRef.current);
           setIsInitialLoaded(true);
           return;
         }
@@ -1508,7 +1564,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Continuous Auto-Sync on User Data Changes (Debounced 1.5s)
+  // Continuous Auto-Sync on User Data Changes (Debounced 2.5s)
   useEffect(() => {
     if (!isInitialLoaded) return;
 
@@ -1524,6 +1580,35 @@ export default function App() {
       const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
       if (!token || !savedSheetInfo) return;
 
+      const curState = syncStateRef.current;
+      const currentHouseholds = (households && households.length > 0) ? households : (curState.households || []);
+      const currentPastRecords = (pastRecords && pastRecords.length > 0) ? pastRecords : (curState.pastRecords || []);
+      const currentMemorials = (memorialServices && memorialServices.length > 0) ? memorialServices : (curState.memorialServices || []);
+      const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (curState.templeTodos || []);
+      const currentTransactions = (transactions && transactions.length > 0) ? transactions : (curState.transactions || []);
+
+      const exportPayload = {
+        templeInfo: curState.templeInfo || templeInfo,
+        households: currentHouseholds,
+        pastRecords: currentPastRecords,
+        memorialServices: currentMemorials,
+        transactions: currentTransactions,
+        masterOptions: curState.masterOptions || masterOptions,
+        noticeTemplates: curState.noticeTemplates || noticeTemplates,
+        templeTodos: currentTodos,
+        temples: (curState.temples && curState.temples.length > 0) ? curState.temples : temples,
+        templeMasterOptionsMap: curState.templeMasterOptionsMap || templeMasterOptionsMap,
+        priests: curState.priests || priests,
+        batchAccountingData: curState.batchAccountingData !== undefined ? curState.batchAccountingData : (getSavedBatchAccountingData() || undefined),
+      };
+
+      const payloadSig = computePayloadSignature(exportPayload);
+      if (lastSyncedSignatureRef.current && payloadSig === lastSyncedSignatureRef.current) {
+        // No local changes detected since last successful sync, avoid redundant export
+        return;
+      }
+
+      isSyncInProgressRef.current = true;
       try {
         let sheet: { id: string; url: string };
         try {
@@ -1532,28 +1617,6 @@ export default function App() {
           sheet = await findOrCreateSpreadsheet(token);
         }
         setSyncStatus('syncing');
-
-        const curState = syncStateRef.current;
-        const currentHouseholds = (households && households.length > 0) ? households : (curState.households || []);
-        const currentPastRecords = (pastRecords && pastRecords.length > 0) ? pastRecords : (curState.pastRecords || []);
-        const currentMemorials = (memorialServices && memorialServices.length > 0) ? memorialServices : (curState.memorialServices || []);
-        const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (curState.templeTodos || []);
-        const currentTransactions = (transactions && transactions.length > 0) ? transactions : (curState.transactions || []);
-
-        const exportPayload = {
-          templeInfo: curState.templeInfo || templeInfo,
-          households: currentHouseholds,
-          pastRecords: currentPastRecords,
-          memorialServices: currentMemorials,
-          transactions: currentTransactions,
-          masterOptions: curState.masterOptions || masterOptions,
-          noticeTemplates: curState.noticeTemplates || noticeTemplates,
-          templeTodos: currentTodos,
-          temples: (curState.temples && curState.temples.length > 0) ? curState.temples : temples,
-          templeMasterOptionsMap: curState.templeMasterOptionsMap || templeMasterOptionsMap,
-          priests: curState.priests || priests,
-          batchAccountingData: curState.batchAccountingData !== undefined ? curState.batchAccountingData : (getSavedBatchAccountingData() || undefined),
-        };
 
         await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
           await exportToSheets(
@@ -1578,6 +1641,7 @@ export default function App() {
           );
         });
 
+        lastSyncedSignatureRef.current = payloadSig;
         const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         setLastSyncTime(nowTime);
         safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
@@ -1588,17 +1652,21 @@ export default function App() {
         setSyncStatus('error');
         if (isAuthError(err)) {
           setSyncErrorMessage('Google認証の有効期限が切れました。データ連携画面より再度ログインしてください。');
+        } else if (err?.isTimeout || err?.message?.includes('タイムアウト')) {
+          setSyncErrorMessage('Googleサーバーとの通信がタイムアウトしました。通信環境をご確認の上、再度お試しください。');
         } else if (err?.isNetworkError || err?.message?.includes('fetch') || err?.message?.includes('NetworkError')) {
           setSyncErrorMessage('Googleサーバーとの通信に一時的に失敗しました。ネットワーク接続をご確認ください。');
         } else {
           setSyncErrorMessage(err.message || '自動同期に失敗しました。');
         }
+      } finally {
+        isSyncInProgressRef.current = false;
       }
     };
 
     timer = setTimeout(() => {
       performAutoSync();
-    }, 1500);
+    }, 2500);
 
     return () => {
       if (timer) clearTimeout(timer);
@@ -2808,6 +2876,7 @@ export default function App() {
           onStartWithTutorial={handleStartWithTutorial}
           onStartWithFile={handleStartWithFile}
           onStartWithGoogleSheets={handleStartWithGoogleSheets}
+          onCancelLoading={() => setIsStartupLoading(false)}
           isLoading={isStartupLoading}
           loadingMessage={startupLoadingMsg}
         />
@@ -2902,6 +2971,7 @@ export default function App() {
         onStartWithTutorial={handleStartWithTutorial}
         onStartWithFile={handleStartWithFile}
         onStartWithGoogleSheets={handleStartWithGoogleSheets}
+        onCancelLoading={() => setIsStartupLoading(false)}
         isLoading={isStartupLoading}
         loadingMessage={startupLoadingMsg}
       />

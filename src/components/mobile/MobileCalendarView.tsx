@@ -513,6 +513,17 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
     .replace(/(家|様)+$/g, '')
     .trim();
 
+  // 俗名の取得 (service.deceasedName または pastRecordsから照合)
+  const matchedPast = pastRecords.find((p) => 
+    (service.deceasedId && p.id === service.deceasedId) || 
+    (service.dharmaName && p.dharmaName && p.dharmaName.trim() === service.dharmaName.trim() && (!service.householdId || p.householdId === service.householdId)) ||
+    (service.dharmaName && p.dharmaName && p.dharmaName.trim() === service.dharmaName.trim())
+  );
+  let rawSecularName = (service.deceasedName || matchedPast?.secularName || matchedPast?.deceasedName || '').trim();
+  rawSecularName = rawSecularName.replace(/^(俗名[:：\s]*|故[\s　]*)/, '').trim();
+  const hasDharmaName = Boolean(service.dharmaName && service.dharmaName.trim());
+  const displaySecular = hasDharmaName && rawSecularName && rawSecularName !== service.dharmaName.trim() ? rawSecularName : '';
+
   // メイン精霊と回忌
   const mainDharma = service.dharmaName || (service.deceasedName ? `俗名: ${service.deceasedName}` : (service.notes || ''));
   const mainMemType = service.memorialType || '';
@@ -579,17 +590,54 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
             </div>
           ) : (
             <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-              {mainDharma ? `${mainDharma}　` : ''}{mainMemType}{cleanChiefMourner ? `　施主 ${cleanChiefMourner}` : ''}
+              <div className="flex items-baseline flex-wrap gap-x-1.5">
+                <span>{mainDharma}</span>
+                {displaySecular && (
+                  <span className="text-sm sm:text-base font-normal font-serif text-[#8C2D19]/90">
+                    （故　{displaySecular}）
+                  </span>
+                )}
+              </div>
+              {(mainMemType || cleanChiefMourner) && (
+                <div className="text-base sm:text-lg font-bold text-[#8C2D19] mt-0.5 flex items-baseline flex-wrap gap-x-2.5">
+                  {mainMemType && <span>{mainMemType}</span>}
+                  {cleanChiefMourner && <span>施主　{cleanChiefMourner}</span>}
+                </div>
+              )}
             </div>
           )}
 
           {!isFuneral && !isOther && service.additionalDeceased && service.additionalDeceased.length > 0 && (
             <div className="space-y-0.5 pt-0.5">
-              {service.additionalDeceased.map((sub, idx) => (
-                <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-[#8C2D19]/90 leading-snug tracking-wide">
-                  {sub.dharmaName || sub.deceasedName}　{sub.memorialType || ''} (併修)
-                </div>
-              ))}
+              {service.additionalDeceased.map((sub, idx) => {
+                const subPast = pastRecords.find((p) =>
+                  (sub.id && p.id === sub.id) ||
+                  (sub.dharmaName && p.dharmaName && p.dharmaName.trim() === sub.dharmaName.trim() && (!service.householdId || p.householdId === service.householdId)) ||
+                  (sub.dharmaName && p.dharmaName && p.dharmaName.trim() === sub.dharmaName.trim())
+                );
+                let subSecular = (sub.deceasedName || subPast?.secularName || subPast?.deceasedName || '').trim();
+                subSecular = subSecular.replace(/^(俗名[:：\s]*|故[\s　]*)/, '').trim();
+                const hasSubDharma = Boolean(sub.dharmaName && sub.dharmaName.trim());
+                const displaySubSecular = hasSubDharma && subSecular && subSecular !== sub.dharmaName?.trim() ? subSecular : '';
+
+                return (
+                  <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-[#8C2D19]/90 leading-snug tracking-wide">
+                    <div className="flex items-baseline flex-wrap gap-x-1.5">
+                      <span>{sub.dharmaName || sub.deceasedName}</span>
+                      {displaySubSecular && (
+                        <span className="text-xs sm:text-sm font-normal text-[#8C2D19]/80 font-serif">
+                          （故　{displaySubSecular}）
+                        </span>
+                      )}
+                    </div>
+                    {sub.memorialType && (
+                      <div className="text-sm sm:text-base font-bold text-[#8C2D19]/90 mt-0.5">
+                        {sub.memorialType} (併修)
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

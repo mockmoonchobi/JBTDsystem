@@ -54,6 +54,7 @@ import { PostcardTemplateModal } from './PostcardTemplateModal';
 import { SegakiPatronModal } from './SegakiPatronModal';
 import { NenkiFilterModal } from './NenkiFilterModal';
 import { YearlyMemorialPrintModal } from './YearlyMemorialPrintModal';
+import { useVirtualScroll } from '../hooks/useVirtualScroll';
 
 interface KakochoListProps {
   pastRecords: PastRecord[];
@@ -416,13 +417,29 @@ export const KakochoList: React.FC<KakochoListProps> = ({
   }, [pastRecords, searchTerm]);
 
   // Sort All Past Records by deathDate in ascending order (日付の昇順: 古い順 -> 新しい順)
-  const sortedAllRecords = [...filteredRecords].sort((a, b) => {
-    const da = normalizeDateInput(a.deathDate || '');
-    const db = normalizeDateInput(b.deathDate || '');
-    if (da && db) return da.localeCompare(db);
-    if (da && !db) return -1; // da (has date) comes first
-    if (!da && db) return 1;  // db (has date) comes first
-    return (a.dharmaName || a.secularName || '').localeCompare(b.dharmaName || b.secularName || '');
+  const sortedAllRecords = useMemo(() => {
+    return [...filteredRecords].sort((a, b) => {
+      const da = normalizeDateInput(a.deathDate || '');
+      const db = normalizeDateInput(b.deathDate || '');
+      if (da && db) return da.localeCompare(db);
+      if (da && !db) return -1; // da (has date) comes first
+      if (!da && db) return 1;  // db (has date) comes first
+      return (a.dharmaName || a.secularName || '').localeCompare(b.dharmaName || b.secularName || '');
+    });
+  }, [filteredRecords]);
+
+  // 仮想スクロール (Virtual Scroll) による高速描画
+  const {
+    topSpacerHeight: kakochoTopSpacerHeight,
+    bottomSpacerHeight: kakochoBottomSpacerHeight,
+    virtualIndices: kakochoVirtualIndices,
+  } = useVirtualScroll({
+    count: sortedAllRecords.length,
+    estimateItemHeight: 52,
+    overscan: 60,
+    containerRef: allRecordsScrollRef,
+    defaultContainerHeight: 600,
+    disableThreshold: 800,
   });
 
   // Calculate milestone candidates for the selected shipping period
@@ -1255,10 +1272,25 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F0EFEA]">
-                {sortedAllRecords.map((record, rIdx) => {
-                    const isEditingThisRecord = editingRecordId === record.id && inlineRecordForm;
+                {sortedAllRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-[#888888] font-sans">
+                      登録されている過去帳データがありません。
+                    </td>
+                  </tr>
+                ) : (
+                  <>
+                    {kakochoTopSpacerHeight > 0 && (
+                      <tr style={{ height: `${kakochoTopSpacerHeight}px` }} aria-hidden="true">
+                        <td colSpan={9} style={{ height: `${kakochoTopSpacerHeight}px`, padding: 0, border: 0 }} />
+                      </tr>
+                    )}
+                    {kakochoVirtualIndices.map((rIdx) => {
+                      const record = sortedAllRecords[rIdx];
+                      if (!record) return null;
+                      const isEditingThisRecord = editingRecordId === record.id && inlineRecordForm;
 
-                    if (isEditingThisRecord && inlineRecordForm) {
+                      if (isEditingThisRecord && inlineRecordForm) {
                       return (
                         <React.Fragment key={`kakocho-rec-${record.id || rIdx}-${rIdx}`}>
                           <tr className="bg-[#FFFDF0] font-sans">
@@ -1489,7 +1521,14 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                       </React.Fragment>
                     );
                   })}
-                </tbody>
+                  {kakochoBottomSpacerHeight > 0 && (
+                    <tr style={{ height: `${kakochoBottomSpacerHeight}px` }} aria-hidden="true">
+                      <td colSpan={9} style={{ height: `${kakochoBottomSpacerHeight}px`, padding: 0, border: 0 }} />
+                    </tr>
+                  )}
+                </>
+              )}
+            </tbody>
               </table>
             </div>
         </div>

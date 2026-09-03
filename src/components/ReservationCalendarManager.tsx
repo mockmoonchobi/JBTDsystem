@@ -2927,6 +2927,17 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                         .replace(/(家|様)+$/g, '')
                         .trim();
                       
+                      // 俗名の取得 (s.deceasedName または pastRecordsから照合)
+                      const matchedPast = pastRecords.find((p) => 
+                        (s.deceasedId && p.id === s.deceasedId) || 
+                        (s.dharmaName && p.dharmaName && p.dharmaName.trim() === s.dharmaName.trim() && (!s.householdId || p.householdId === s.householdId)) ||
+                        (s.dharmaName && p.dharmaName && p.dharmaName.trim() === s.dharmaName.trim())
+                      );
+                      let rawSecularName = (s.deceasedName || matchedPast?.secularName || matchedPast?.deceasedName || '').trim();
+                      rawSecularName = rawSecularName.replace(/^(俗名[:：\s]*|故[\s　]*)/, '').trim();
+                      const hasDharmaName = Boolean(s.dharmaName && s.dharmaName.trim());
+                      const displaySecular = hasDharmaName && rawSecularName && rawSecularName !== s.dharmaName.trim() ? rawSecularName : '';
+
                       // メイン精霊と回忌
                       const mainDharma = s.dharmaName || (s.deceasedName ? `俗名: ${s.deceasedName}` : (s.notes || ''));
                       const mainMemType = s.memorialType || '';
@@ -2988,16 +2999,53 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                 </div>
                               ) : (
                                 <div className="font-serif font-black text-lg sm:text-xl text-[#8C2D19] leading-snug tracking-wide">
-                                  {mainDharma ? `${mainDharma}　` : ''}{mainMemType}{cleanChiefMourner ? `　施主 ${cleanChiefMourner}` : ''}
+                                  <div className="flex items-baseline flex-wrap gap-x-1.5">
+                                    <span>{mainDharma}</span>
+                                    {displaySecular && (
+                                      <span className="text-sm sm:text-base font-normal font-serif text-[#8C2D19]/90">
+                                        （故　{displaySecular}）
+                                      </span>
+                                    )}
+                                  </div>
+                                  {(mainMemType || cleanChiefMourner) && (
+                                    <div className="text-base sm:text-lg font-bold text-[#8C2D19] mt-0.5 flex items-baseline flex-wrap gap-x-2.5">
+                                      {mainMemType && <span>{mainMemType}</span>}
+                                      {cleanChiefMourner && <span>施主　{cleanChiefMourner}</span>}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {!isFuneral && !isOther && s.additionalDeceased && s.additionalDeceased.length > 0 && (
                                 <div className="space-y-0.5 pt-0.5">
-                                  {s.additionalDeceased.map((sub, idx) => (
-                                    <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-purple-950 leading-snug tracking-wide">
-                                      {sub.dharmaName || sub.deceasedName}　{sub.memorialType || ''} (併修)
-                                    </div>
-                                  ))}
+                                  {s.additionalDeceased.map((sub, idx) => {
+                                    const subPast = pastRecords.find((p) =>
+                                      (sub.id && p.id === sub.id) ||
+                                      (sub.dharmaName && p.dharmaName && p.dharmaName.trim() === sub.dharmaName.trim() && (!s.householdId || p.householdId === s.householdId)) ||
+                                      (sub.dharmaName && p.dharmaName && p.dharmaName.trim() === sub.dharmaName.trim())
+                                    );
+                                    let subSecular = (sub.deceasedName || subPast?.secularName || subPast?.deceasedName || '').trim();
+                                    subSecular = subSecular.replace(/^(俗名[:：\s]*|故[\s　]*)/, '').trim();
+                                    const hasSubDharma = Boolean(sub.dharmaName && sub.dharmaName.trim());
+                                    const displaySubSecular = hasSubDharma && subSecular && subSecular !== sub.dharmaName?.trim() ? subSecular : '';
+
+                                    return (
+                                      <div key={sub.id || idx} className="font-serif font-bold text-base sm:text-lg text-purple-950 leading-snug tracking-wide">
+                                        <div className="flex items-baseline flex-wrap gap-x-1.5">
+                                          <span>{sub.dharmaName || sub.deceasedName}</span>
+                                          {displaySubSecular && (
+                                            <span className="text-xs sm:text-sm font-normal text-purple-900 font-serif">
+                                              （故　{displaySubSecular}）
+                                            </span>
+                                          )}
+                                        </div>
+                                        {sub.memorialType && (
+                                          <div className="text-sm sm:text-base font-bold text-purple-900 mt-0.5">
+                                            {sub.memorialType} (併修)
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
