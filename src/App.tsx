@@ -13,6 +13,7 @@ import { MasterOptionsModal } from './components/MasterOptionsModal';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { GoogleSheetsUndoInterruptModal } from './components/GoogleSheetsUndoInterruptModal';
 import { ExternalDataImportModal } from './components/ExternalDataImportModal';
+import { OperationHistoryModal } from './components/OperationHistoryModal';
 import { MobileApp } from './components/mobile/MobileApp';
 import { StartupLauncher } from './components/StartupLauncher';
 
@@ -94,7 +95,8 @@ import {
   saveDeletedRecordsLog,
   clearDeletedRecordsLog,
   unrecordDeletedRecord,
-  recordOperationLog
+  recordOperationLog,
+  mergeDeletedRecordsLogs
 } from './utils/deletedRecordsLog';
 import {
   INITIAL_TEMPLE_INFO,
@@ -230,6 +232,34 @@ export default function App() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [priests, setPriests] = useState<Priest[]>([]);
   const [batchAccountingData, setBatchAccountingData] = useState<BatchAccountingData | null>(() => getSavedBatchAccountingData());
+  const [deletedRecords, setDeletedRecords] = useState<DeletedRecordEntry[]>(() => loadDeletedRecordsLog());
+  const [isOperationHistoryModalOpen, setIsOperationHistoryModalOpen] = useState<boolean>(false);
+
+  const refreshDeletedRecords = useCallback(() => {
+    const logs = loadDeletedRecordsLog();
+    setDeletedRecords(logs);
+    if (syncStateRef.current) {
+      syncStateRef.current.deletedRecords = logs;
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'temple_deleted_records_log') {
+        refreshDeletedRecords();
+      }
+    };
+    const handleCustomChange = () => {
+      refreshDeletedRecords();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('temple_deleted_records_changed', handleCustomChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('temple_deleted_records_changed', handleCustomChange);
+    };
+  }, [refreshDeletedRecords]);
 
   const handleSaveBatchAccountingData = (data: BatchAccountingData | null) => {
     setBatchAccountingData(data);
@@ -643,6 +673,7 @@ export default function App() {
       templeMasterOptionsMap: {},
       priests: [],
       batchAccountingData: null,
+      deletedRecords: [],
     };
 
     idbClear().catch((e) => console.warn('IDB clear error:', e));
@@ -1052,6 +1083,7 @@ export default function App() {
     if (mergeResult.masterOptions) syncStateRef.current.masterOptions = mergeResult.masterOptions;
     if (mergeResult.templeMasterOptionsMap) syncStateRef.current.templeMasterOptionsMap = mergeResult.templeMasterOptionsMap;
     if (mergeResult.priests) syncStateRef.current.priests = mergeResult.priests;
+    if (mergeResult.deletedRecords) syncStateRef.current.deletedRecords = mergeResult.deletedRecords;
 
     // 1. Households
     setHouseholds(mergeResult.households);
@@ -1136,13 +1168,21 @@ export default function App() {
       }
     }
 
+    // 13. Operation / Deletion Logs (Bidirectional Merge with Remote Sheet)
+    if (remoteData.deletedRecords && remoteData.deletedRecords.length > 0) {
+      const mergedLogs = mergeDeletedRecordsLogs(loadDeletedRecordsLog(), remoteData.deletedRecords);
+      saveDeletedRecordsLog(mergedLogs);
+      setDeletedRecords(mergedLogs);
+      syncStateRef.current.deletedRecords = mergedLogs;
+    }
+
     // Set a safety timeout to release importing flag so subsequent user edits sync properly
     setTimeout(() => {
       isImportingRef.current = false;
     }, 2000);
 
     return mergeResult;
-  }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, noticeTemplates, priests]);
+  }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, noticeTemplates, priests, deletedRecords]);
 
   const isImportingRef = useRef(false);
   const syncStateRef = useRef({
@@ -1159,6 +1199,7 @@ export default function App() {
     templeMasterOptionsMap,
     priests,
     batchAccountingData,
+    deletedRecords,
   });
 
   useEffect(() => {
@@ -1176,8 +1217,9 @@ export default function App() {
       templeMasterOptionsMap,
       priests,
       batchAccountingData,
+      deletedRecords,
     };
-  }, [templeInfo, temples, households, pastRecords, memorialServices, transactions, familyMembers, masterOptions, noticeTemplates, templeTodos, templeMasterOptionsMap, priests, batchAccountingData]);
+  }, [templeInfo, temples, households, pastRecords, memorialServices, transactions, familyMembers, masterOptions, noticeTemplates, templeTodos, templeMasterOptionsMap, priests, batchAccountingData, deletedRecords]);
 
   const applyRemoteSheetsDataRef = useRef(applyRemoteSheetsData);
   useEffect(() => {
@@ -1415,6 +1457,7 @@ export default function App() {
           templeMasterOptionsMap: syncStateRef.current.templeMasterOptionsMap,
           priests: syncStateRef.current.priests,
           batchAccountingData: syncStateRef.current.batchAccountingData,
+          deletedRecords: syncStateRef.current.deletedRecords,
         });
         setSyncStatus('synced');
         setSyncErrorMessage(null);
@@ -1504,6 +1547,7 @@ export default function App() {
         templeMasterOptionsMap: state.templeMasterOptionsMap,
         priests: state.priests,
         batchAccountingData: state.batchAccountingData,
+        deletedRecords: [],
       });
       setSyncStatus('synced');
       setSyncErrorMessage(null);
@@ -1644,6 +1688,7 @@ export default function App() {
         temples: (curState.temples && curState.temples.length > 0) ? curState.temples : temples,
         templeMasterOptionsMap: curState.templeMasterOptionsMap || templeMasterOptionsMap,
         priests: curState.priests || priests,
+        deletedRecords: curState.deletedRecords || deletedRecords,
         batchAccountingData: curState.batchAccountingData !== undefined ? curState.batchAccountingData : (getSavedBatchAccountingData() || undefined),
       };
 
@@ -1716,7 +1761,7 @@ export default function App() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, isInitialLoaded]);
+  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, isInitialLoaded]);
 
   // Manual Instant Sync Trigger (Bidirectional merge with audit priority & Push to Sheets)
   const handleManualSync = async () => {
@@ -1759,6 +1804,7 @@ export default function App() {
         templeMasterOptionsMap,
         priests,
         batchAccountingData,
+        deletedRecords: loadDeletedRecordsLog(),
       };
 
       if (remoteData && remoteData.totalRecordsCount > 0) {
@@ -1776,6 +1822,7 @@ export default function App() {
           templeMasterOptionsMap: merged.templeMasterOptionsMap || templeMasterOptionsMap,
           priests: merged.priests || priests,
           batchAccountingData: remoteData.batchAccountingData || batchAccountingData,
+          deletedRecords: loadDeletedRecordsLog(),
         };
         recordHistory(`Googleシートと日時照会同期完了: ${merged.summaryMessage}`);
       }
@@ -2948,6 +2995,7 @@ export default function App() {
         templeMasterOptionsMap: { 'temple-main': EMPTY_MASTER_OPTIONS },
         priests: [],
         batchAccountingData: null,
+        deletedRecords: [],
       };
 
       setTemples(defaultTemples);
@@ -3158,6 +3206,7 @@ export default function App() {
           onExportExcel={handleExportExcel}
           onImportExcel={handleImportExcel}
           onOpenImportModal={() => handleOpenImportModal('household')}
+          onOpenOperationHistory={() => setIsOperationHistoryModalOpen(true)}
           onRestoreBackup={handleRestoreFromBackup}
           temples={temples}
           activeTempleId={activeTempleId}
@@ -3170,6 +3219,25 @@ export default function App() {
           onClose={() => setIsGoogleSheetsUndoInterruptOpen(false)}
           onConfirm={handleConfirmUndoInterrupt}
           actionType={undoInterruptAction}
+        />
+
+        {/* Operation History / Google Sheets Log Modal for Mobile */}
+        <OperationHistoryModal
+          isOpen={isOperationHistoryModalOpen}
+          onClose={() => setIsOperationHistoryModalOpen(false)}
+          deletedRecords={deletedRecords}
+          onTriggerManualSync={handleManualSync}
+          isSyncing={syncStatus === 'syncing'}
+          spreadsheetUrl={(() => {
+            const info = safeStorage.getItem('temple_google_sheet_info');
+            if (!info) return null;
+            try {
+              return JSON.parse(info).url;
+            } catch {
+              return null;
+            }
+          })()}
+          isGoogleConnected={syncStatus !== 'disconnected'}
         />
       </>
     );
@@ -3205,6 +3273,7 @@ export default function App() {
           setIsHouseholdModalOpen(true);
         }}
         onOpenGoogleSheetsModal={() => setIsGoogleSheetsModalOpen(true)}
+        onOpenOperationHistory={() => setIsOperationHistoryModalOpen(true)}
         onOpenImportModal={handleOpenImportModal}
         syncStatus={syncStatus}
         lastSyncTime={lastSyncTime}
@@ -3439,6 +3508,7 @@ export default function App() {
         onExportExcel={handleExportExcel}
         onImportExcel={handleImportExcel}
         onOpenImportModal={() => handleOpenImportModal('household')}
+        onOpenOperationHistory={() => setIsOperationHistoryModalOpen(true)}
         onRestoreBackup={handleRestoreFromBackup}
         onResetDatabase={handleResetDatabase}
         temples={temples}
@@ -3466,6 +3536,25 @@ export default function App() {
         onClose={() => setIsGoogleSheetsUndoInterruptOpen(false)}
         onConfirm={handleConfirmUndoInterrupt}
         actionType={undoInterruptAction}
+      />
+
+      {/* Operation History / Google Sheets Log Modal */}
+      <OperationHistoryModal
+        isOpen={isOperationHistoryModalOpen}
+        onClose={() => setIsOperationHistoryModalOpen(false)}
+        deletedRecords={deletedRecords}
+        onTriggerManualSync={handleManualSync}
+        isSyncing={syncStatus === 'syncing'}
+        spreadsheetUrl={(() => {
+          const info = safeStorage.getItem('temple_google_sheet_info');
+          if (!info) return null;
+          try {
+            return JSON.parse(info).url;
+          } catch {
+            return null;
+          }
+        })()}
+        isGoogleConnected={syncStatus !== 'disconnected'}
       />
     </div>
   );

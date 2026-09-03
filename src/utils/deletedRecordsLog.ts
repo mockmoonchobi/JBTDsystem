@@ -29,6 +29,9 @@ export function saveDeletedRecordsLog(entries: DeletedRecordEntry[]): void {
     .sort((a, b) => b.deletedTimestamp - a.deletedTimestamp)
     .slice(0, MAX_DELETED_LOG_LENGTH);
   saveJsonState(STORAGE_KEY, clean);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('temple_deleted_records_changed', { detail: clean }));
+  }
 }
 
 /**
@@ -36,6 +39,9 @@ export function saveDeletedRecordsLog(entries: DeletedRecordEntry[]): void {
  */
 export function clearDeletedRecordsLog(): void {
   saveJsonState(STORAGE_KEY, []);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('temple_deleted_records_changed', { detail: [] }));
+  }
 }
 
 /**
@@ -54,12 +60,15 @@ export function recordOperationLog(
   const cleanId = id.trim();
   const currentLogs = loadDeletedRecordsLog();
   const now = new Date();
+  const nowMs = now.getTime();
+  const logId = `LOG-${nowMs}-${Math.floor(Math.random() * 1000)}`;
 
   const newEntry: DeletedRecordEntry = {
+    logId,
     id: cleanId,
     entityType,
     deletedAt: now.toISOString(),
-    deletedTimestamp: now.getTime(),
+    deletedTimestamp: nowMs,
     label: label || `${entityType}:${cleanId}`,
     templeId,
     actionType,
@@ -67,7 +76,14 @@ export function recordOperationLog(
     deviceInfo,
   };
 
-  const updated = [newEntry, ...currentLogs.filter((e) => !(e.id === cleanId && e.actionType === actionType))].slice(0, MAX_DELETED_LOG_LENGTH);
+  // Debounce duplicate identical logs fired within 3 seconds for the same record and action
+  const filteredLogs = currentLogs.filter((e) => {
+    const isSameTargetAndAction = e.id === cleanId && e.actionType === actionType;
+    const isWithinDebounce = Math.abs(nowMs - (e.deletedTimestamp || 0)) < 3000;
+    return !(isSameTargetAndAction && isWithinDebounce);
+  });
+
+  const updated = [newEntry, ...filteredLogs].slice(0, MAX_DELETED_LOG_LENGTH);
   saveDeletedRecordsLog(updated);
   return updated;
 }
@@ -102,7 +118,8 @@ export function recordDeletedRecordsBatch(
   const nowIso = now.toISOString();
 
   const newIds = new Set(items.map((i) => i.id.trim()));
-  const newEntries: DeletedRecordEntry[] = items.map((i) => ({
+  const newEntries: DeletedRecordEntry[] = items.map((i, idx) => ({
+    logId: `LOG-${nowMs}-${idx}-${Math.floor(Math.random() * 1000)}`,
     id: i.id.trim(),
     entityType: i.entityType,
     deletedAt: nowIso,
@@ -133,7 +150,7 @@ export function unrecordDeletedRecord(id: string): DeletedRecordEntry[] {
 }
 
 /**
- * Merges local and remote deleted records logs, keeping the latest 1000 entries
+ * Merges local and remote deleted & operation records logs, preserving all distinct operation entries
  */
 export function mergeDeletedRecordsLogs(
   local: DeletedRecordEntry[] = [],
@@ -147,12 +164,20 @@ export function mergeDeletedRecordsLogs(
     const entryTs = entry.deletedTimestamp > 0
       ? entry.deletedTimestamp
       : (entry.deletedAt ? new Date(entry.deletedAt).getTime() : 0);
-    const existing = map.get(cleanId);
-    if (!existing || entryTs > existing.deletedTimestamp) {
-      map.set(cleanId, {
+    const validTs = entryTs > 0 ? entryTs : Date.now();
+
+    // Unique key for each operation log event: logId if available, otherwise recordId + actionType + rounded timestamp
+    // (Round within 2000ms to eliminate exact duplicates across bidirectional sync rounds)
+    const roundedTs = Math.floor(validTs / 2000) * 2000;
+    const key = entry.logId && entry.logId.trim()
+      ? entry.logId.trim()
+      : `${cleanId}_${entry.actionType || 'delete'}_${roundedTs}_${entry.operator || ''}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
         ...entry,
         id: cleanId,
-        deletedTimestamp: entryTs > 0 ? entryTs : Date.now(),
+        deletedTimestamp: validTs,
       });
     }
   };

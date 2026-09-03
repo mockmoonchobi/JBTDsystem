@@ -481,6 +481,7 @@ export type DeletedEntityType =
   | 'priest';
 
 export interface DeletedRecordEntry {
+  logId?: string; // 一意の履歴ID (例: "LOG-1725350000000-0", "LOG-1")
   id: string; // 対象レコードID (例: "1", "PR-123", "MS-456")
   entityType: DeletedEntityType;
   deletedAt: string; // ISO形式 (例: "2026-08-22T10:15:30.000Z")

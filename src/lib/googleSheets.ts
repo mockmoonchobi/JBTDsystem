@@ -654,6 +654,7 @@ export async function ensureAllSheetsExist(
       if (existingTitles.includes(t)) return false;
       if (t === '法事予約' && existingTitles.includes('法事・予約一覧')) return false;
       if (t === '寺院ToDo' && existingTitles.includes('寺院タスク・ToDo')) return false;
+      if (t === '操作・削除履歴' && existingTitles.some((s) => ['操作・削除履歴', '削除履歴', '操作履歴', '削除ログ'].includes(s))) return false;
       return true;
     });
 
@@ -912,6 +913,11 @@ export async function exportToSheets(
     // Also match notice templates aliases
     if (sheetName === '案内文テンプレート' &&
         (targetTablesFilter.has('案内文テンプレート') || targetTablesFilter.has('案内文') || targetTablesFilter.has('テンプレート') || targetTablesFilter.has('案内文設定'))) {
+      return true;
+    }
+    // Also match operation and deletion history aliases
+    if (sheetName === '操作・削除履歴' &&
+        (targetTablesFilter.has('操作・削除履歴') || targetTablesFilter.has('操作履歴') || targetTablesFilter.has('削除履歴') || targetTablesFilter.has('履歴') || targetTablesFilter.has('操作ログ'))) {
       return true;
     }
     return false;
@@ -1680,7 +1686,7 @@ export async function exportToSheets(
     : loadDeletedRecordsLog();
 
   const deletedRows = deletedLogsToExport.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => [
-    `LOG-${idx + 1}`,
+    entry.logId || `LOG-${idx + 1}`,
     entry.actionType || 'delete',
     entry.entityType || '',
     entry.id || '',
@@ -3175,20 +3181,34 @@ export async function importFromSheets(
   const deletedSheetName = findSheet(['操作・削除履歴', '削除履歴', '操作履歴', '削除ログ']);
   const { headers: dHeaders, rows: dRows } = getSheetDataByName(deletedSheetName);
   if (dRows && dRows.length > 0) {
+    const logIdIdx = findColIdx(dHeaders, ['履歴ID', 'ログID', 'logId']);
     const actionTypeIdx = findColIdx(dHeaders, ['操作種別', '種別', 'アクション', 'actionType']);
     const entityTypeIdx = findColIdx(dHeaders, ['対象エンティティ', 'データ種別', 'エンティティ', '対象種別', '対象', 'entityType']);
-    const idIdx = findColIdx(dHeaders, ['対象ID', 'レコードID', 'ID', 'id']);
+    const idIdx = findColIdx(dHeaders, ['対象ID', 'レコードID', 'データID', 'targetId', 'recordId']);
     const labelIdx = findColIdx(dHeaders, ['対象名称/内容', '対象名称内容', '名称・内容', '名称', '内容', 'ラベル', '説明', 'label']);
-    const deletedAtIdx = findColIdx(dHeaders, ['削除・操作日時', '削除操作日時', '日時', '削除日時', 'deletedAt']);
+    const deletedAtIdx = findColIdx(dHeaders, ['削除・操作日時', '削除操作日時', '操作日時', '日時', '削除日時', 'deletedAt']);
     const timestampIdx = findColIdx(dHeaders, ['日時(ms)', 'タイムスタンプ(ms)', 'タイムスタンプms', '日時(ミリ秒)', 'タイムスタンプ', 'ms', 'timestamp']);
     const dTempleIdIdx = findColIdx(dHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
     const operatorIdx = findColIdx(dHeaders, ['操作者', '実行者', 'ユーザー', 'operator', 'user']);
     const deviceInfoIdx = findColIdx(dHeaders, ['端末・環境', '端末', '環境', 'デバイス', 'deviceInfo', 'device']);
 
-    dRows.forEach((row: string[]) => {
+    dRows.forEach((row: string[], rowIdx: number) => {
       // row indices fallback: [0:履歴ID, 1:種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境]
-      const id = String((idIdx !== -1 ? row[idIdx] : (row[3] || row[2])) || '').trim();
-      if (!id || id.startsWith('DEL-') || id.startsWith('LOG-') || id === 'ID' || id === '対象ID') return;
+      const logId = String((logIdIdx !== -1 ? row[logIdIdx] : (row[0] && String(row[0]).startsWith('LOG-') ? row[0] : '')) || '').trim();
+      
+      let id = '';
+      if (idIdx !== -1 && idIdx !== logIdIdx) {
+        id = String(row[idIdx] || '').trim();
+      } else {
+        id = String(row[3] || row[2] || '').trim();
+      }
+
+      // If id was accidentally extracted as a LOG- string and column 3 has the actual record ID
+      if (id.startsWith('LOG-') && row[3] && !String(row[3]).startsWith('LOG-')) {
+        id = String(row[3]).trim();
+      }
+
+      if (!id || id.startsWith('LOG-') || id === 'ID' || id === '対象ID' || id === 'レコードID') return;
       const entityType = (entityTypeIdx !== -1 ? String(row[entityTypeIdx] || '').trim() : (row[2] || 'household')) as any;
       const actionType = (actionTypeIdx !== -1 ? String(row[actionTypeIdx] || '').trim() : (row[1] || 'delete')) as any;
       const label = labelIdx !== -1 ? String(row[labelIdx] || '').trim() : (row[4] || '');
@@ -3209,6 +3229,7 @@ export async function importFromSheets(
       const deviceInfo = deviceInfoIdx !== -1 ? String(row[deviceInfoIdx] || '').trim() : (row[10] || undefined);
 
       parsedDeletedRecords.push({
+        logId: logId || `LOG-${deletedTimestamp}-${rowIdx}`,
         id,
         entityType,
         actionType,

@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Plus,
   Layers,
-  Smartphone
+  Smartphone,
+  History
 } from 'lucide-react';
 import { TempleInfo, TempleProfile } from '../types';
 import { ImportTargetType } from '../utils/externalImportUtils';
@@ -31,6 +32,7 @@ interface HeaderProps {
   onOpenAddHouseholdModal: () => void;
   onOpenGoogleSheetsModal: () => void;
   onOpenImportModal?: (target?: ImportTargetType) => void;
+  onOpenOperationHistory?: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disconnected';
   lastSyncTime?: string | null;
   unreadCount?: number;
@@ -54,6 +56,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMasterModal,
   onOpenGoogleSheetsModal,
   onOpenImportModal,
+  onOpenOperationHistory,
   syncStatus = 'disconnected',
   lastSyncTime,
   canUndo = false,
@@ -392,6 +395,18 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
           </button>
+
+          {/* Operation History / Google Sheets Log */}
+          {onOpenOperationHistory && (
+            <button
+              onClick={onOpenOperationHistory}
+              className="h-9 flex items-center space-x-1.5 px-3 bg-[#2A2A2A] hover:bg-[#333333] text-[#F9F7F2] border border-[#444444] transition-colors cursor-pointer shadow-xs"
+              title="操作・削除履歴（Googleスプレッドシート連携ログ）の確認"
+            >
+              <History className="w-4 h-4 text-blue-400 shrink-0" />
+              <span className="font-bold text-xs whitespace-nowrap">操作履歴</span>
+            </button>
+          )}
 
           {/* Temple Information Settings */}
           <button

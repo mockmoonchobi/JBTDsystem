@@ -32,7 +32,8 @@ import {
   Lock,
   Edit3,
   Eye,
-  UploadCloud
+  UploadCloud,
+  History
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { googleSignIn, logout, initAuth, getAccessToken, getCurrentUser } from '../lib/googleAuth';
@@ -42,7 +43,6 @@ import {
   shareSpreadsheetWithUser, 
   removeSpreadsheetPermission, 
   updateSpreadsheetPermissionRole, 
-  setSpreadsheetLinkSharing, 
   validateAndConnectSpreadsheet,
   SheetPermission 
 } from '../lib/googleSheets';
@@ -68,6 +68,7 @@ interface GoogleSheetsModalProps {
   temples?: TempleProfile[];
   activeTempleId?: string;
   isStaffMode?: boolean;
+  onOpenOperationHistory?: () => void;
 }
 
 export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
@@ -89,6 +90,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   temples = [],
   activeTempleId = 'temple-main',
   isStaffMode = false,
+  onOpenOperationHistory,
 }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>('excel');
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
@@ -384,30 +386,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     } catch (err: any) {
       console.error(err);
       setStatusMessage({ type: 'error', text: `権限変更エラー: ${err.message || '更新に失敗しました。'}` });
-    }
-  };
-
-  // Handle toggling link sharing
-  const handleToggleLinkSharing = async (enable: boolean, targetRole: 'writer' | 'reader' = 'reader') => {
-    if (!spreadsheetInfo?.id) return;
-    const anyonePerm = permissions.find((p) => p.type === 'anyone');
-
-    setStatusMessage({ type: 'loading', text: enable ? 'リンク共有を有効化中...' : 'リンク共有を無効化中...' });
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('認証トークンが見つかりません。');
-
-      await setSpreadsheetLinkSharing(token, spreadsheetInfo.id, enable, targetRole, anyonePerm?.id);
-      setStatusMessage({ 
-        type: 'success', 
-        text: enable 
-          ? `リンク共有を有効化しました（${targetRole === 'writer' ? 'リンクを知っている全員が編集可' : 'リンクを知っている全員が閲覧可'}）。` 
-          : 'リンク共有を解除（非公開）にしました。' 
-      });
-      await loadPermissions(spreadsheetInfo.id);
-    } catch (err: any) {
-      console.error(err);
-      setStatusMessage({ type: 'error', text: `リンク共有設定エラー: ${err.message || '設定に失敗しました。'}` });
     }
   };
 
@@ -886,6 +864,29 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         <div className="text-[9px] text-[#888888] font-mono truncate">ID: {spreadsheetInfo.id}</div>
                       </div>
                     </div>
+
+                    {onOpenOperationHistory && (
+                      <div className="bg-blue-50/60 border border-blue-200 p-2.5 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <History className="w-4 h-4 text-blue-600 shrink-0" />
+                          <div>
+                            <div className="text-xs font-bold text-blue-900">操作・削除履歴（同期ログ）</div>
+                            <div className="text-[10px] text-blue-700">スプレッドシート上の「操作・削除履歴」シートと連動</div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenOperationHistory();
+                          }}
+                          className="px-2.5 py-1 bg-white hover:bg-blue-100 text-blue-800 border border-blue-300 font-bold text-xs flex items-center gap-1 rounded shadow-2xs transition-colors cursor-pointer"
+                        >
+                          <History className="w-3 h-3 text-blue-600" />
+                          <span>ログ一覧を見る</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -988,61 +989,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     </div>
                   </form>
 
-                  {/* Public Link Sharing Toggle */}
-                  <div className="bg-[#FAF8F5] border border-[#E5E0D8] p-2.5 flex items-center justify-between text-xs">
-                    <div className="flex items-center space-x-2">
-                      <div className={`p-1 border ${permissions.some(p => p.type === 'anyone') ? 'bg-emerald-50 border-emerald-400 text-emerald-700' : 'bg-gray-100 border-gray-300 text-gray-500'}`}>
-                        <Globe className="w-3.5 h-3.5" />
-                      </div>
-                      <div>
-                        <div className="font-bold text-[#1A1A1A] flex items-center space-x-1.5">
-                          <span>リンクを知っている全員への共有</span>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.2 border ${
-                            permissions.some(p => p.type === 'anyone')
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : 'bg-gray-200 text-gray-600 border-gray-300'
-                          }`}>
-                            {permissions.some(p => p.type === 'anyone') ? (permissions.find(p => p.type === 'anyone')?.role === 'writer' ? 'リンク編集可' : 'リンク閲覧可') : '非公開（制限付き）'}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-[#666666]">
-                          {permissions.some(p => p.type === 'anyone')
-                            ? 'URLを知っているユーザーなら誰でもアクセスできます。' 
-                            : '招待されたアカウントのみアクセス可能です。'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1.5">
-                      {permissions.some(p => p.type === 'anyone') ? (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleLinkSharing(false)}
-                          className="px-2 py-1 bg-white hover:bg-gray-100 border border-[#D1CEC7] text-rose-700 font-bold text-[11px] transition-colors cursor-pointer"
-                        >
-                          リンク共有を解除
-                        </button>
-                      ) : (
-                        <div className="flex items-center space-x-1">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleLinkSharing(true, 'reader')}
-                            className="px-2 py-1 bg-white hover:bg-gray-100 border border-[#D1CEC7] text-[#1A1A1A] font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            閲覧リンク作成
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleLinkSharing(true, 'writer')}
-                            className="px-2 py-1 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            編集リンク作成
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
                   {/* Current Shared Users List */}
                   <div className="space-y-1.5">
                     <div className="text-xs font-bold text-[#666666] flex items-center justify-between">
@@ -1081,15 +1027,26 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                                 )}
                                 <div className="min-w-0">
                                   <div className="font-bold text-[#1A1A1A] truncate flex items-center gap-1.5">
-                                    <span>{isAnyone ? 'リンクを知っている全員' : (perm.displayName || perm.emailAddress || 'ユーザー')}</span>
+                                    <span>{isAnyone ? 'リンクを知っている全員（全体公開）' : (perm.displayName || perm.emailAddress || 'ユーザー')}</span>
+                                    {isAnyone && (
+                                      <span className="text-[9px] bg-rose-100 text-rose-800 px-1 font-bold border border-rose-300">
+                                        危険・全体公開中
+                                      </span>
+                                    )}
                                     {isCurrentUser && (
                                       <span className="text-[9px] bg-amber-100 text-amber-900 px-1 font-normal border border-amber-300">
                                         あなた
                                       </span>
                                     )}
                                   </div>
-                                  {!isAnyone && perm.emailAddress && (
-                                    <div className="text-[10px] text-[#666666] font-mono truncate">{perm.emailAddress}</div>
+                                  {isAnyone ? (
+                                    <div className="text-[10px] text-rose-600">
+                                      URLを知っている全員に公開されています。安全のため右端のゴミ箱アイコンから解除してください。
+                                    </div>
+                                  ) : (
+                                    perm.emailAddress && (
+                                      <div className="text-[10px] text-[#666666] font-mono truncate">{perm.emailAddress}</div>
+                                    )
                                   )}
                                 </div>
                               </div>
@@ -1111,9 +1068,9 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                                     </select>
                                     <button
                                       type="button"
-                                      onClick={() => handleRemovePermission(perm.id, perm.displayName || perm.emailAddress || '')}
+                                      onClick={() => handleRemovePermission(perm.id, perm.displayName || perm.emailAddress || (isAnyone ? 'リンクを知っている全員への共有' : ''))}
                                       className="p-1 text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition-colors cursor-pointer rounded-xs"
-                                      title="共有を解除"
+                                      title={isAnyone ? 'リンク共有を解除' : '共有を解除'}
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
