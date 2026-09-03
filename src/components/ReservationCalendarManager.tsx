@@ -2150,6 +2150,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
   // Open Multi-Item Accounting Recording Modal (過去の同一檀家会計履歴を参考にして仮データ作成)
   const handleOpenAccountingModal = (service: MemorialService) => {
+    // 既に記帳済みの場合は二重入力を防止するためモーダルを開かない
+    const currentStatus = getServiceAccountingStatus(service);
+    if (currentStatus.isRecorded) {
+      alert('この法要はすでに出納帳（会計管理）へ記帳済みです。\n二重登録を防止するため、会計入力画面は開きません。\n\n内容の確認や修正が必要な場合は、上部メニューの「会計管理」画面から該当の取引をご確認ください。');
+      return;
+    }
+
     const normDate = normalizeDateInput(service.scheduledDate) || todayStr;
     
     // 過去の同一檀家（householdId）の収入取引履歴を検索
@@ -3066,15 +3073,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
                             {isHousehold && (
                               isRecorded ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenAccountingModal(s)}
-                                  className="px-2 py-1 font-bold rounded-xs flex items-center gap-1 transition-colors cursor-pointer text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                  title="出納帳に記帳済み（クリックで明細の確認・編集・削除）"
+                                <span
+                                  className="px-2.5 py-1.5 font-bold rounded-xs flex items-center gap-1 text-xs bg-emerald-50 text-emerald-800 border border-emerald-300 select-none cursor-default"
+                                  title="出納帳に記帳済み（二重入力防止のため会計入力完了済）"
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                   <span>記載済{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
-                                </button>
+                                </span>
                               ) : (
                                 <button
                                   type="button"
@@ -3376,15 +3381,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                         </td>
                         <td className="p-2.5 whitespace-nowrap text-center">
                           {isRecorded ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenAccountingModal(s)}
-                              className="px-2.5 py-1 font-bold rounded-xs text-[11px] cursor-pointer shadow-xs transition-colors flex items-center justify-center gap-1 mx-auto bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
-                              title="出納帳に記帳済み（クリックで明細の確認・編集・削除）"
+                            <span
+                              className="px-2.5 py-1 font-bold rounded-xs text-[11px] select-none cursor-default flex items-center justify-center gap-1 mx-auto bg-emerald-50 text-emerald-800 border border-emerald-300"
+                              title="出納帳に記帳済み（二重入力防止のため会計入力完了済）"
                             >
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                               <span>記載済{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
-                            </button>
+                            </span>
                           ) : (
                             <button
                               type="button"

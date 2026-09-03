@@ -1839,13 +1839,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       {viewMode === 'list' && (
         <div className="font-sans">
           {/* Table Container */}
-          <div ref={tableContainerRef} className="max-h-[calc(100vh-270px)] min-h-[400px] overflow-y-auto overflow-x-auto bg-white border-y border-[#D1CEC7] shadow-xs relative">
+          <div ref={tableContainerRef} className="max-h-[calc(100vh-340px)] min-h-[360px] overflow-y-auto overflow-x-auto bg-white border-y border-[#D1CEC7] shadow-xs relative">
             <table className="w-full text-left border-collapse font-sans text-xs">
-              <thead className="sticky top-0 z-10 bg-[#1A1A1A] text-[#F9F7F2] border-b border-[#D4AF37] select-none shadow-sm">
+              <thead className="sticky top-0 z-20 bg-[#1A1A1A] text-[#F9F7F2] border-b border-[#D4AF37] select-none shadow-sm">
                 <tr className="bg-[#1A1A1A]">
-                  {/* チェックボックス（常時表示・最左） */}
-                  <th className="sticky top-0 bg-[#1A1A1A] px-2 py-2.5 w-8 text-center">
-                    <button onClick={toggleSelectAll} className="focus:outline-none" title="全選択/解除">
+                  {/* チェックボックス（常時表示・最左・固定） */}
+                  <th className="sticky top-0 left-0 z-30 bg-[#1A1A1A] px-2 py-2.5 w-10 min-w-10 max-w-10 text-center">
+                    <button onClick={toggleSelectAll} className="focus:outline-none cursor-pointer" title="全選択/解除">
                       {isAllSelected ? (
                         <CheckSquare className="w-3.5 h-3.5 text-[#D4AF37] mx-auto" />
                       ) : (
@@ -1854,10 +1854,10 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     </button>
                   </th>
 
-                  {/* 施主名（常時表示） */}
+                  {/* 施主名（常時表示・左固定） */}
                   <th
                     onClick={() => handleSort('familyHead')}
-                    className="sticky top-0 bg-[#1A1A1A] px-2 py-2.5 font-bold tracking-wider cursor-pointer hover:bg-[#2A2A2A] transition-colors whitespace-nowrap"
+                    className="sticky top-0 left-10 z-30 bg-[#1A1A1A] px-3 py-2.5 font-bold tracking-wider cursor-pointer hover:bg-[#2A2A2A] transition-colors whitespace-nowrap border-r border-[#333333] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.3)]"
                   >
                     施主名
                     {sortKey === 'familyHead' ? (
@@ -2173,8 +2173,8 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     }
                   })}
 
-                  {/* 抽出外（常時表示・最右） */}
-                  <th className="sticky top-0 bg-[#1A1A1A] px-2 py-2.5 font-bold tracking-wider text-center whitespace-nowrap">
+                  {/* 抽出外（常時表示・最右・右固定） */}
+                  <th className="sticky top-0 right-0 z-30 bg-[#1A1A1A] px-2 py-2.5 font-bold tracking-wider text-center whitespace-nowrap border-l border-[#333333] shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.3)]">
                     抽出外
                   </th>
                 </tr>
@@ -2191,6 +2191,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   sortedHouseholds.map((household, hIdx) => {
                     const isSelected = selectedIdsForPrint.includes(household.id);
                     const enabledCols = listColumns.filter((c) => c.enabled);
+                    const stickyCellBg = isSelected
+                      ? 'bg-[#FEF9EE] group-hover:bg-[#FDF3D8]'
+                      : 'bg-white group-hover:bg-[#F9F7F2]';
 
                     return (
                       <tr
@@ -2198,13 +2201,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                         id={`household-row-${household.id}`}
                         onDoubleClick={() => handleSelectIndividualHousehold(household.id)}
                         className={`transition-colors cursor-pointer group ${
-                          isSelected ? 'bg-amber-50/80 hover:bg-amber-100/80' : 'hover:bg-[#F9F7F2]'
+                          isSelected ? 'bg-[#FEF9EE] hover:bg-[#FDF3D8]' : 'hover:bg-[#F9F7F2]'
                         }`}
                         title="ダブルクリックで個別表示へ切り替え"
                       >
-                        {/* Checkbox (常時表示) */}
+                        {/* Checkbox (常時表示・最左・固定) */}
                         <td
-                          className="px-2 py-2 text-center"
+                          className={`sticky left-0 z-10 px-2 py-2 text-center w-10 min-w-10 max-w-10 transition-colors ${stickyCellBg}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleSelectOne(household.id);
@@ -2217,8 +2220,8 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                           )}
                         </td>
 
-                        {/* 施主名 (常時表示) */}
-                        <td className="px-2 py-2 whitespace-nowrap">
+                        {/* 施主名 (常時表示・左固定) */}
+                        <td className={`sticky left-10 z-10 px-3 py-2 whitespace-nowrap border-r border-[#EBE7DF] shadow-[2px_0_4px_-1px_rgba(0,0,0,0.06)] transition-colors ${stickyCellBg}`}>
                           {(() => {
                             const sponsorInfo = getHouseholdSponsorInfo(household);
                             return (
@@ -2541,8 +2544,11 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                           }
                         })}
 
-                        {/* 抽出外 (常時表示) */}
-                        <td className="px-2 py-2 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        {/* 抽出外 (常時表示・右固定) */}
+                        <td
+                          className={`sticky right-0 z-10 px-2 py-2 text-center whitespace-nowrap border-l border-[#EBE7DF] shadow-[-2px_0_4px_-1px_rgba(0,0,0,0.06)] transition-colors ${stickyCellBg}`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             onClick={() => toggleExcludeHousehold(household.id)}
                             className={`px-2 py-1 border text-xs font-sans font-bold transition-colors flex items-center space-x-1 mx-auto cursor-pointer ${

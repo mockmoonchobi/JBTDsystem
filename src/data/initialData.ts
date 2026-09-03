@@ -5159,7 +5159,7 @@ export const INITIAL_PRIESTS: Priest[] = [
   {
     id: 'PR-01',
     name: '智山 真福',
-    furigana: 'ちざん しんぷく',
+    furigana: 'ちさん しんぷく',
     role: '本寺住職',
     templeId: 'temple-main',
     templeName: '圓福寺',
@@ -5171,7 +5171,7 @@ export const INITIAL_PRIESTS: Priest[] = [
   {
     id: 'PR-02',
     name: '智山 福徳',
-    furigana: 'ちざん ふくとく',
+    furigana: 'ちさん ふくとく',
     role: '副住職',
     templeId: 'temple-main',
     templeName: '圓福寺',
