@@ -481,13 +481,15 @@ export type DeletedEntityType =
   | 'priest';
 
 export interface DeletedRecordEntry {
-  id: string; // 削除されたレコードID (例: "1", "PR-123", "MS-456")
+  id: string; // 対象レコードID (例: "1", "PR-123", "MS-456")
   entityType: DeletedEntityType;
   deletedAt: string; // ISO形式 (例: "2026-08-22T10:15:30.000Z")
   deletedTimestamp: number; // UNIX ms タイムスタンプ
   label?: string; // 表示名称 (例: "世帯 佐藤 太郎 (1)", "過去帳 釋浄信")
   templeId?: string; // 寺院ID
-  actionType?: 'delete' | 'undo' | 'batch_delete' | 'wipe';
+  actionType?: 'create' | 'update' | 'delete' | 'undo' | 'batch_delete' | 'batch_create' | 'wipe';
+  operator?: string; // 操作ユーザー (例: "chief@renge.org", "スタッフ")
+  deviceInfo?: string; // 操作端末 (例: "PC", "スマホ(スタッフ)", "スマホ")
 }
 
 export interface ActionHistoryEntry {

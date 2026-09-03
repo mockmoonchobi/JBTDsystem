@@ -39,14 +39,16 @@ export function clearDeletedRecordsLog(): void {
 }
 
 /**
- * Records a deleted record entry and returns the updated log
+ * Records an operation (create, update, delete, batch) in the unified audit log
  */
-export function recordDeletedRecord(
+export function recordOperationLog(
   id: string,
   entityType: DeletedEntityType,
+  actionType: 'create' | 'update' | 'delete' | 'undo' | 'batch_delete' | 'batch_create' | 'wipe',
   label?: string,
   templeId?: string,
-  actionType: 'delete' | 'undo' | 'batch_delete' | 'wipe' = 'delete'
+  operator?: string,
+  deviceInfo?: string
 ): DeletedRecordEntry[] {
   if (!id || !id.trim()) return loadDeletedRecordsLog();
   const cleanId = id.trim();
@@ -61,20 +63,37 @@ export function recordDeletedRecord(
     label: label || `${entityType}:${cleanId}`,
     templeId,
     actionType,
+    operator,
+    deviceInfo,
   };
 
-  // Remove existing entry for same ID if any, then prepend new entry
-  const filtered = currentLogs.filter((entry) => entry.id.trim() !== cleanId);
-  const updated = [newEntry, ...filtered].slice(0, MAX_DELETED_LOG_LENGTH);
+  const updated = [newEntry, ...currentLogs.filter((e) => !(e.id === cleanId && e.actionType === actionType))].slice(0, MAX_DELETED_LOG_LENGTH);
   saveDeletedRecordsLog(updated);
   return updated;
+}
+
+/**
+ * Records a deleted record entry and returns the updated log
+ */
+export function recordDeletedRecord(
+  id: string,
+  entityType: DeletedEntityType,
+  label?: string,
+  templeId?: string,
+  actionType: 'delete' | 'undo' | 'batch_delete' | 'wipe' = 'delete',
+  operator?: string,
+  deviceInfo?: string
+): DeletedRecordEntry[] {
+  return recordOperationLog(id, entityType, actionType, label, templeId, operator, deviceInfo);
 }
 
 /**
  * Records multiple deleted records in batch
  */
 export function recordDeletedRecordsBatch(
-  items: { id: string; entityType: DeletedEntityType; label?: string; templeId?: string }[]
+  items: { id: string; entityType: DeletedEntityType; label?: string; templeId?: string }[],
+  operator?: string,
+  deviceInfo?: string
 ): DeletedRecordEntry[] {
   if (!items || items.length === 0) return loadDeletedRecordsLog();
   const currentLogs = loadDeletedRecordsLog();
@@ -91,6 +110,8 @@ export function recordDeletedRecordsBatch(
     label: i.label || `${i.entityType}:${i.id}`,
     templeId: i.templeId,
     actionType: 'batch_delete',
+    operator,
+    deviceInfo,
   }));
 
   const filtered = currentLogs.filter((entry) => !newIds.has(entry.id.trim()));
@@ -149,23 +170,32 @@ export function mergeDeletedRecordsLogs(
 
 /**
  * Builds a lookup map of { [recordId]: deletedTimestampMs }
+ * Only treats deletion actions as suppression, and unsuppresses if re-created/updated
  */
 export function buildDeletedTimestampMap(entries: DeletedRecordEntry[]): Map<string, number> {
   const map = new Map<string, number>();
-  entries.forEach((e) => {
-    if (e && e.id) {
-      const cleanId = e.id.trim();
-      const ts = e.deletedTimestamp > 0
-        ? e.deletedTimestamp
-        : (e.deletedAt ? new Date(e.deletedAt).getTime() : 0);
-      if (ts > 0) {
-        const existing = map.get(cleanId);
-        if (existing === undefined || ts > existing) {
-          map.set(cleanId, ts);
-        }
-      }
+  // Sort chronologically ascending to apply operations in sequence
+  const sorted = [...entries].sort((a, b) => {
+    const tsA = a.deletedTimestamp > 0 ? a.deletedTimestamp : (a.deletedAt ? new Date(a.deletedAt).getTime() : 0);
+    const tsB = b.deletedTimestamp > 0 ? b.deletedTimestamp : (b.deletedAt ? new Date(b.deletedAt).getTime() : 0);
+    return tsA - tsB;
+  });
+
+  sorted.forEach((e) => {
+    if (!e || !e.id) return;
+    const cleanId = e.id.trim();
+    const ts = e.deletedTimestamp > 0
+      ? e.deletedTimestamp
+      : (e.deletedAt ? new Date(e.deletedAt).getTime() : 0);
+    if (ts <= 0) return;
+
+    if (e.actionType === 'create' || e.actionType === 'update' || e.actionType === 'undo' || e.actionType === 'batch_create') {
+      map.delete(cleanId);
+    } else {
+      map.set(cleanId, ts);
     }
   });
+
   return map;
 }
 

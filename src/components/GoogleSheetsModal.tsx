@@ -67,6 +67,7 @@ interface GoogleSheetsModalProps {
   onResetDatabase?: () => void | Promise<void>;
   temples?: TempleProfile[];
   activeTempleId?: string;
+  isStaffMode?: boolean;
 }
 
 export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
@@ -87,6 +88,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   onResetDatabase,
   temples = [],
   activeTempleId = 'temple-main',
+  isStaffMode = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>('excel');
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
@@ -115,11 +117,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [shareSendNotification, setShareSendNotification] = useState<boolean>(true);
   const [isSharing, setIsSharing] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
-
-  // Custom Shared Sheet Connect State
-  const [showCustomSheetConnect, setShowCustomSheetConnect] = useState<boolean>(false);
-  const [customSheetInput, setCustomSheetInput] = useState<string>('');
-  const [isConnectingCustomSheet, setIsConnectingCustomSheet] = useState<boolean>(false);
+  const [copiedStaffLink, setCopiedStaffLink] = useState<boolean>(false);
 
   // Database Reset State (寺院情報の初期化と同等)
   const [showResetDbModal, setShowResetDbModal] = useState<boolean>(false);
@@ -298,6 +296,24 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     }
   };
 
+  // Get staff invite URL with mode=staff query parameter
+  const getStaffInviteUrl = () => {
+    if (!spreadsheetInfo?.id) return '';
+    const baseUrl = typeof window !== 'undefined' && window.location.origin
+      ? `${window.location.origin}${window.location.pathname}`
+      : 'https://mockmoonchobi.github.io/JBTDsystem/';
+    const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    return `${cleanBase}?sheetId=${encodeURIComponent(spreadsheetInfo.id)}&mode=staff`;
+  };
+
+  const handleCopyStaffLink = () => {
+    const link = getStaffInviteUrl();
+    if (!link) return;
+    navigator.clipboard.writeText(link);
+    setCopiedStaffLink(true);
+    setTimeout(() => setCopiedStaffLink(false), 2500);
+  };
+
   // Handle adding a user to spreadsheet permissions
   const handleAddUserShare = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,17 +325,21 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       const token = await getAccessToken();
       if (!token) throw new Error('認証トークンが見つかりません。再ログインしてください。');
 
+      const staffLink = getStaffInviteUrl();
+      const emailMessage = `寺院管理システム（蓮華・スタッフ用）の共有通知です。\n以下のリンクを開くと、自動的にスタッフモードとしてデータ連携が立ち上がります：\n${staffLink}`;
+
       await shareSpreadsheetWithUser(
         token,
         spreadsheetInfo.id,
         shareEmail.trim(),
         shareRole,
-        shareSendNotification
+        shareSendNotification,
+        emailMessage
       );
 
       setStatusMessage({ 
         type: 'success', 
-        text: `「${shareEmail.trim()}」に${shareRole === 'writer' ? '編集' : '閲覧'}権限を共有しました。` 
+        text: `「${shareEmail.trim()}」に${shareRole === 'writer' ? '編集' : '閲覧'}権限を共有しました。招待メールにスタッフ用アクセスURLを自動記載しました。` 
       });
       setShareEmail('');
       await loadPermissions(spreadsheetInfo.id);
@@ -397,52 +417,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     navigator.clipboard.writeText(spreadsheetInfo.url);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
-  };
-
-  // Connect to another custom / shared spreadsheet ID
-  const handleConnectCustomSheet = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customSheetInput.trim()) return;
-
-    const confirmConnect = window.confirm(
-      '他の寺院関係者から共有されたスプレッドシートに切り替えて接続します。\n\n' +
-      '※ 端末上の現在のデータを初期化（リセット）してから、共有スプレッドシートの全データを新しく読み込みます。\n' +
-      '（接続前の端末データは自動で安全にバックアップ保存されます）\n\n' +
-      '接続と端末データ初期化・読込を実行しますか？'
-    );
-    if (!confirmConnect) return;
-
-    setIsConnectingCustomSheet(true);
-    setStatusMessage({ type: 'loading', text: '指定された共有スプレッドシートを検証・接続中...' });
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('認証トークンが見つかりません。再ログインしてください。');
-
-      const connected = await validateAndConnectSpreadsheet(token, customSheetInput.trim());
-      setSpreadsheetInfo(connected);
-      saveJsonState('temple_google_sheet_info', connected);
-
-      setStatusMessage({ 
-        type: 'success', 
-        text: `共有スプレッドシート「${connected.title}」と接続しました。端末データを初期化して最新データを読み込みます...` 
-      });
-      setCustomSheetInput('');
-      setShowCustomSheetConnect(false);
-
-      await loadPermissions(connected.id);
-      if (onSyncWithGoogleDrive) {
-        await onSyncWithGoogleDrive(token, connected.id, true /* isCleanImport */);
-      } else {
-        setTimeout(() => {
-          onTriggerManualSync();
-        }, 500);
-      }
-    } catch (err: any) {
-      console.error(err);
-      setStatusMessage({ type: 'error', text: `接続エラー: ${err.message || 'スプレッドシートの接続に失敗しました。'}` });
-    } finally {
-      setIsConnectingCustomSheet(false);
-    }
   };
 
   // Trigger confirmation dialog when user selects a file
@@ -916,8 +890,22 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 )}
               </div>
 
-              {/* ==================== GOOGLE SHEET SHARING & COLLABORATION SECTION ==================== */}
-              {user && spreadsheetInfo && (
+              {/* Staff Mode Information Notice */}
+              {isStaffMode && (
+                <div className="border border-amber-300 bg-amber-50 p-3 sm:p-4 space-y-2 text-xs text-amber-950 rounded-xs shadow-2xs">
+                  <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
+                    <span className="text-base">👤</span>
+                    <span>スタッフモードで接続中</span>
+                  </div>
+                  <p className="leading-relaxed text-[11px] text-amber-900">
+                    寺院管理者から共有されたGoogleスプレッドシートのデータを読み込み、自動同期しています。<br />
+                    スタッフモードでは、住所録・過去帳の追加や削除、および共有設定や初期化などの管理者専用設定は安全のため制限されています。
+                  </p>
+                </div>
+              )}
+
+              {/* ==================== GOOGLE SHEET SHARING & COLLABORATION SECTION (管理者のみ) ==================== */}
+              {!isStaffMode && user && spreadsheetInfo && (
                 <div className="border border-[#D4AF37]/60 bg-white p-3.5 sm:p-4 space-y-3 shadow-2xs">
                   {/* Section Title */}
                   <div className="flex items-center justify-between border-b border-[#EBE7DF] pb-2">
@@ -1139,44 +1127,47 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     )}
                   </div>
 
-                  {/* Connect to Existing Shared Spreadsheet (Accordion) */}
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowCustomSheetConnect(!showCustomSheetConnect)}
-                      className="w-full py-1.5 px-2 bg-[#FAF8F5] hover:bg-[#F2EFE9] border border-[#D1CEC7] text-left text-[11px] font-bold text-gray-700 flex items-center justify-between transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center space-x-1.5">
-                        <Link className="w-3.5 h-3.5 text-[#D4AF37]" />
-                        <span>他の寺院関係者から共有されたスプレッドシートに切り替える</span>
-                      </span>
-                      {showCustomSheetConnect ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
-
-                    {showCustomSheetConnect && (
-                      <form onSubmit={handleConnectCustomSheet} className="mt-2 p-3 bg-white border border-[#D1CEC7] space-y-2 text-xs animate-in fade-in">
-                        <p className="text-[10px] text-[#555555]">
-                          副住職様や他の管理者様が作成し、あなたのアカウントに共有されたGoogleスプレッドシートのURLまたはIDを入力して同期先を切り替えることができます。
-                        </p>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={customSheetInput}
-                            onChange={(e) => setCustomSheetInput(e.target.value)}
-                            placeholder="https://docs.google.com/spreadsheets/d/..."
-                            required
-                            className="flex-1 px-2.5 py-1.5 border border-[#D1CEC7] bg-white text-xs font-mono focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
-                          />
-                          <button
-                            type="submit"
-                            disabled={isConnectingCustomSheet || !customSheetInput.trim()}
-                            className="px-3 py-1.5 bg-[#1A1A1A] hover:bg-[#333333] disabled:opacity-50 text-[#D4AF37] font-bold text-xs transition-colors border border-[#D4AF37]/50 cursor-pointer shrink-0"
-                          >
-                            {isConnectingCustomSheet ? '検証中...' : '接続して同期'}
-                          </button>
-                        </div>
-                      </form>
-                    )}
+                  {/* Staff Mode Dedicated Invitation Link Box */}
+                  <div className="pt-2">
+                    <div className="p-3 bg-amber-50/90 border border-amber-300/80 rounded-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center space-x-1.5 text-xs font-bold text-amber-950">
+                          <span className="text-amber-600 font-normal">👤</span>
+                          <span>スタッフモード専用 招待URL（リンク）</span>
+                        </span>
+                        <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 text-[10px] font-bold rounded">
+                          スマホ版・機能制限
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-900 leading-relaxed">
+                        このリンクを副住職様・寺族様・受付スタッフ様にLINEやメール等でお送りください。リンクを開くと自動的にスタッフ連携画面が立ち上がり、機能制限されたモバイル版（世帯・過去帳の新規/削除不可、予定・受付は全機能可能）として起動します。
+                      </p>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <input
+                          type="text"
+                          readOnly
+                          value={getStaffInviteUrl()}
+                          className="flex-1 px-2.5 py-1.5 border border-amber-300 bg-white text-[11px] font-mono select-all text-gray-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCopyStaffLink}
+                          className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 active:bg-amber-900 text-white font-bold text-xs flex items-center gap-1 shrink-0 cursor-pointer shadow-xs rounded-xs transition-colors"
+                        >
+                          {copiedStaffLink ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>コピー済</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>URLコピー</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}

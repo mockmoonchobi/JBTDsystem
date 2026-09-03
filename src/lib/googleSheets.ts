@@ -456,9 +456,13 @@ export async function shareSpreadsheetWithUser(
   fileId: string,
   emailAddress: string,
   role: 'writer' | 'reader' = 'writer',
-  sendNotificationEmail: boolean = true
+  sendNotificationEmail: boolean = true,
+  emailMessage?: string
 ): Promise<SheetPermission> {
-  const url = `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?sendNotificationEmail=${sendNotificationEmail}&supportsAllDrives=true`;
+  let url = `https://www.googleapis.com/drive/v3/files/${fileId}/permissions?sendNotificationEmail=${sendNotificationEmail}&supportsAllDrives=true`;
+  if (emailMessage && sendNotificationEmail) {
+    url += `&emailMessage=${encodeURIComponent(emailMessage)}`;
+  }
   const body = {
     role,
     type: 'user',
@@ -1656,17 +1660,19 @@ export async function exportToSheets(
   );
   addChunkedUpdates('一括会計受付', [batchHeaders, ...batchRows]);
 
-  // 14. Operation & Deletion History (操作・削除履歴: Undo/Redo & 削除同期用)
+  // 14. Operation & Deletion History (操作・削除履歴: 共同管理用・新規/編集/削除ログ)
   const deletedHeaders = [
     '履歴ID',
     '種別',
     '対象エンティティ',
     '対象ID',
     '対象名称/内容',
-    '削除・操作日時',
+    '操作日時',
     '日時(ms)',
     '所属寺院',
-    '所属寺院ID'
+    '所属寺院ID',
+    '操作者',
+    '端末・環境'
   ];
 
   const deletedLogsToExport: DeletedRecordEntry[] = (exportOptions?.deletedRecords && exportOptions.deletedRecords.length > 0)
@@ -1674,7 +1680,7 @@ export async function exportToSheets(
     : loadDeletedRecordsLog();
 
   const deletedRows = deletedLogsToExport.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => [
-    `DEL-${idx + 1}`,
+    `LOG-${idx + 1}`,
     entry.actionType || 'delete',
     entry.entityType || '',
     entry.id || '',
@@ -1683,6 +1689,8 @@ export async function exportToSheets(
     String(entry.deletedTimestamp || ''),
     getTempleLabel(entry.templeId),
     getTempleId(entry.templeId),
+    entry.operator || '',
+    entry.deviceInfo || '',
   ]);
 
   addChunkedUpdates('操作・削除履歴', [deletedHeaders, ...deletedRows]);
@@ -3174,11 +3182,13 @@ export async function importFromSheets(
     const deletedAtIdx = findColIdx(dHeaders, ['削除・操作日時', '削除操作日時', '日時', '削除日時', 'deletedAt']);
     const timestampIdx = findColIdx(dHeaders, ['日時(ms)', 'タイムスタンプ(ms)', 'タイムスタンプms', '日時(ミリ秒)', 'タイムスタンプ', 'ms', 'timestamp']);
     const dTempleIdIdx = findColIdx(dHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
+    const operatorIdx = findColIdx(dHeaders, ['操作者', '実行者', 'ユーザー', 'operator', 'user']);
+    const deviceInfoIdx = findColIdx(dHeaders, ['端末・環境', '端末', '環境', 'デバイス', 'deviceInfo', 'device']);
 
     dRows.forEach((row: string[]) => {
-      // row indices fallback: [0:履歴ID, 1:種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID]
+      // row indices fallback: [0:履歴ID, 1:種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境]
       const id = String((idIdx !== -1 ? row[idIdx] : (row[3] || row[2])) || '').trim();
-      if (!id || id.startsWith('DEL-') || id === 'ID' || id === '対象ID') return;
+      if (!id || id.startsWith('DEL-') || id.startsWith('LOG-') || id === 'ID' || id === '対象ID') return;
       const entityType = (entityTypeIdx !== -1 ? String(row[entityTypeIdx] || '').trim() : (row[2] || 'household')) as any;
       const actionType = (actionTypeIdx !== -1 ? String(row[actionTypeIdx] || '').trim() : (row[1] || 'delete')) as any;
       const label = labelIdx !== -1 ? String(row[labelIdx] || '').trim() : (row[4] || '');
@@ -3195,6 +3205,8 @@ export async function importFromSheets(
         deletedTimestamp = Date.now();
       }
       const templeId = dTempleIdIdx !== -1 ? String(row[dTempleIdIdx] || '').trim() : (row[8] || undefined);
+      const operator = operatorIdx !== -1 ? String(row[operatorIdx] || '').trim() : (row[9] || undefined);
+      const deviceInfo = deviceInfoIdx !== -1 ? String(row[deviceInfoIdx] || '').trim() : (row[10] || undefined);
 
       parsedDeletedRecords.push({
         id,
@@ -3204,6 +3216,8 @@ export async function importFromSheets(
         deletedAt: deletedAt || new Date(deletedTimestamp).toISOString(),
         deletedTimestamp,
         templeId,
+        operator: operator || undefined,
+        deviceInfo: deviceInfo || undefined,
       });
     });
   }

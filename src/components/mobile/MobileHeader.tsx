@@ -14,6 +14,7 @@ interface MobileHeaderProps {
   lastSyncTime?: string | null;
   onTriggerManualSync?: () => void;
   activeTab?: string;
+  isStaffMode?: boolean;
 }
 
 export const MobileHeader: React.FC<MobileHeaderProps> = ({
@@ -26,6 +27,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   syncStatus = 'disconnected',
   lastSyncTime,
   activeTab = 'households',
+  isStaffMode = false,
 }) => {
   const [templeDropdownOpen, setTempleDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -296,15 +298,25 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onSwitchToDesktop}
-            className="px-3.5 py-2 sm:px-4 sm:py-2.5 bg-[#2A2A2A] hover:bg-[#383838] active:bg-[#444444] border border-[#666666] rounded-sm text-xs sm:text-sm font-bold text-[#F9F7F2] flex items-center gap-1.5 cursor-pointer shrink-0 transition-all shadow-sm"
-            title="PC版のフル画面に切り替えます"
-          >
-            <Monitor className="w-4.5 h-4.5 text-[#D4AF37] shrink-0" />
-            <span className="whitespace-nowrap">PC版</span>
-          </button>
+          {isStaffMode ? (
+            <div 
+              className="px-2.5 py-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-sm text-xs font-bold flex items-center gap-1 shrink-0"
+              title="スタッフモードで動作中（機能制限版）"
+            >
+              <span className="text-amber-400">👤</span>
+              <span className="whitespace-nowrap">スタッフ</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={onSwitchToDesktop}
+              className="px-3.5 py-2 sm:px-4 sm:py-2.5 bg-[#2A2A2A] hover:bg-[#383838] active:bg-[#444444] border border-[#666666] rounded-sm text-xs sm:text-sm font-bold text-[#F9F7F2] flex items-center gap-1.5 cursor-pointer shrink-0 transition-all shadow-sm"
+              title="PC版のフル画面に切り替えます"
+            >
+              <Monitor className="w-4.5 h-4.5 text-[#D4AF37] shrink-0" />
+              <span className="whitespace-nowrap">PC版</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

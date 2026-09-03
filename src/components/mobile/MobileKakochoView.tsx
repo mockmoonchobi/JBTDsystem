@@ -29,6 +29,7 @@ interface MobileKakochoViewProps {
   onSavePastRecord: (record: PastRecord) => void;
   onDeletePastRecord: (id: string) => void;
   onOpenAddServiceFromSpirit: (record: PastRecord) => void;
+  isStaffMode?: boolean;
 }
 
 export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
@@ -40,6 +41,7 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
   onSavePastRecord,
   onDeletePastRecord,
   onOpenAddServiceFromSpirit,
+  isStaffMode = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState<'all' | 'this_month' | 'today' | 'milestone'>('all');
@@ -147,14 +149,16 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleAddNew}
-            className="px-3 py-1.5 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs font-bold flex items-center gap-1 shadow-xs shrink-0 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>精霊登録</span>
-          </button>
+          {!isStaffMode && (
+            <button
+              type="button"
+              onClick={handleAddNew}
+              className="px-3 py-1.5 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs font-bold flex items-center gap-1 shadow-xs shrink-0 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>精霊登録</span>
+            </button>
+          )}
         </div>
 
         {/* Quick Filter Chips */}
@@ -325,7 +329,7 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
         temples={temples}
         activeTempleId={activeTempleId}
         onSave={onSavePastRecord}
-        onDelete={onDeletePastRecord}
+        onDelete={isStaffMode ? undefined : onDeletePastRecord}
         initialHouseholdId={initialHhIdForNew}
       />
     </div>

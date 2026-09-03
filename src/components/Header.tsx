@@ -86,6 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   const isCalendarTab = activeTab === 'reservations' || activeTab === 'memorial';
+  const isGoogleConnected = syncStatus !== 'disconnected';
 
   const isAccountingTabCombined =
     activeTab === 'accounting' &&
@@ -323,40 +324,42 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Top Action Buttons */}
         <div className="flex items-center flex-wrap gap-2 text-xs font-sans">
-          {/* Undo / Redo Buttons */}
-          <div className="h-9 flex items-center bg-[#242424] border border-[#444444] rounded-none px-1 shadow-xs">
-            <button
-              type="button"
-              onClick={onUndo}
-              disabled={!canUndo}
-              className={`h-full flex items-center space-x-1 px-2 text-xs transition-colors font-medium ${
-                canUndo
-                  ? 'text-[#F9F7F2] hover:bg-[#333333] hover:text-[#D4AF37] cursor-pointer'
-                  : 'text-[#666666] opacity-40 cursor-not-allowed'
-              }`}
-              title={canUndo ? `元に戻す (Ctrl+Z): ${undoDescription || '直前の操作を取り消す'}` : '元に戻す操作はありません'}
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline font-sans text-xs">元に戻す</span>
-            </button>
+          {/* Undo / Redo Buttons (データ連携中はコンフリクト防止のため非表示) */}
+          {!isGoogleConnected && (
+            <div className="h-9 flex items-center bg-[#242424] border border-[#444444] rounded-none px-1 shadow-xs">
+              <button
+                type="button"
+                onClick={onUndo}
+                disabled={!canUndo}
+                className={`h-full flex items-center space-x-1 px-2 text-xs transition-colors font-medium ${
+                  canUndo
+                    ? 'text-[#F9F7F2] hover:bg-[#333333] hover:text-[#D4AF37] cursor-pointer'
+                    : 'text-[#666666] opacity-40 cursor-not-allowed'
+                }`}
+                title={canUndo ? `元に戻す (Ctrl+Z): ${undoDescription || '直前の操作を取り消す'}` : '元に戻す操作はありません'}
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline font-sans text-xs">元に戻す</span>
+              </button>
 
-            <div className="w-[1px] h-4 bg-[#444444] mx-1" />
+              <div className="w-[1px] h-4 bg-[#444444] mx-1" />
 
-            <button
-              type="button"
-              onClick={onRedo}
-              disabled={!canRedo}
-              className={`h-full flex items-center space-x-1 px-2 text-xs transition-colors font-medium ${
-                canRedo
-                  ? 'text-[#F9F7F2] hover:bg-[#333333] hover:text-[#D4AF37] cursor-pointer'
-                  : 'text-[#666666] opacity-40 cursor-not-allowed'
-              }`}
-              title={canRedo ? `やり直す (Ctrl+Y): ${redoDescription || '取り消した操作をやり直す'}` : 'やり直す操作はありません'}
-            >
-              <Redo2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline font-sans text-xs">やり直す</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={onRedo}
+                disabled={!canRedo}
+                className={`h-full flex items-center space-x-1 px-2 text-xs transition-colors font-medium ${
+                  canRedo
+                    ? 'text-[#F9F7F2] hover:bg-[#333333] hover:text-[#D4AF37] cursor-pointer'
+                    : 'text-[#666666] opacity-40 cursor-not-allowed'
+                }`}
+                title={canRedo ? `やり直す (Ctrl+Y): ${redoDescription || '取り消した操作をやり直す'}` : 'やり直す操作はありません'}
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline font-sans text-xs">やり直す</span>
+              </button>
+            </div>
+          )}
 
           {/* Data Link / Google Sheets Sync */}
           <button

@@ -18,7 +18,7 @@ import { StartupLauncher } from './components/StartupLauncher';
 
 import { FamilyManager } from './components/FamilyManager';
 
-import { initAuth, getAccessToken, googleSignIn, isAuthError } from './lib/googleAuth';
+import { initAuth, getAccessToken, googleSignIn, isAuthError, getCurrentUser } from './lib/googleAuth';
 import { 
   findOrCreateSpreadsheet, 
   exportToSheets, 
@@ -93,7 +93,8 @@ import {
   loadDeletedRecordsLog, 
   saveDeletedRecordsLog,
   clearDeletedRecordsLog,
-  unrecordDeletedRecord
+  unrecordDeletedRecord,
+  recordOperationLog
 } from './utils/deletedRecordsLog';
 import {
   INITIAL_TEMPLE_INFO,
@@ -129,8 +130,40 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('households');
   const [calendarTargetDate, setCalendarTargetDate] = useState<string | undefined>(undefined);
 
-  // View mode: 'desktop' | 'mobile' (supports auto-detect on phone access & manual toggle)
+  // Staff Mode & Staff Invite Sheet ID (supports URL parameters: mode=staff & sheetId=...)
+  const [isStaffMode, setIsStaffMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'staff') {
+        safeStorage.setItem('renge_staff_mode', 'true');
+        return true;
+      }
+      return safeStorage.getItem('renge_staff_mode') === 'true';
+    }
+    return false;
+  });
+
+  const [staffInviteSheetId, setStaffInviteSheetId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const sId = params.get('sheetId');
+      if (sId) {
+        safeStorage.setItem('renge_staff_invite_sheet_id', sId);
+        return sId;
+      }
+      return safeStorage.getItem('renge_staff_invite_sheet_id');
+    }
+    return null;
+  });
+
+  // View mode: 'desktop' | 'mobile' (supports auto-detect on phone access, staff mode, & manual toggle)
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('mode') === 'staff' || safeStorage.getItem('renge_staff_mode') === 'true') {
+        return 'mobile';
+      }
+    }
     const saved = safeStorage.getItem('renge_view_mode');
     if (saved === 'mobile' || saved === 'desktop') return saved;
     if (typeof window !== 'undefined') {
@@ -144,8 +177,20 @@ export default function App() {
   });
 
   const handleSetViewMode = (mode: 'desktop' | 'mobile') => {
+    if (isStaffMode && mode === 'desktop') {
+      // Staff mode is strictly mobile UI
+      return;
+    }
     setViewMode(mode);
     safeStorage.setItem('renge_view_mode', mode);
+  };
+
+  // Helper to obtain operator and device info for audit logging
+  const getCurrentOperatorInfo = () => {
+    const user = getCurrentUser();
+    const emailOrName = user?.displayName || user?.email || (isStaffMode ? 'スタッフ' : '寺院関係者');
+    const device = isStaffMode ? 'スマホ(スタッフ)' : (viewMode === 'mobile' ? 'スマホ' : 'PC');
+    return { operator: emailOrName, deviceInfo: device };
   };
 
   // Navigate to Calendar with optional target date
@@ -769,8 +814,8 @@ export default function App() {
 
       setStartupLoadingMsg('Googleスプレッドシートを確認・連携中...');
       const savedInfo = safeStorage.getItem('temple_google_sheet_info');
-      let preferredSheetId: string | undefined;
-      if (savedInfo) {
+      let preferredSheetId: string | undefined = staffInviteSheetId || undefined;
+      if (!preferredSheetId && savedInfo) {
         try {
           preferredSheetId = JSON.parse(savedInfo)?.id;
         } catch {}
@@ -2191,6 +2236,17 @@ export default function App() {
 
     recordHistory(exists ? `世帯「${household.familyHead || household.id}」を更新` : `世帯「${household.familyHead || household.id}」を追加`);
 
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      auditedHousehold.id,
+      'household',
+      exists ? 'update' : 'create',
+      auditedHousehold.familyHead ? `世帯「${auditedHousehold.familyHead}」` : `世帯(${auditedHousehold.id})`,
+      auditedHousehold.templeId,
+      operator,
+      deviceInfo
+    );
+
     setHouseholds((prev) => {
       if (exists) {
         return prev.map((h) => (h.id === household.id ? auditedHousehold : h));
@@ -2202,11 +2258,21 @@ export default function App() {
 
   const handleBatchUpdateHouseholds = (updatedList: Household[], description?: string) => {
     recordHistory(description || `${updatedList.length}件の世帯情報を一括更新`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     const existingMap = new Map(households.map((h) => [h.id, h]));
     const updateMap = new Map(
       updatedList.map((h) => {
         const exist = existingMap.get(h.id);
         const audited = withUpdateAudit(h, exist);
+        recordOperationLog(
+          audited.id,
+          'household',
+          'update',
+          audited.familyHead ? `世帯「${audited.familyHead}」` : `世帯(${audited.id})`,
+          audited.templeId,
+          operator,
+          deviceInfo
+        );
         return [h.id, audited];
       })
     );
@@ -2216,11 +2282,15 @@ export default function App() {
   const handleDeleteHousehold = (id: string) => {
     const target = households.find((h) => h.id === id);
     recordHistory(`世帯「${target?.familyHead || id}」を削除`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
       id,
       'household',
       target?.familyHead ? `世帯「${target.familyHead}」` : `世帯(${id})`,
-      target?.templeId
+      target?.templeId,
+      'delete',
+      operator,
+      deviceInfo
     );
 
     setHouseholds((prev) => prev.filter((h) => h.id !== id));
@@ -2233,29 +2303,67 @@ export default function App() {
   // Handlers: Past Record CRUD
   const handleAddPastRecord = (record: PastRecord) => {
     recordHistory(`過去帳「${record.dharmaName || record.secularName || record.id}」を追加`);
-    setPastRecords((prev) => [withCreationAudit(record), ...prev]);
+    const audited = withCreationAudit(record);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      audited.id,
+      'pastRecord',
+      'create',
+      audited.dharmaName || audited.secularName || audited.id,
+      audited.templeId,
+      operator,
+      deviceInfo
+    );
+    setPastRecords((prev) => [audited, ...prev]);
   };
 
   const handleBatchAddPastRecords = (records: PastRecord[], description?: string) => {
     recordHistory(description || `${records.length}件の過去帳（精霊）を一括追加`);
     const audited = records.map((r) => withCreationAudit(r));
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    audited.forEach((r) => {
+      recordOperationLog(
+        r.id,
+        'pastRecord',
+        'create',
+        r.dharmaName || r.secularName || r.id,
+        r.templeId,
+        operator,
+        deviceInfo
+      );
+    });
     setPastRecords((prev) => [...audited, ...prev]);
   };
 
   const handleUpdatePastRecord = (record: PastRecord) => {
     recordHistory(`過去帳「${record.dharmaName || record.secularName || record.id}」を更新`);
     const existing = pastRecords.find((r) => r.id === record.id);
-    setPastRecords((prev) => prev.map((r) => (r.id === record.id ? withUpdateAudit(record, existing) : r)));
+    const audited = withUpdateAudit(record, existing);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      audited.id,
+      'pastRecord',
+      'update',
+      audited.dharmaName || audited.secularName || audited.id,
+      audited.templeId,
+      operator,
+      deviceInfo
+    );
+    setPastRecords((prev) => prev.map((r) => (r.id === record.id ? audited : r)));
   };
 
   const handleDeletePastRecord = (id: string) => {
     const target = pastRecords.find((r) => r.id === id);
     recordHistory(`過去帳「${target?.dharmaName || target?.secularName || id}」を削除`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
       id,
       'pastRecord',
       target?.dharmaName || target?.secularName || id,
-      target?.templeId
+      target?.templeId,
+      'delete',
+      operator,
+      deviceInfo
     );
     setPastRecords((prev) => prev.filter((r) => r.id !== id));
   };
@@ -2317,6 +2425,16 @@ export default function App() {
   const handleAddService = (service: MemorialService) => {
     recordHistory(`法要「${service.notes || service.id}」を追加`);
     const auditedService = withCreationAudit(service);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      auditedService.id,
+      'memorialService',
+      'create',
+      auditedService.notes || auditedService.deceasedName || auditedService.id,
+      auditedService.templeId,
+      operator,
+      deviceInfo
+    );
     setMemorialServices((prev) => [auditedService, ...prev]);
     
     // 塔婆ToDoの自動作成/同期
@@ -2342,6 +2460,16 @@ export default function App() {
     recordHistory(`法要「${service.notes || service.id}」を更新`);
     const existing = memorialServices.find((s) => s.id === service.id);
     const auditedService = withUpdateAudit(service, existing);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      auditedService.id,
+      'memorialService',
+      'update',
+      auditedService.notes || auditedService.deceasedName || auditedService.id,
+      auditedService.templeId,
+      operator,
+      deviceInfo
+    );
     setMemorialServices((prev) => prev.map((s) => (s.id === service.id ? auditedService : s)));
 
     // 塔婆ToDoの自動更新/同期
@@ -2358,11 +2486,15 @@ export default function App() {
   const handleDeleteService = (id: string) => {
     const existing = memorialServices.find((s) => s.id === id);
     recordHistory(`法要を削除`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
       id,
       'memorialService',
       existing?.notes || existing?.deceasedName || id,
-      existing?.templeId
+      existing?.templeId,
+      'delete',
+      operator,
+      deviceInfo
     );
     setMemorialServices((prev) => prev.filter((s) => s.id !== id));
 
@@ -2377,29 +2509,65 @@ export default function App() {
   // Handlers: Temple Todos CRUD
   const handleAddTodo = (todo: TempleTodo) => {
     recordHistory(`タスク「${todo.title}」を追加`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     setTempleTodos((prev) => {
       const existing = prev.find((t) => t.id === todo.id);
       if (existing) {
-        return prev.map((t) => (t.id === todo.id ? withUpdateAudit(todo, existing) : t));
+        const audited = withUpdateAudit(todo, existing);
+        recordOperationLog(
+          audited.id,
+          'templeTodo',
+          'update',
+          audited.title || audited.id,
+          audited.templeId,
+          operator,
+          deviceInfo
+        );
+        return prev.map((t) => (t.id === todo.id ? audited : t));
       }
-      return [withCreationAudit(todo), ...prev];
+      const audited = withCreationAudit(todo);
+      recordOperationLog(
+        audited.id,
+        'templeTodo',
+        'create',
+        audited.title || audited.id,
+        audited.templeId,
+        operator,
+        deviceInfo
+      );
+      return [audited, ...prev];
     });
   };
 
   const handleUpdateTodo = (todo: TempleTodo) => {
     recordHistory(`タスク「${todo.title}」を更新`);
     const existing = templeTodos.find((t) => t.id === todo.id);
-    setTempleTodos((prev) => prev.map((t) => (t.id === todo.id ? withUpdateAudit(todo, existing) : t)));
+    const audited = withUpdateAudit(todo, existing);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      audited.id,
+      'templeTodo',
+      'update',
+      audited.title || audited.id,
+      audited.templeId,
+      operator,
+      deviceInfo
+    );
+    setTempleTodos((prev) => prev.map((t) => (t.id === todo.id ? audited : t)));
   };
 
   const handleDeleteTodo = (id: string) => {
     const target = templeTodos.find((t) => t.id === id);
     recordHistory(`タスクを削除`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
       id,
       'templeTodo',
       target?.title || id,
-      target?.templeId
+      target?.templeId,
+      'delete',
+      operator,
+      deviceInfo
     );
     setTempleTodos((prev) => prev.filter((t) => t.id !== id));
   };
@@ -2420,11 +2588,15 @@ export default function App() {
     const target = familyMembers.find((m) => m.id === id);
     const relatedHousehold = target ? households.find((h) => h.id === target.householdId) : undefined;
     recordHistory(`家族を削除`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
       id,
       'familyMember',
       target?.name || id,
-      relatedHousehold?.templeId
+      relatedHousehold?.templeId,
+      'delete',
+      operator,
+      deviceInfo
     );
     setFamilyMembers((prev) => prev.filter((m) => m.id !== id));
   };
@@ -2439,13 +2611,36 @@ export default function App() {
       ...transaction,
       templeId: transaction.templeId || defaultTempleId,
     };
-    setTransactions((prev) => [withCreationAudit(txWithTemple), ...prev]);
+    const auditedTx = withCreationAudit(txWithTemple);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      auditedTx.id,
+      'transaction',
+      'create',
+      auditedTx.notes || auditedTx.category || auditedTx.id,
+      auditedTx.templeId,
+      operator,
+      deviceInfo
+    );
+    setTransactions((prev) => [auditedTx, ...prev]);
   };
 
   const handleAddBatchTransactions = (newTransactions: Transaction[]) => {
     if (newTransactions.length === 0) return;
     recordHistory(`出納「一括会計受付」${newTransactions.length}件を追加`);
     const auditedList = newTransactions.map((t) => withCreationAudit(t));
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    auditedList.forEach((auditedTx) => {
+      recordOperationLog(
+        auditedTx.id,
+        'transaction',
+        'create',
+        auditedTx.notes || auditedTx.category || auditedTx.id,
+        auditedTx.templeId,
+        operator,
+        deviceInfo
+      );
+    });
     setTransactions((prev) => {
       const nextTx = [...auditedList, ...prev];
       syncStateRef.current.transactions = nextTx;
@@ -2458,17 +2653,32 @@ export default function App() {
   const handleUpdateTransaction = (transaction: Transaction) => {
     recordHistory(`出納「${transaction.notes || transaction.category}」を更新`);
     const existing = transactions.find((t) => t.id === transaction.id);
-    setTransactions((prev) => prev.map((t) => (t.id === transaction.id ? withUpdateAudit(transaction, existing) : t)));
+    const auditedTx = withUpdateAudit(transaction, existing);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      auditedTx.id,
+      'transaction',
+      'update',
+      auditedTx.notes || auditedTx.category || auditedTx.id,
+      auditedTx.templeId,
+      operator,
+      deviceInfo
+    );
+    setTransactions((prev) => prev.map((t) => (t.id === transaction.id ? auditedTx : t)));
   };
 
   const handleDeleteTransaction = (id: string) => {
     const targetTx = transactions.find((t) => t.id === id);
     recordHistory(`出納レコードを削除`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
       id,
       'transaction',
       targetTx?.notes || targetTx?.category || id,
-      targetTx?.templeId
+      targetTx?.templeId,
+      'delete',
+      operator,
+      deviceInfo
     );
     const relatedSrvId = targetTx?.relatedServiceId;
 
@@ -2879,6 +3089,7 @@ export default function App() {
           onCancelLoading={() => setIsStartupLoading(false)}
           isLoading={isStartupLoading}
           loadingMessage={startupLoadingMsg}
+          isStaffInvite={isStaffMode || !!staffInviteSheetId}
         />
 
         <MobileApp
@@ -2930,6 +3141,7 @@ export default function App() {
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
           onTriggerManualSync={handleManualSync}
+          isStaffMode={isStaffMode}
         />
 
         {/* Google Sheets Sync Modal available in mobile mode */}
@@ -2949,6 +3161,7 @@ export default function App() {
           onRestoreBackup={handleRestoreFromBackup}
           temples={temples}
           activeTempleId={activeTempleId}
+          isStaffMode={isStaffMode}
         />
 
         {/* Google Sheets Undo Interrupt Modal */}
@@ -2974,6 +3187,7 @@ export default function App() {
         onCancelLoading={() => setIsStartupLoading(false)}
         isLoading={isStartupLoading}
         loadingMessage={startupLoadingMsg}
+        isStaffInvite={isStaffMode || !!staffInviteSheetId}
       />
 
       {/* Header */}
@@ -3229,6 +3443,7 @@ export default function App() {
         onResetDatabase={handleResetDatabase}
         temples={temples}
         activeTempleId={activeTempleId}
+        isStaffMode={isStaffMode}
       />
 
       {/* External Database Import Wizard Modal */}

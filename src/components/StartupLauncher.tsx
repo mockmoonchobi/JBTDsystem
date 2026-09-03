@@ -23,6 +23,7 @@ interface StartupLauncherProps {
   onCancelLoading?: () => void;
   isLoading?: boolean;
   loadingMessage?: string;
+  isStaffInvite?: boolean;
 }
 
 export const StartupLauncher: React.FC<StartupLauncherProps> = ({
@@ -34,6 +35,7 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
   onCancelLoading,
   isLoading = false,
   loadingMessage = 'データを読み込み中...',
+  isStaffInvite = false,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -151,6 +153,34 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
 
         {/* 4 Launch Options Grid */}
         <div className="p-4 sm:p-7">
+          {isStaffInvite && (
+            <div className="mb-5 p-4 sm:p-5 rounded-sm border-2 border-amber-500 bg-[#241C12] shadow-xl text-left animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-sm sm:text-base">
+                  <span className="text-xl">👤</span>
+                  <span>スタッフモードで招待されました</span>
+                </div>
+                <span className="px-2 py-0.5 bg-amber-500 text-stone-950 font-bold text-xs rounded-xs">
+                  スマホ版・機能制限モード
+                </span>
+              </div>
+              <p className="text-xs text-amber-100/90 mt-2 leading-relaxed">
+                寺院管理者様から共有されたスプレッドシートへのデータ連携が準備されています。
+                「Googleアカウントでスタッフ連携を開始」を押すと、共有データに直接接続しスタッフモード（世帯・過去帳の追加/削除不可、予定・受付は全機能可能）として起動します。
+              </p>
+              <button
+                type="button"
+                onClick={handleGoogleSheetsClick}
+                disabled={isLoading}
+                className="mt-3.5 w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 text-stone-950 font-bold text-sm rounded-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all disabled:opacity-50"
+              >
+                <Cloud className="w-4 h-4 text-stone-950" />
+                <span>Googleアカウントでスタッフ連携を開始</span>
+                <ArrowRight className="w-4 h-4 text-stone-950" />
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 sm:gap-4">
             
             {/* 1. PCからデータ読み込み */}
