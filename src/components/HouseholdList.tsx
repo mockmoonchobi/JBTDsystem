@@ -1839,7 +1839,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       {viewMode === 'list' && (
         <div className="font-sans">
           {/* Table Container */}
-          <div ref={tableContainerRef} className="max-h-[calc(100vh-340px)] min-h-[360px] overflow-y-auto overflow-x-auto bg-white border-y border-[#D1CEC7] shadow-xs relative">
+          <div ref={tableContainerRef} className="max-h-[calc(100vh-400px)] min-h-[300px] overflow-y-auto overflow-x-auto bg-white border-y border-[#D1CEC7] shadow-xs relative">
             <table className="w-full text-left border-collapse font-sans text-xs">
               <thead className="sticky top-0 z-20 bg-[#1A1A1A] text-[#F9F7F2] border-b border-[#D4AF37] select-none shadow-sm">
                 <tr className="bg-[#1A1A1A]">

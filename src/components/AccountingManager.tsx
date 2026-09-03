@@ -564,7 +564,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
           </div>
 
           {/* Traditional Ledger Table - Optimized with clear, larger readable font */}
-          <div ref={scrollContainerRef} className="max-h-[calc(100vh-320px)] min-h-[360px] overflow-y-auto overflow-x-auto relative border border-[#D1CEC7] bg-white shadow-xs">
+          <div ref={scrollContainerRef} className="max-h-[calc(100vh-360px)] min-h-[300px] overflow-y-auto overflow-x-auto relative border border-[#D1CEC7] bg-white shadow-xs">
             <table className="w-full text-left text-sm text-[#2D2D2D] border-collapse table-auto">
               <thead className="sticky top-0 z-10 bg-[#1A1A1A] text-[#D4AF37] font-serif border-b border-[#D4AF37] select-none shadow-sm text-sm">
                 <tr>
