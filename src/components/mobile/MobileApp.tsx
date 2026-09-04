@@ -203,21 +203,21 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         {isScheduleSection && (
           <div className="flex flex-col min-h-[calc(100vh-8rem)]">
             {/* Top Sub-tab Switcher directly under Header */}
-            <div className="px-2.5 py-1.5 bg-[#F5F2EB] border-b border-[#D1CEC7] shadow-2xs">
-              <div className="grid grid-cols-2 p-1 bg-[#E5E0D5] rounded-xs font-bold text-xs gap-1">
+            <div className="px-3 py-2 bg-[#F5F2EB] border-b border-[#D1CEC7] shadow-2xs">
+              <div className="grid grid-cols-2 p-1 bg-[#E5E0D5] rounded-xs font-bold text-xs sm:text-sm gap-1.5">
                 <button
                   type="button"
                   onClick={() => setScheduleSubTab('calendar')}
-                  className={`py-1.5 rounded-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
                     scheduleSubTab === 'calendar'
                       ? 'bg-white text-[#8C2D19] shadow-xs font-bold'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <Calendar className="w-4 h-4" />
-                  <span className="text-xs">予定帳</span>
+                  <Calendar className="w-4.5 h-4.5" />
+                  <span className="text-xs sm:text-sm font-bold">予定帳</span>
                   {upcomingServices.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-[#8C2D19] text-white text-[10px] rounded-full">
+                    <span className="px-2 py-0.5 bg-[#8C2D19] text-white text-xs font-bold rounded-full">
                       {upcomingServices.length}
                     </span>
                   )}
@@ -226,16 +226,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 <button
                   type="button"
                   onClick={() => setScheduleSubTab('todos')}
-                  className={`py-1.5 rounded-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
                     scheduleSubTab === 'todos'
                       ? 'bg-white text-[#8C2D19] shadow-xs font-bold'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <ListTodo className="w-4 h-4" />
-                  <span className="text-xs">ToDo</span>
+                  <ListTodo className="w-4.5 h-4.5" />
+                  <span className="text-xs sm:text-sm font-bold">ToDo</span>
                   {pendingTodos.length > 0 && (
-                    <span className="px-1.5 py-0.2 bg-[#D4AF37] text-[#1A1A1A] text-[10px] font-bold rounded-full">
+                    <span className="px-2 py-0.5 bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold rounded-full">
                       {pendingTodos.length}
                     </span>
                   )}

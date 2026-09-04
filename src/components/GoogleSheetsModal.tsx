@@ -973,12 +973,12 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
               {/* Staff Mode Information Notice */}
               {isStaffMode && (
-                <div className="border border-amber-300 bg-amber-50 p-3 sm:p-4 space-y-2 text-xs text-amber-950 rounded-xs shadow-2xs">
-                  <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
-                    <span className="text-base">👤</span>
+                <div className="border border-amber-300 bg-amber-50 p-3 sm:p-4 space-y-2 text-xs sm:text-sm text-amber-950 rounded-xs shadow-2xs">
+                  <div className="flex items-center gap-2 font-bold text-amber-900 text-sm sm:text-base">
+                    <span className="text-base sm:text-lg">👤</span>
                     <span>スタッフモードで接続中</span>
                   </div>
-                  <p className="leading-relaxed text-[11px] text-amber-900">
+                  <p className="leading-relaxed text-xs sm:text-sm text-amber-900">
                     寺院管理者から共有されたGoogleスプレッドシートのデータを読み込み、自動同期しています。<br />
                     スタッフモードでは、住所録・過去帳の追加や削除、および共有設定や初期化などの管理者専用設定は安全のため制限されています。
                   </p>

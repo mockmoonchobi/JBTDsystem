@@ -157,14 +157,14 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
             <div className="mb-5 p-4 sm:p-5 rounded-sm border-2 border-amber-500 bg-[#241C12] shadow-xl text-left animate-in fade-in">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-amber-400 font-bold text-sm sm:text-base">
-                  <span className="text-xl">👤</span>
+                  <span className="text-xl sm:text-2xl">👤</span>
                   <span>スタッフモードで招待されました</span>
                 </div>
-                <span className="px-2 py-0.5 bg-amber-500 text-stone-950 font-bold text-xs rounded-xs">
+                <span className="px-2.5 py-1 bg-amber-500 text-stone-950 font-bold text-xs sm:text-sm rounded-xs">
                   スマホ版・機能制限モード
                 </span>
               </div>
-              <p className="text-xs text-amber-100/90 mt-2 leading-relaxed">
+              <p className="text-xs sm:text-sm text-amber-100/90 mt-2 leading-relaxed">
                 寺院管理者様から共有されたスプレッドシートへのデータ連携が準備されています。
                 「Googleアカウントでスタッフ連携を開始」を押すと、共有データに直接接続しスタッフモード（世帯・過去帳の追加/削除不可、予定・受付は全機能可能）として起動します。
               </p>
@@ -172,11 +172,11 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
                 type="button"
                 onClick={handleGoogleSheetsClick}
                 disabled={isLoading}
-                className="mt-3.5 w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 text-stone-950 font-bold text-sm rounded-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                className="mt-3.5 w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 text-stone-950 font-bold text-sm sm:text-base rounded-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all disabled:opacity-50"
               >
-                <Cloud className="w-4 h-4 text-stone-950" />
+                <Cloud className="w-5 h-5 text-stone-950" />
                 <span>Googleアカウントでスタッフ連携を開始</span>
-                <ArrowRight className="w-4 h-4 text-stone-950" />
+                <ArrowRight className="w-5 h-5 text-stone-950" />
               </button>
             </div>
           )}

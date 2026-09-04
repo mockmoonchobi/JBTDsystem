@@ -146,9 +146,9 @@ export const MobileTodoView: React.FC<MobileTodoViewProps> = ({
               setEditingTodo(null);
               setIsModalOpen(true);
             }}
-            className="px-3 py-1.5 bg-[#D4AF37] text-[#1A1A1A] font-bold text-xs rounded-lg hover:bg-[#C59B27] shadow-sm flex items-center gap-1 cursor-pointer transition-colors active:scale-95"
+            className="px-3.5 py-2 bg-[#D4AF37] text-[#1A1A1A] font-bold text-xs sm:text-sm rounded-lg hover:bg-[#C59B27] shadow-sm flex items-center gap-1.5 cursor-pointer transition-colors active:scale-95"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-4 h-4" />
             <span>＋追加</span>
           </button>
         </div>
@@ -178,13 +178,13 @@ export const MobileTodoView: React.FC<MobileTodoViewProps> = ({
 
       {/* Search Input Bar */}
       <div className="relative">
-        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <Search className="w-4.5 h-4.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text"
           placeholder="タスク名・施主名・メモ検索..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 bg-white border border-[#D1CEC7] rounded-lg text-xs font-bold text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#D4AF37]"
+          className="w-full pl-9 pr-3 py-2 bg-white border border-[#D1CEC7] rounded-lg text-xs sm:text-sm font-bold text-[#1A1A1A] focus:outline-hidden focus:ring-2 focus:ring-[#D4AF37]"
         />
         {searchQuery && (
           <button
@@ -198,11 +198,11 @@ export const MobileTodoView: React.FC<MobileTodoViewProps> = ({
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs font-bold scrollbar-none">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs sm:text-sm font-bold scrollbar-none">
         <button
           type="button"
           onClick={() => setFilterTab('pending')}
-          className={`px-3 py-1.5 rounded-lg shrink-0 border transition-all ${
+          className={`px-3 py-2 rounded-lg shrink-0 border transition-all ${
             filterTab === 'pending'
               ? 'bg-[#1A1A1A] text-white border-[#1A1A1A] shadow-xs'
               : 'bg-white text-gray-700 border-[#D1CEC7]'
@@ -213,7 +213,7 @@ export const MobileTodoView: React.FC<MobileTodoViewProps> = ({
         <button
           type="button"
           onClick={() => setFilterTab('today')}
-          className={`px-3 py-1.5 rounded-lg shrink-0 border transition-all ${
+          className={`px-3 py-2 rounded-lg shrink-0 border transition-all ${
             filterTab === 'today'
               ? 'bg-[#8C2D19] text-white border-[#8C2D19] shadow-xs'
               : 'bg-white text-gray-700 border-[#D1CEC7]'
@@ -224,7 +224,7 @@ export const MobileTodoView: React.FC<MobileTodoViewProps> = ({
         <button
           type="button"
           onClick={() => setFilterTab('toba')}
-          className={`px-3 py-1.5 rounded-lg shrink-0 border transition-all ${
+          className={`px-3 py-2 rounded-lg shrink-0 border transition-all ${
             filterTab === 'toba'
               ? 'bg-orange-700 text-white border-orange-700 shadow-xs'
               : 'bg-white text-gray-700 border-[#D1CEC7]'

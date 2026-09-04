@@ -300,10 +300,10 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 
           {isStaffMode ? (
             <div 
-              className="px-2.5 py-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-sm text-xs font-bold flex items-center gap-1 shrink-0"
+              className="px-3.5 py-2 sm:px-4 sm:py-2.5 bg-amber-500/20 text-amber-300 border border-amber-500/50 rounded-sm text-xs sm:text-sm font-bold flex items-center gap-1.5 shrink-0 shadow-xs"
               title="スタッフモードで動作中（機能制限版）"
             >
-              <span className="text-amber-400">👤</span>
+              <span className="text-amber-400 text-sm sm:text-base">👤</span>
               <span className="whitespace-nowrap">スタッフ</span>
             </div>
           ) : (

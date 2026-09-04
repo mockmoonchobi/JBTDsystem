@@ -387,25 +387,25 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
       {!selectedHousehold ? (
         <div className="p-3.5 space-y-3">
           {/* Temple Scope Bar & QR Scan Button */}
-          <div className="bg-[#1A1A1A] text-white p-3 rounded-xs border-l-4 border-[#8C2D19] flex items-center justify-between gap-2 shadow-xs">
+          <div className="bg-[#1A1A1A] text-white p-3.5 rounded-xs border-l-4 border-[#8C2D19] flex items-center justify-between gap-2 shadow-xs">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[11px] text-[#D4AF37] font-bold">検索対象寺院:</span>
-                <span className="text-xs font-bold text-white truncate">
+                <span className="text-xs text-[#D4AF37] font-bold">検索対象寺院:</span>
+                <span className="text-xs sm:text-sm font-bold text-white truncate">
                   {selectedTemple.name} （{templeHouseholds.length}世帯）
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 mt-0.5">※兼務寺院の檀家は除外</p>
+              <p className="text-xs text-gray-400 mt-0.5">※兼務寺院の檀家は除外</p>
             </div>
 
             {/* QR Scanner Trigger Button */}
             <button
               type="button"
               onClick={() => setIsQrScannerOpen(true)}
-              className="px-3.5 py-2 bg-linear-to-r from-[#D4AF37] to-[#B38F26] hover:brightness-110 active:scale-95 text-[#1A1A1A] font-bold text-xs rounded-xs flex items-center space-x-1.5 shadow-md shrink-0 cursor-pointer transition-transform"
+              className="px-4 py-2.5 bg-linear-to-r from-[#D4AF37] to-[#B38F26] hover:brightness-110 active:scale-95 text-[#1A1A1A] font-bold text-xs sm:text-sm rounded-xs flex items-center space-x-1.5 shadow-md shrink-0 cursor-pointer transition-transform"
               title="カメラを起動して案内状・ハガキの檀家QRコードを読み取ります"
             >
-              <QrCode className="w-4 h-4" />
+              <QrCode className="w-4.5 h-4.5" />
               <span>QR読込</span>
             </button>
           </div>
@@ -523,16 +523,16 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-base font-bold text-[#1A1A1A] font-serif group-hover:text-[#8C2D19]">
+                        <span className="text-lg sm:text-xl font-black text-[#1A1A1A] font-serif group-hover:text-[#8C2D19]">
                           {sponsorInfo.sponsorName || '（施主未登録）'} 様
                         </span>
                         {sponsorInfo.furigana && (
-                          <span className="text-xs text-gray-500 font-sans">
+                          <span className="text-xs sm:text-sm text-gray-500 font-sans">
                             （{sponsorInfo.furigana}）
                           </span>
                         )}
                         {sponsorInfo.isDistinctFromHead && sponsorInfo.householdHead && (
-                          <span className="text-[11px] text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded-2xs border border-stone-200">
+                          <span className="text-xs text-stone-600 bg-stone-100 px-2 py-0.5 rounded-2xs border border-stone-200">
                             世帯主: {sponsorInfo.householdHead}
                           </span>
                         )}
@@ -545,16 +545,16 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
                       </div>
 
                       {h.address && (
-                        <p className="text-xs text-gray-600 truncate flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
+                        <p className="text-xs sm:text-sm text-gray-600 truncate flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                           <span>{h.address}</span>
                         </p>
                       )}
                     </div>
 
-                    <div className="flex items-center text-xs font-bold text-[#8C2D19] shrink-0 space-x-0.5">
+                    <div className="flex items-center text-xs sm:text-sm font-bold text-[#8C2D19] shrink-0 space-x-1">
                       <span>受付</span>
-                      <ArrowRight className="w-4 h-4" />
+                      <ArrowRight className="w-4.5 h-4.5" />
                     </div>
                   </button>
                 );
@@ -696,9 +696,9 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
               <button
                 type="button"
                 onClick={handleCancelReception}
-                className="flex-1 py-3 px-3 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-xs rounded-xs border border-gray-300 transition-colors flex items-center justify-center space-x-1 cursor-pointer"
+                className="flex-1 py-3 px-3 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-700 font-bold text-xs sm:text-sm rounded-xs border border-gray-300 transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-4.5 h-4.5" />
                 <span>キャンセル</span>
               </button>
 
@@ -706,7 +706,7 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
                 type="button"
                 onClick={handleSaveAccounting}
                 disabled={totalAmount <= 0}
-                className={`flex-2 py-3 px-4 rounded-xs font-bold text-sm transition-all flex items-center justify-center space-x-1.5 shadow-md cursor-pointer ${
+                className={`flex-2 py-3 px-4 rounded-xs font-bold text-sm sm:text-base transition-all flex items-center justify-center space-x-1.5 shadow-md cursor-pointer ${
                   totalAmount > 0
                     ? 'bg-linear-to-r from-[#8C2D19] to-[#a83820] hover:brightness-110 active:scale-98 text-white'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'

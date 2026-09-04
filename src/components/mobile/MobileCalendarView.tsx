@@ -174,11 +174,11 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
       {/* Top Controls: View Switch & Add Button (Clean, Non-overlapping) */}
       <div className="bg-white border border-[#D1CEC7] rounded-xs p-2.5 flex items-center justify-between gap-2 shadow-2xs">
         {/* Toggle Calendar / Timeline */}
-        <div className="flex bg-[#EBE7DF] p-1 rounded-xs border border-[#D1CEC7] text-xs font-bold">
+        <div className="flex bg-[#EBE7DF] p-1 rounded-xs border border-[#D1CEC7] text-xs sm:text-sm font-bold">
           <button
             type="button"
             onClick={() => setViewMode('calendar')}
-            className={`px-3 py-1.5 rounded-2xs cursor-pointer flex items-center gap-1.5 transition-colors text-xs ${
+            className={`px-3 py-2 rounded-2xs cursor-pointer flex items-center gap-1.5 transition-colors text-xs sm:text-sm ${
               viewMode === 'calendar'
                 ? 'bg-white text-[#8C2D19] shadow-2xs font-black'
                 : 'text-gray-600 hover:text-gray-900'
@@ -190,7 +190,7 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
           <button
             type="button"
             onClick={() => setViewMode('timeline')}
-            className={`px-3 py-1.5 rounded-2xs cursor-pointer flex items-center gap-1.5 transition-colors text-xs ${
+            className={`px-3 py-2 rounded-2xs cursor-pointer flex items-center gap-1.5 transition-colors text-xs sm:text-sm ${
               viewMode === 'timeline'
                 ? 'bg-white text-[#8C2D19] shadow-2xs font-black'
                 : 'text-gray-600 hover:text-gray-900'
@@ -205,7 +205,7 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
         <button
           type="button"
           onClick={() => handleAddNew()}
-          className="px-3.5 py-2 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+          className="px-3.5 py-2 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>予定入力</span>
@@ -329,14 +329,14 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
           {/* Selected Date Details Header & Service List */}
           <div className="space-y-2">
             <div className="flex items-center justify-between bg-[#1A1A1A] text-white px-3.5 py-2.5 rounded-xs border-b border-[#D4AF37]">
-              <div className="flex items-center gap-2 text-sm font-bold">
-                <CalendarIcon className="w-4 h-4 text-[#D4AF37]" />
+              <div className="flex items-center gap-2 text-sm sm:text-base font-bold">
+                <CalendarIcon className="w-4.5 h-4.5 text-[#D4AF37]" />
                 <span>{selectedDate} の予定 ({getRokuyo(selectedDate)})</span>
               </div>
               <button
                 type="button"
                 onClick={() => handleAddNew(selectedDate)}
-                className="text-xs font-bold text-[#D4AF37] hover:underline flex items-center gap-0.5 cursor-pointer"
+                className="text-xs sm:text-sm font-bold text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>この日に入力</span>
@@ -557,22 +557,22 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
           )}
         </div>
 
-        <div className="flex items-center space-x-1.5 font-sans text-xs ml-auto">
+        <div className="flex items-center space-x-2 font-sans text-xs ml-auto">
           <button
             type="button"
             onClick={onEdit}
-            className="p-1 text-gray-600 hover:text-[#8C2D19] cursor-pointer"
+            className="p-1.5 text-gray-600 hover:text-[#8C2D19] hover:bg-gray-200/60 rounded-xs cursor-pointer"
             title="編集"
           >
-            <Edit className="w-4 h-4" />
+            <Edit className="w-4.5 h-4.5" />
           </button>
           <button
             type="button"
             onClick={onDelete}
-            className="p-1 text-gray-400 hover:text-red-600 cursor-pointer"
+            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xs cursor-pointer"
             title="削除"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-4.5 h-4.5" />
           </button>
         </div>
       </div>
@@ -709,9 +709,9 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
           })}
           target="_blank"
           rel="noopener noreferrer"
-          className="px-2.5 py-1.5 bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] hover:bg-[#DBEAFE] rounded-xs font-bold flex items-center gap-1 transition-colors"
+          className="px-3 py-2 bg-[#EFF6FF] text-[#1E40AF] border border-[#BFDBFE] hover:bg-[#DBEAFE] rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
         >
-          <CalendarIcon className="w-3.5 h-3.5" />
+          <CalendarIcon className="w-4 h-4" />
           <span>Googleカレンダー追加</span>
         </a>
       </div>
