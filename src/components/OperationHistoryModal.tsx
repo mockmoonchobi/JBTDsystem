@@ -60,8 +60,18 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
   }, [deletedRecords]);
 
   // Googleシート保有アカウント（管理者）または未設定・旧「寺院関係者」を「管理者」と統一表記
+  // ※スタッフ端末（deviceInfoに「スタッフ」を含む場合）は、同一Googleアカウントでテストしていても「スタッフ」として識別
   const currentUser = getCurrentUser();
-  const getDisplayOperatorName = (operator?: string) => {
+  const getDisplayOperatorName = (operator?: string, deviceInfo?: string) => {
+    const isStaffDevice = (deviceInfo || '').includes('スタッフ');
+    if (isStaffDevice) {
+      if (!operator || !operator.trim() || operator.trim() === '管理者' || operator.trim() === '寺院関係者') {
+        return 'スタッフ';
+      }
+      const clean = operator.trim();
+      return clean.includes('スタッフ') ? clean : `スタッフ（${clean}）`;
+    }
+
     if (!operator) return '管理者';
     const clean = operator.trim();
     if (!clean || clean === '寺院関係者' || clean === '管理者') return '管理者';
@@ -90,7 +100,7 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
       // Search term
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
-        const displayOp = getDisplayOperatorName(r.operator).toLowerCase();
+        const displayOp = getDisplayOperatorName(r.operator, r.deviceInfo).toLowerCase();
         const rawOp = (r.operator || '').toLowerCase();
         const matchLabel = (r.label || '').toLowerCase().includes(term);
         const matchId = (r.id || '').toLowerCase().includes(term);
@@ -379,16 +389,17 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                         </td>
                         <td className="py-2.5 px-3.5 whitespace-nowrap text-xs">
                           {(() => {
-                            const opName = getDisplayOperatorName(entry.operator);
+                            const opName = getDisplayOperatorName(entry.operator, entry.deviceInfo);
                             const isOwnerAdmin = opName === '管理者';
+                            const isStaff = opName.includes('スタッフ') || (entry.deviceInfo || '').includes('スタッフ');
                             return (
                               <div className="flex items-center gap-1.5">
                                 {isOwnerAdmin ? (
                                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                                 ) : (
-                                  <UserIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <UserIcon className={`w-3.5 h-3.5 shrink-0 ${isStaff ? 'text-indigo-500' : 'text-slate-400'}`} />
                                 )}
-                                <span className={isOwnerAdmin ? 'font-medium text-slate-800' : 'text-slate-600'}>
+                                <span className={isOwnerAdmin ? 'font-medium text-slate-800' : (isStaff ? 'font-medium text-indigo-700' : 'text-slate-600')}>
                                   {opName}
                                 </span>
                               </div>

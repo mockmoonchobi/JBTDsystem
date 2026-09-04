@@ -30,7 +30,8 @@ import {
   createNewSpreadsheet,
   SPREADSHEET_NAME,
   isNotFoundError,
-  SheetsImportResult 
+  SheetsImportResult,
+  fetchLatestOperationLogs 
 } from './lib/googleSheets';
 import { mergeDatasetsWithAuditPriority, MergedDatasetResult } from './utils/syncMergeUtils';
 import { exportToExcel, importFromExcel } from './utils/excelUtils';
@@ -190,10 +191,18 @@ export default function App() {
   // Helper to obtain operator and device info for audit logging
   const getCurrentOperatorInfo = () => {
     const user = getCurrentUser();
-    // Googleシート保有アカウント（管理者側）であればログイン有無に関わらず「管理者」と統一
-    const operator = isStaffMode
-      ? (user?.displayName || user?.email || 'スタッフ')
-      : '管理者';
+    // スタッフモード時はGoogleアカウントログインの有無に関わらず「スタッフ」として明示記録
+    // （同一Googleアカウントでの検証時にも「管理者」と混同されないよう区別）
+    let operator = '管理者';
+    if (isStaffMode) {
+      if (user?.displayName) {
+        operator = `スタッフ（${user.displayName}）`;
+      } else if (user?.email) {
+        operator = `スタッフ（${user.email.split('@')[0]}）`;
+      } else {
+        operator = 'スタッフ';
+      }
+    }
     const device = isStaffMode ? 'スマホ(スタッフ)' : (viewMode === 'mobile' ? 'スマホ' : 'PC');
     return { operator, deviceInfo: device };
   };
@@ -903,10 +912,16 @@ export default function App() {
       setIsInitialLoaded(true);
       recordHistory(`Googleシート連携（${res.user.email}）で起動`);
     } catch (err: any) {
-      console.error('Google sign in / sync error from startup launcher:', err);
-      if (err?.code === 'auth/popup-closed-by-user' || err?.message?.includes('closed-by-user')) {
-        throw new Error('Googleログインがキャンセルされました。');
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.includes('closed-by-user') ||
+        err?.message?.includes('キャンセル')
+      ) {
+        // ユーザーによるキャンセルなのでエラーログは出力せず静かに終了
+        return;
       }
+      console.error('Google sign in / sync error from startup launcher:', err);
       throw new Error(`Googleシートとの連携に失敗しました: ${err?.message || err}`);
     } finally {
       setIsStartupLoading(false);
@@ -1307,7 +1322,7 @@ export default function App() {
   };
 
   // Helper to connect and sync with Google Drive spreadsheet safely
-  const syncWithGoogleDrive = useCallback(async (token: string, explicitSheetId?: string, isCleanImport?: boolean) => {
+  const syncWithGoogleDrive = useCallback(async (token: string, explicitSheetId?: string, isCleanImport?: boolean, isSilent?: boolean) => {
     // Mutex: If a sync is already running, wait for it instead of running parallel syncs
     if (isSyncInProgressRef.current && activeSyncPromiseRef.current) {
       return activeSyncPromiseRef.current;
@@ -1315,7 +1330,9 @@ export default function App() {
 
     const runSyncTask = async () => {
       isSyncInProgressRef.current = true;
-      setSyncStatus('syncing');
+      if (!isSilent) {
+        setSyncStatus('syncing');
+      }
       try {
         let sheet: { id: string; url: string; isExisting?: boolean };
         if (explicitSheetId) {
@@ -1502,13 +1519,15 @@ export default function App() {
         return { success: true, count: remoteCount > 0 ? remoteCount : localCount };
       } catch (err: any) {
         console.error('Google Sheets sync/load failed:', err);
-        setSyncStatus('error');
-        if (isAuthError(err)) {
-          setSyncErrorMessage('Google認証の有効期限が切れました。データ連携画面より再度ログインしてください。');
-        } else if (err?.isNetworkError || err?.message?.includes('fetch') || err?.message?.includes('NetworkError')) {
-          setSyncErrorMessage('Googleサーバーとの通信に失敗しました。ネットワーク環境をご確認ください。');
-        } else {
-          setSyncErrorMessage(err.message || '同期に失敗しました。');
+        if (!isSilent) {
+          setSyncStatus('error');
+          if (isAuthError(err)) {
+            setSyncErrorMessage('Google認証の有効期限が切れました。データ連携画面より再度ログインしてください。');
+          } else if (err?.isNetworkError || err?.message?.includes('fetch') || err?.message?.includes('NetworkError')) {
+            setSyncErrorMessage('Googleサーバーとの通信に失敗しました。ネットワーク環境をご確認ください。');
+          } else {
+            setSyncErrorMessage(err.message || '同期に失敗しました。');
+          }
         }
         throw err;
       } finally {
@@ -1800,6 +1819,99 @@ export default function App() {
       if (timer) clearTimeout(timer);
     };
   }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, isInitialLoaded]);
+
+  // ★ バックグラウンド操作履歴監視（約10秒間隔で「操作・削除履歴」シートのみを軽量監視）
+  // 画面に「データ連携処理中」を出さず、他スタッフ・別端末からのデータ更新が検出されたらサイレントに自動同期
+  useEffect(() => {
+    if (!isInitialLoaded || syncStatus === 'disconnected') return;
+
+    let isDisposed = false;
+    let pollTimer: NodeJS.Timeout | null = null;
+    let isChecking = false;
+
+    const checkOperationLogs = async () => {
+      if (isDisposed || isChecking) return;
+      // ユーザーの作業中や別同期中、タブ非アクティブ時はスキップ
+      if (
+        document.visibilityState !== 'visible' ||
+        isStartupLauncherOpenRef.current ||
+        isCleanWritingRef.current ||
+        isSyncInProgressRef.current ||
+        isImportingRef.current
+      ) {
+        return;
+      }
+
+      const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
+      if (!savedSheetInfo) return;
+
+      let sheet: { id: string; url: string };
+      try {
+        sheet = JSON.parse(savedSheetInfo);
+      } catch {
+        return;
+      }
+      if (!sheet?.id) return;
+
+      const token = await getAccessToken();
+      if (!token) return;
+
+      isChecking = true;
+      try {
+        // 「操作・削除履歴」シートの直近最新行のみを軽量取得（約1KB・画面への影響なし）
+        const result = await fetchLatestOperationLogs(token, sheet.id, 25);
+        if (isDisposed || !result || !result.logs || result.logs.length === 0) {
+          isChecking = false;
+          return;
+        }
+
+        const remoteLogs = result.logs;
+        const localLogs = loadDeletedRecordsLog();
+
+        // 既存ローカルログのキー集合（ID + アクション + 2秒単位タイムスタンプ）
+        const localLogKeys = new Set(
+          localLogs.map((l) => l.logId || `${l.id}_${l.actionType}_${Math.floor((l.deletedTimestamp || 0) / 2000) * 2000}`)
+        );
+
+        // 自端末のローカルログにまだ存在しない「新しい操作」があるかをチェック
+        const hasIncomingRemoteUpdates = remoteLogs.some((rl) => {
+          const key = rl.logId || `${rl.id}_${rl.actionType}_${Math.floor((rl.deletedTimestamp || 0) / 2000) * 2000}`;
+          return !localLogKeys.has(key);
+        });
+
+        if (hasIncomingRemoteUpdates && !isDisposed) {
+          // 他スタッフや別端末からのデータ更新が検出されたため、画面を妨げずにサイレント同期（isSilent: true）を実行
+          if (!isSyncInProgressRef.current && !isCleanWritingRef.current) {
+            await syncWithGoogleDriveRef.current(token, sheet.id, false /* isClean */, true /* isSilent */);
+          }
+        }
+      } catch (err) {
+        // バックグラウンド軽量監視のため、エラー発生時もUIに影響を与えず静かに終了
+      } finally {
+        isChecking = false;
+      }
+    };
+
+    // 初回はマウント後5秒、以降は10秒間隔で定期巡回
+    const scheduleNext = () => {
+      if (isDisposed) return;
+      pollTimer = setTimeout(async () => {
+        await checkOperationLogs();
+        scheduleNext();
+      }, 10000);
+    };
+
+    const initialTimer = setTimeout(() => {
+      checkOperationLogs();
+      scheduleNext();
+    }, 5000);
+
+    return () => {
+      isDisposed = true;
+      clearTimeout(initialTimer);
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [isInitialLoaded, syncStatus]);
 
   // Manual Instant Sync Trigger (Bidirectional merge with audit priority & Push to Sheets)
   const handleManualSync = async () => {

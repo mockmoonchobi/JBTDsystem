@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { 
   Search, 
   Plus, 
@@ -252,13 +252,35 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   // Scroll ref for individual view content area
   const individualContentRef = useRef<HTMLDivElement>(null);
+  const lastIndividualScrollTopRef = useRef<number>(0);
+  const prevViewModeRef = useRef<string>(viewMode);
 
-  // Reset individual content scroll to top when switching selected household or entering individual view
-  useEffect(() => {
-    if (viewMode === 'individual' && individualContentRef.current) {
-      individualContentRef.current.scrollTop = 0;
+  // Keep track of scroll position in individual view
+  const handleIndividualScroll = () => {
+    if (individualContentRef.current) {
+      lastIndividualScrollTopRef.current = individualContentRef.current.scrollTop;
     }
-  }, [selectedIndividualId, viewMode]);
+  };
+
+  // Reset individual content scroll to top ONLY when initially entering individual view from list
+  useEffect(() => {
+    if (viewMode === 'individual' && prevViewModeRef.current !== 'individual') {
+      if (individualContentRef.current) {
+        individualContentRef.current.scrollTop = 0;
+      }
+      lastIndividualScrollTopRef.current = 0;
+    }
+    prevViewModeRef.current = viewMode;
+  }, [viewMode]);
+
+  // Maintain scroll position when switching between households in individual view
+  useLayoutEffect(() => {
+    if (viewMode === 'individual' && individualContentRef.current) {
+      if (lastIndividualScrollTopRef.current > 0) {
+        individualContentRef.current.scrollTop = lastIndividualScrollTopRef.current;
+      }
+    }
+  }, [selectedIndividualId]);
 
   // Restore scroll position when returning to list view
   useEffect(() => {
@@ -1164,23 +1186,44 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       });
   }, [transactions, currentIndividualHousehold]);
 
-  // Scroll refs to manage auto-scrolling to bottom when records exceed 10
+  // Scroll refs for fixed-height past records and accounting tables (6 rows fixed)
   const pastRecordsScrollRef = useRef<HTMLDivElement>(null);
   const transactionsScrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (viewMode === 'individual') {
-      const timer = setTimeout(() => {
-        if (pastRecordsScrollRef.current && currentHouseholdPastRecords.length > 10) {
-          pastRecordsScrollRef.current.scrollTop = pastRecordsScrollRef.current.scrollHeight;
+  // 個別表示の会計記録や過去帳は、スクロールバーが出現する際は一番下までスクロールした状態にする
+  useLayoutEffect(() => {
+    if (viewMode !== 'individual') return;
+
+    const scrollToBottomIfScrollable = () => {
+      // 過去帳テーブル
+      if (pastRecordsScrollRef.current) {
+        const el = pastRecordsScrollRef.current;
+        if (el.scrollHeight > el.clientHeight) {
+          el.scrollTop = el.scrollHeight;
+        } else {
+          el.scrollTop = 0;
         }
-        if (transactionsScrollRef.current && currentHouseholdTransactions.length > 10) {
-          transactionsScrollRef.current.scrollTop = transactionsScrollRef.current.scrollHeight;
+      }
+      // 会計記録テーブル
+      if (transactionsScrollRef.current) {
+        const el = transactionsScrollRef.current;
+        if (el.scrollHeight > el.clientHeight) {
+          el.scrollTop = el.scrollHeight;
+        } else {
+          el.scrollTop = 0;
         }
-      }, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [viewMode, selectedIndividualId, currentHouseholdPastRecords.length, currentHouseholdTransactions.length]);
+      }
+    };
+
+    scrollToBottomIfScrollable();
+    const frameId = requestAnimationFrame(scrollToBottomIfScrollable);
+    const timer = setTimeout(scrollToBottomIfScrollable, 60);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearTimeout(timer);
+    };
+  }, [viewMode, selectedIndividualId, currentHouseholdPastRecords.length, currentHouseholdTransactions.length, isAddingNewPastRecordInline]);
 
   // 抽出条件（区分・役職・検索・抽出外モード等）の変更時、抽出外となったレコードの一括選択を自動的に解除する
   useEffect(() => {
@@ -1312,6 +1355,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   // Navigation handlers in individual view
   const handlePrevHousehold = () => {
     if (sortedHouseholds.length === 0) return;
+    if (individualContentRef.current) {
+      lastIndividualScrollTopRef.current = individualContentRef.current.scrollTop;
+    }
     const prevIdx = (currentHouseholdIndex - 1 + sortedHouseholds.length) % sortedHouseholds.length;
     setSelectedIndividualId(sortedHouseholds[prevIdx].id);
     setIsEditingHouseholdInline(false);
@@ -1324,6 +1370,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   const handleNextHousehold = () => {
     if (sortedHouseholds.length === 0) return;
+    if (individualContentRef.current) {
+      lastIndividualScrollTopRef.current = individualContentRef.current.scrollTop;
+    }
     const nextIdx = (currentHouseholdIndex + 1) % sortedHouseholds.length;
     setSelectedIndividualId(sortedHouseholds[nextIdx].id);
     setIsEditingHouseholdInline(false);
@@ -2709,7 +2758,11 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               </button>
             </div>
           ) : currentIndividualHousehold ? (
-            <div ref={individualContentRef} className="bg-white border-x border-b border-[#D1CEC7] shadow-sm overflow-y-auto max-h-[calc(100vh-235px)] min-h-[400px]">
+            <div
+              ref={individualContentRef}
+              onScroll={handleIndividualScroll}
+              className="bg-white border-x border-b border-[#D1CEC7] shadow-sm overflow-y-auto max-h-[calc(100vh-235px)] min-h-[400px]"
+            >
               {/* Header Banner */}
             <div className="bg-[#1A1A1A] text-[#F9F7F2] p-6 border-b border-[#D4AF37] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="w-full md:w-auto space-y-1">
@@ -3699,56 +3752,59 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 </div>
               </div>
 
-              {/* List of Past Records for this household (Row/Table view) */}
-              {currentHouseholdPastRecords.length === 0 && !isAddingNewPastRecordInline ? (
-                <div className="bg-[#F9F7F2] border border-dashed border-[#D1CEC7] p-8 text-center text-[#888888] font-sans text-xs space-y-3">
-                  <BookOpen className="w-8 h-8 text-[#CCCCCC] mx-auto" />
-                  <p className="font-bold text-[#444444]">この世帯には過去帳（物故者データ）が未登録です。</p>
-                  <p>WordやExcel、メモ帳のテキストから一括読み取るか、「新規精霊」から手動入力できます。</p>
-                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setSingleImportModalHousehold(currentIndividualHousehold)}
-                      className="px-4 py-2 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                    >
-                      <FileText className="w-4 h-4 text-[#8C2D19]" />
-                      <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-                      <span>Word・Excel・テキストから過去帳取り込み</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleStartAddNewPastRecordInline}
-                      className="px-4 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>新規精霊を手動登録</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  ref={pastRecordsScrollRef}
-                  className={`bg-white border border-[#D1CEC7] shadow-sm font-serif ${
-                    currentHouseholdPastRecords.length > 10
-                      ? 'max-h-[480px] overflow-y-auto overflow-x-auto scrollbar-left'
-                      : 'overflow-x-auto'
-                  }`}
-                >
-                  <div className="w-full">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-[#1A1A1A] text-[#D4AF37] font-sans uppercase tracking-wider font-bold border-b border-[#D4AF37] sticky top-0 z-10">
+              {/* List of Past Records for this household (Row/Table view, 6 rows fixed height) */}
+              <div
+                ref={pastRecordsScrollRef}
+                className="bg-white border border-[#D1CEC7] shadow-sm font-serif h-[315px] overflow-y-auto overflow-x-auto"
+              >
+                <div className="w-full">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-[#1A1A1A] text-[#D4AF37] font-sans uppercase tracking-wider font-bold border-b border-[#D4AF37] sticky top-0 z-10">
+                      <tr>
+                        <th className="px-2.5 py-3 whitespace-nowrap bg-[#1A1A1A] w-[110px]">年月日</th>
+                        <th className="px-4 py-3 whitespace-nowrap bg-[#1A1A1A] min-w-[240px] text-left">戒名</th>
+                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[85px] text-center">新盆</th>
+                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[100px]">当時の施主名</th>
+                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[60px] text-center">続柄</th>
+                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[85px]">俗名</th>
+                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[50px] text-center">享年</th>
+                        <th className="px-2.5 py-3 text-right font-sans whitespace-nowrap bg-[#1A1A1A] w-[60px]">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EBE7DF] text-[#2D2D2D]">
+                      {/* Empty state within fixed-height table */}
+                      {currentHouseholdPastRecords.length === 0 && !isAddingNewPastRecordInline && (
                         <tr>
-                          <th className="px-2.5 py-3 whitespace-nowrap bg-[#1A1A1A] w-[110px]">年月日</th>
-                          <th className="px-4 py-3 whitespace-nowrap bg-[#1A1A1A] min-w-[240px] text-left">戒名</th>
-                          <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[85px] text-center">新盆</th>
-                          <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[100px]">当時の施主名</th>
-                          <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[60px] text-center">続柄</th>
-                          <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[85px]">俗名</th>
-                          <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[50px] text-center">享年</th>
-                          <th className="px-2.5 py-3 text-right font-sans whitespace-nowrap bg-[#1A1A1A] w-[60px]">操作</th>
+                          <td colSpan={8} className="p-8 text-center text-[#888888] font-sans">
+                            <div className="flex flex-col items-center justify-center space-y-3">
+                              <BookOpen className="w-8 h-8 text-[#CCCCCC]" />
+                              <div>
+                                <p className="font-bold text-[#444444] text-xs">この世帯には過去帳（物故者データ）が未登録です。</p>
+                                <p className="text-[11px] text-[#888888] mt-1">Word・Excel・メモ帳のテキストから取り込むか、「新規精霊」から手動入力できます。</p>
+                              </div>
+                              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSingleImportModalHousehold(currentIndividualHousehold)}
+                                  className="px-3 py-1.5 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-[#8C2D19]" />
+                                  <Sparkles className="w-3 h-3 text-[#D4AF37]" />
+                                  <span>Word・Excel取込</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleStartAddNewPastRecordInline}
+                                  className="px-3 py-1.5 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>新規精霊を手動登録</span>
+                                </button>
+                              </div>
+                            </div>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#EBE7DF] text-[#2D2D2D]">
+                      )}
                       {/* NEW PAST RECORD INLINE ENTRY ROW */}
                       {isAddingNewPastRecordInline && (
                         <React.Fragment>
@@ -4102,7 +4158,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   </table>
                 </div>
               </div>
-            )}
             </div>
 
             {/* INTEGRATED ACCOUNTING RECORDS (会計記録) SECTION */}
@@ -4131,14 +4186,10 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 </button>
               </div>
 
-              {/* List of Accounting Transactions for this household (Row/Table view) */}
+              {/* List of Accounting Transactions for this household (Row/Table view, 6 rows fixed height) */}
               <div
                 ref={transactionsScrollRef}
-                className={`bg-white border border-[#D1CEC7] shadow-sm font-sans ${
-                  currentHouseholdTransactions.length > 10
-                    ? 'max-h-[480px] overflow-y-auto overflow-x-auto scrollbar-left'
-                    : 'overflow-x-auto'
-                }`}
+                className="bg-white border border-[#D1CEC7] shadow-sm font-sans h-[315px] overflow-y-auto overflow-x-auto"
               >
                 <div className="w-full">
                   <table className="w-full text-left text-xs border-collapse">
@@ -4152,6 +4203,15 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       </tr>
                     </thead>
                   <tbody className="divide-y divide-[#EBE7DF] text-[#2D2D2D]">
+                    {/* Empty message when no transactions exist */}
+                    {currentHouseholdTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-[#888888] font-sans">
+                          <p className="font-bold text-xs text-[#555555]">この世帯の過去の会計・布施記録はまだありません。</p>
+                          <p className="text-[11px] text-[#888888] mt-1">※ 下の入力行に金額・科目を入力して「登録」ボタンを押すとすぐに追加できます。</p>
+                        </td>
+                      </tr>
+                    )}
                     {currentHouseholdTransactions.map((tx, tIdx) => {
                       const isEditingThisTx = editingTransactionId === tx.id && inlineTxForm;
 

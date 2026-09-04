@@ -143,6 +143,15 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     notifySubscribers(result.user, cachedAccessToken);
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
+    if (
+      error?.code === 'auth/popup-closed-by-user' ||
+      error?.code === 'auth/cancelled-popup-request' ||
+      error?.message?.includes('popup-closed-by-user') ||
+      error?.message?.includes('cancelled-popup-request')
+    ) {
+      // ユーザーによるポップアップキャンセル時はエラーログを出さずに静かにnullを返却
+      return null;
+    }
     console.error('Sign in error:', error);
     throw error;
   } finally {

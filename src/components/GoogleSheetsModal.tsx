@@ -184,7 +184,11 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
       if (!token || !currentUser) {
         const res = await googleSignIn();
-        if (!res) throw new Error('Googleログインがキャンセルされました。');
+        if (!res) {
+          setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+          setLoading(false);
+          return;
+        }
         token = res.accessToken;
         currentUser = res.user;
       }
@@ -215,6 +219,16 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         }, 500);
       }
     } catch (err: any) {
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.includes('closed-by-user') ||
+        err?.message?.includes('キャンセル')
+      ) {
+        setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+        setLoading(false);
+        return;
+      }
       console.error(err);
       if (err?.isAuthError || err?.message?.includes('401') || err?.message?.includes('認証')) {
         try {
@@ -301,7 +315,11 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       let currentUser = getCurrentUser();
       if (!token || !currentUser) {
         const res = await googleSignIn();
-        if (!res) throw new Error('Googleログインがキャンセルされました。');
+        if (!res) {
+          setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+          setLoading(false);
+          return;
+        }
         token = res.accessToken;
         currentUser = res.user;
         setUser(res.user);
@@ -323,6 +341,15 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         throw new Error('初期化書き込みハンドラーが見つかりません。');
       }
     } catch (err: any) {
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.includes('closed-by-user') ||
+        err?.message?.includes('キャンセル')
+      ) {
+        setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+        return;
+      }
       console.error(err);
       setStatusMessage({ type: 'error', text: `書込エラー: ${err.message || 'Googleシートへの初期化書き込みに失敗しました。'}` });
     } finally {

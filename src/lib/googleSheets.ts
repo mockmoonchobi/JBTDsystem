@@ -3456,3 +3456,87 @@ export async function importFromSheets(
     totalRecordsCount,
   };
 }
+
+/**
+ * Lightweight check: Fetches only the top recent rows from '操作・削除履歴' sheet.
+ * Used for background polling (every ~10s) without triggering full sheet download or UI sync states.
+ */
+export async function fetchLatestOperationLogs(
+  accessToken: string,
+  spreadsheetId: string,
+  limit: number = 30
+): Promise<{ logs: DeletedRecordEntry[]; latestTimestamp: number } | null> {
+  try {
+    const range = encodeURIComponent(`'操作・削除履歴'!A2:K${limit + 2}`);
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueRenderOption=FORMATTED_VALUE`;
+    const res = await fetchWithRetry(
+      url,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+      2, // only 2 retries
+      350, // fast backoff
+      7000 // 7s timeout
+    );
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const data = await res.json();
+    const rows: string[][] = data.values || [];
+    if (!rows || rows.length === 0) {
+      return { logs: [], latestTimestamp: 0 };
+    }
+
+    const parsed: DeletedRecordEntry[] = [];
+    let maxTimestamp = 0;
+
+    rows.forEach((row, idx) => {
+      // Row format: [0:履歴ID, 1:操作種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境]
+      const logId = String(row[0] || '').trim();
+      const id = String(row[3] || '').trim();
+      if (!id || id.startsWith('LOG-') || id === 'ID' || id === '対象ID' || id === 'レコードID') return;
+
+      const actionType = (row[1] || 'delete') as any;
+      const entityType = (row[2] || 'household') as any;
+      const label = row[4] || '';
+      const deletedAt = row[5] || '';
+      let deletedTimestamp = row[6] ? Number(row[6]) : 0;
+      if (!deletedTimestamp || isNaN(deletedTimestamp) || deletedTimestamp <= 0) {
+        if (deletedAt) {
+          deletedTimestamp = new Date(deletedAt).getTime();
+        }
+      }
+      if (isNaN(deletedTimestamp) || deletedTimestamp <= 0) {
+        deletedTimestamp = Date.now();
+      }
+
+      if (deletedTimestamp > maxTimestamp) {
+        maxTimestamp = deletedTimestamp;
+      }
+
+      const templeId = row[8] ? String(row[8]).trim() : undefined;
+      const operator = normalizeLogOperator(row[9], row[10]);
+      const deviceInfo = row[10] ? String(row[10]).trim() : undefined;
+
+      parsed.push({
+        logId: logId || `LOG-${deletedTimestamp}-${idx}`,
+        id,
+        entityType,
+        actionType,
+        label,
+        deletedAt: deletedAt || new Date(deletedTimestamp).toISOString(),
+        deletedTimestamp,
+        templeId,
+        operator,
+        deviceInfo,
+      });
+    });
+
+    return { logs: parsed, latestTimestamp: maxTimestamp };
+  } catch (err) {
+    // Fail silently on background check so it doesn't disturb user experience
+    return null;
+  }
+}

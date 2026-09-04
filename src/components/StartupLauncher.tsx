@@ -61,8 +61,14 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
     try {
       await onStartWithGoogleSheets();
     } catch (err: any) {
-      if (err?.code === 'auth/popup-closed-by-user' || err?.message?.includes('closed-by-user')) {
-        setErrorMsg('Googleログインがキャンセルされました。');
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.includes('closed-by-user') ||
+        err?.message?.includes('キャンセル')
+      ) {
+        // キャンセルの場合はエラー表示を行わず待機状態に戻す
+        setErrorMsg(null);
       } else {
         setErrorMsg(err?.message || 'Googleシートとの連携に失敗しました。');
       }
