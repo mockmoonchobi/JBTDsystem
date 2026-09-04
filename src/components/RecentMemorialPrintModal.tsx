@@ -384,7 +384,7 @@ export const RecentMemorialPrintModal: React.FC<RecentMemorialPrintModalProps> =
           -webkit-writing-mode: vertical-rl;
           text-orientation: upright;
           -webkit-text-orientation: upright;
-          font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+          font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", "MS Mincho", "MingLiU-ExtB", "SimSun-ExtB", "IPAmjMincho", serif;
           color: #000000;
         }
         .spirit-table {

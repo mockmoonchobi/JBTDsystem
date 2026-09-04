@@ -131,21 +131,21 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
         {/* Search Bar & Add Button */}
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4.5 h-4.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="戒名、俗名、施主名、命日で検索..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-7 py-1.5 bg-[#FAF8F5] border border-[#D1CEC7] rounded-xs text-sm font-medium placeholder:text-gray-400 focus:border-[#8C2D19] focus:bg-white focus:outline-hidden"
+              className="w-full pl-9 pr-8 py-2.5 bg-[#FAF8F5] border border-[#D1CEC7] rounded-xs text-sm sm:text-base font-medium placeholder:text-gray-400 focus:border-[#8C2D19] focus:bg-white focus:outline-hidden"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -153,20 +153,20 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
             <button
               type="button"
               onClick={handleAddNew}
-              className="px-3 py-1.5 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs font-bold flex items-center gap-1 shadow-xs shrink-0 cursor-pointer"
+              className="px-3.5 py-2 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-4 h-4" />
               <span>精霊登録</span>
             </button>
           )}
         </div>
 
         {/* Quick Filter Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs sm:text-sm">
           <button
             type="button"
             onClick={() => setQuickFilter('all')}
-            className={`px-2 py-0.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs ${
+            className={`px-3 py-1.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs sm:text-sm ${
               quickFilter === 'all'
                 ? 'bg-[#1A1A1A] text-[#D4AF37] border-[#1A1A1A]'
                 : 'bg-[#FAF8F5] text-gray-700 border-[#D1CEC7]'
@@ -177,7 +177,7 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
           <button
             type="button"
             onClick={() => setQuickFilter('this_month')}
-            className={`px-2 py-0.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs ${
+            className={`px-3 py-1.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs sm:text-sm ${
               quickFilter === 'this_month'
                 ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
                 : 'bg-[#FAF8F5] text-gray-700 border-[#D1CEC7]'
@@ -188,7 +188,7 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
           <button
             type="button"
             onClick={() => setQuickFilter('today')}
-            className={`px-2 py-0.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs ${
+            className={`px-3 py-1.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs sm:text-sm ${
               quickFilter === 'today'
                 ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
                 : 'bg-[#FAF8F5] text-gray-700 border-[#D1CEC7]'
@@ -199,26 +199,26 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
           <button
             type="button"
             onClick={() => setQuickFilter('milestone')}
-            className={`px-2 py-0.5 rounded-xs font-bold shrink-0 cursor-pointer border flex items-center gap-1 text-xs ${
+            className={`px-3 py-1.5 rounded-xs font-bold shrink-0 cursor-pointer border flex items-center gap-1 text-xs sm:text-sm ${
               quickFilter === 'milestone'
                 ? 'bg-[#2D3748] text-white border-[#2D3748]'
                 : 'bg-[#FAF8F5] text-gray-700 border-[#D1CEC7]'
             }`}
           >
-            <Sparkles className="w-3 h-3 text-amber-500" />
+            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>今年年回忌 ({currentYear}年)</span>
           </button>
         </div>
       </div>
 
       {/* Count Summary */}
-      <div className="px-1 flex items-center justify-between text-xs text-gray-500 font-medium">
-        <span>表示中: <strong className="text-[#1A1A1A] font-bold text-sm">{filteredRecords.length}</strong> 霊</span>
+      <div className="px-1 flex items-center justify-between text-xs sm:text-sm text-gray-500 font-medium">
+        <span>表示中: <strong className="text-[#1A1A1A] font-bold text-sm sm:text-base">{filteredRecords.length}</strong> 霊</span>
         {searchQuery && (
           <button
             type="button"
             onClick={() => setSearchQuery('')}
-            className="text-[#8C2D19] hover:underline text-xs font-bold cursor-pointer"
+            className="text-[#8C2D19] hover:underline text-xs sm:text-sm font-bold cursor-pointer"
           >
             検索をクリア
           </button>
@@ -263,53 +263,53 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-white border border-[#D1CEC7] rounded-xs p-2.5 sm:p-3 shadow-2xs space-y-1.5"
+                className="bg-white border border-[#D1CEC7] rounded-xs p-3 sm:p-3.5 shadow-2xs space-y-2"
               >
                 {/* 1行目: 戒名（大きめ太字毛筆）と 右側編集/予定追加アクション */}
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-lg sm:text-xl font-black font-serif text-[#1A1A1A] leading-tight break-all">
+                  <h3 className="text-xl font-black font-serif text-[#1A1A1A] leading-tight break-all">
                     {p.dharmaName || '（戒名未登録）'}
                   </h3>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       onClick={() => onOpenAddServiceFromSpirit(p)}
-                      className="px-2 py-1 bg-[#FAF7F0] hover:bg-[#F0EAE0] text-[#8C2D19] border border-[#D4AF37]/60 rounded-xs text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 bg-[#FAF7F0] hover:bg-[#F0EAE0] text-[#8C2D19] border border-[#D4AF37]/60 rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                       title="法要・予定を入力"
                     >
-                      <CalendarIcon className="w-3.5 h-3.5" />
+                      <CalendarIcon className="w-4 h-4" />
                       <span>予定入力</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleEdit(p)}
-                      className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300 rounded-xs text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 border border-gray-300 rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs"
                       title="過去帳を編集"
                     >
-                      <Edit className="w-3.5 h-3.5" />
+                      <Edit className="w-4 h-4" />
                       <span>編集</span>
                     </button>
                   </div>
                 </div>
 
                 {/* 2行目: 命日（和暦）　忌日（1つだけ） */}
-                <div className="text-sm font-medium text-gray-800 flex items-center gap-2 flex-wrap leading-tight">
+                <div className="text-sm sm:text-base font-medium text-gray-800 flex items-center gap-2 flex-wrap leading-tight">
                   <span>{eraDeathDate}</span>
                   {milestoneSnippet && (
-                    <span className="text-xs font-bold text-[#8C2D19] bg-[#FAF5F0] border border-[#E8D8C8] px-1.5 py-0.2 rounded-2xs">
+                    <span className="text-xs font-bold text-[#8C2D19] bg-[#FAF5F0] border border-[#E8D8C8] px-2 py-0.5 rounded-2xs">
                       {milestoneSnippet}
                     </span>
                   )}
                 </div>
 
                 {/* 3行目: 施主名 続柄 俗名 年齢 (1行) */}
-                <div className="text-sm font-bold text-gray-700 leading-tight break-all">
+                <div className="text-sm sm:text-base font-bold text-gray-700 leading-tight break-all">
                   {secularLine}
                 </div>
 
                 {/* 墓地・備考 (ある場合のみ超コンパクトに1行) */}
                 {(p.burialLocation || p.notes) && (
-                  <div className="pt-1 text-xs text-gray-500 flex items-center gap-2 flex-wrap border-t border-gray-100">
+                  <div className="pt-1.5 text-xs sm:text-sm text-gray-600 flex items-center gap-2 flex-wrap border-t border-gray-100">
                     {p.burialLocation && <span>📍 {p.burialLocation}</span>}
                     {p.notes && <span>💬 {p.notes}</span>}
                   </div>

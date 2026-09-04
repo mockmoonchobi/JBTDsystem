@@ -92,14 +92,14 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
               className="flex items-center gap-2 text-left w-full py-1 px-1"
               title="予定表・ToDoは全寺院の情報を合算して全件表示しています（固定）"
             >
-              <div className="w-8 h-8 rounded-xs flex items-center justify-center shrink-0 border bg-amber-950/90 border-amber-400 text-amber-300 shadow-xs">
-                <Layers className="w-4 h-4" />
+              <div className="w-9 h-9 rounded-xs flex items-center justify-center shrink-0 border bg-amber-950/90 border-amber-400 text-amber-300 shadow-xs">
+                <Layers className="w-4.5 h-4.5" />
               </div>
               <div className="min-w-0 flex-1 flex items-center gap-1.5">
                 <span className="text-base sm:text-lg font-serif font-black text-[#F9F7F2] truncate tracking-tight">
                   全寺院合算表示
                 </span>
-                <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-bold rounded-xs border border-amber-500/40 shrink-0">
+                <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 text-xs font-bold rounded-xs border border-amber-500/40 shrink-0">
                   合算
                 </span>
               </div>
@@ -114,7 +114,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                 title="タップして表示寺院を切り替え"
               >
                 <div
-                  className={`w-8 h-8 rounded-xs flex items-center justify-center shrink-0 border shadow-xs transition-colors ${
+                  className={`w-9 h-9 rounded-xs flex items-center justify-center shrink-0 border shadow-xs transition-colors ${
                     isAllTemples
                       ? 'bg-amber-950/90 border-amber-400 text-amber-300'
                       : isAffiliated
@@ -127,7 +127,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                   }}
                 >
                   {isAllTemples ? (
-                    <Layers className="w-4 h-4" />
+                    <Layers className="w-4.5 h-4.5" />
                   ) : (
                     <span className="text-sm font-black leading-none">
                       {isAffiliated ? '兼' : '本'}
@@ -245,7 +245,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
           ) : (
             /* Single Temple Display */
             <div className="flex items-center gap-2 min-w-0 py-1 px-1">
-              <div className="w-8 h-8 rounded-xs bg-[#2A2A2A] border border-[#D4AF37]/80 flex items-center justify-center text-[#D4AF37] shrink-0">
+              <div className="w-9 h-9 rounded-xs bg-[#2A2A2A] border border-[#D4AF37]/80 flex items-center justify-center text-[#D4AF37] shrink-0">
                 <span className="text-sm font-black leading-none">本</span>
               </div>
               <div className="min-w-0">

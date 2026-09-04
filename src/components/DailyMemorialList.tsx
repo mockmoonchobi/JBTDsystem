@@ -442,7 +442,7 @@ export const DailyMemorialList: React.FC<DailyMemorialListProps> = ({
               width: 100%;
               height: 100%;
               min-height: 260mm;
-              font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+              font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", "MS Mincho", "MingLiU-ExtB", "SimSun-ExtB", "IPAmjMincho", serif;
               color: #000000;
             }
             .spirit-table {

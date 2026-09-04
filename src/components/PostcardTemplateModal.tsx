@@ -29,6 +29,7 @@ import {
   applyNoticeTemplate,
   getPostcardBackTypography
 } from '../utils/memorialCalculator';
+import { safeJoinWithSpace } from '../utils/unicodeUtils';
 
 interface PostcardTemplateModalProps {
   isOpen: boolean;
@@ -55,8 +56,8 @@ export const POSTCARD_NOTICE_TAGS = [
 ];
 
 function formatSpacedTempleName(mountainName?: string, templeName?: string): string {
-  const m = (mountainName || '慈光山').trim().split('').join(' ');
-  const t = (templeName || '圓福寺').trim().split('').join(' ');
+  const m = safeJoinWithSpace((mountainName || '慈光山').trim(), ' ');
+  const t = safeJoinWithSpace((templeName || '圓福寺').trim(), ' ');
   return `${m}　${t}`;
 }
 

@@ -28,6 +28,7 @@ import {
   saveAllNoticeTemplates,
   applyNoticeTemplate
 } from '../utils/memorialCalculator';
+import { safeJoinWithSpace } from '../utils/unicodeUtils';
 
 interface A4TemplateModalProps {
   isOpen: boolean;
@@ -54,8 +55,8 @@ export const A4_NOTICE_TAGS = [
 ];
 
 function formatSpacedTempleName(mountainName?: string, templeName?: string): string {
-  const m = (mountainName || '慈光山').trim().split('').join(' ');
-  const t = (templeName || '圓福寺').trim().split('').join(' ');
+  const m = safeJoinWithSpace((mountainName || '慈光山').trim(), ' ');
+  const t = safeJoinWithSpace((templeName || '圓福寺').trim(), ' ');
   return `${m}　${t}`;
 }
 

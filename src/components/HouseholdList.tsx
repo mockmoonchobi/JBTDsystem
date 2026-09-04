@@ -250,6 +250,16 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   const lastListScrollTopRef = useRef<number>(0);
   const lastSelectedHouseholdIdRef = useRef<string | null>(null);
 
+  // Scroll ref for individual view content area
+  const individualContentRef = useRef<HTMLDivElement>(null);
+
+  // Reset individual content scroll to top when switching selected household or entering individual view
+  useEffect(() => {
+    if (viewMode === 'individual' && individualContentRef.current) {
+      individualContentRef.current.scrollTop = 0;
+    }
+  }, [selectedIndividualId, viewMode]);
+
   // Restore scroll position when returning to list view
   useEffect(() => {
     if (viewMode === 'list') {
@@ -1001,7 +1011,8 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       if (!matchesDistrict) return false;
 
       // 塔婆申込 Filter (選択された塔婆種類で判定)
-      const isTobaApplied = isHouseholdAppliedForToba(h, activeTobaType);
+      const hTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || currentActiveTemple;
+      const isTobaApplied = isHouseholdAppliedForToba(h, activeTobaType, hTemple);
       const matchesToba =
         tobaFilter === 'ALL'
           ? true
@@ -1233,11 +1244,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       // 選択されていない行の操作、または選択件数が0件の場合：その世帯のみ更新
       if (field === 'tobaApplication') {
         const typeToUse = tobaType || activeTobaType;
-        const currentApp = getHouseholdSponsorTobaApplication(household, typeToUse);
+        const hhTemple = temples.find((t) => (t.id || 'temple-main') === (household.templeId || 'temple-main')) || currentActiveTemple;
+        const currentApp = getHouseholdSponsorTobaApplication(household, typeToUse, hhTemple);
         const updated = setHouseholdSponsorTobaApplication(household, typeToUse, {
           applied: newValue,
           tamegaki: currentApp.tamegaki || (household.segakiTamegaki || ''),
-        });
+        }, undefined, hhTemple);
         onEditHousehold(updated);
       } else if (field === 'isSegakiToba') {
         const updated = toggleHouseholdSponsorSegakiToba(household, newValue);
@@ -1256,12 +1268,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     const { field, fieldName, newValue, displayValue, selectedHouseholds, tobaType } = batchConfirmRequest;
     const typeToUse = tobaType || activeTobaType;
     const updatedList = selectedHouseholds.map((h) => {
+      const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || currentActiveTemple;
       if (field === 'tobaApplication') {
-        const currentApp = getHouseholdSponsorTobaApplication(h, typeToUse);
+        const currentApp = getHouseholdSponsorTobaApplication(h, typeToUse, hhTemple);
         return setHouseholdSponsorTobaApplication(h, typeToUse, {
           applied: newValue,
           tamegaki: currentApp.tamegaki || (h.segakiTamegaki || ''),
-        });
+        }, undefined, hhTemple);
       }
       if (field === 'isSegakiToba') {
         return toggleHouseholdSponsorSegakiToba(h, newValue);
@@ -1533,9 +1546,11 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   };
 
   return (
-    <div className="space-y-2.5">
+    <div className="flex flex-col space-y-0">
       {/* Top Banner & View Switcher Bar */}
-      <div className="bg-[#1A1A1A] border-b border-[#D4AF37] p-3.5 sm:p-4 shadow-md flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-serif text-[#F9F7F2]">
+      <div className={`bg-[#1A1A1A] border-b border-[#D4AF37] p-3.5 sm:p-4 shadow-md flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-serif text-[#F9F7F2] shrink-0 ${
+        viewMode === 'individual' ? 'sticky top-0 sm:top-[96px] z-20' : ''
+      }`}>
         <div>
           <div className="flex items-center flex-wrap gap-3">
             <div className="w-8 h-8 bg-[#D4AF37] text-[#1A1A1A] flex items-center justify-center font-bold font-sans text-xs shrink-0">
@@ -1621,7 +1636,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
       {/* SEARCH & FILTER BAR (List view only) */}
       {viewMode === 'list' && (
-        <div className="bg-white border border-[#D1CEC7] p-2.5 sm:p-3 shadow-xs space-y-2 font-serif">
+        <div className="bg-white border-x border-b border-[#D1CEC7] p-2.5 sm:p-3 shadow-2xs space-y-2 font-serif shrink-0">
           {/* 1行目: 検索ウインドウ、役職、区分１、区分２、施餓鬼塔婆、棚経 */}
           <div className="flex flex-wrap items-center gap-2 font-sans text-xs">
             {/* 検索ウインドウ */}
@@ -1852,9 +1867,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
       {/* VIEW MODE 1: リスト表示 (All Households Row/Table View) */}
       {viewMode === 'list' && (
-        <div className="font-sans">
+        <div className="font-sans flex flex-col flex-1 min-h-0 space-y-0">
           {/* Table Container */}
-          <div ref={tableContainerRef} className="max-h-[calc(100vh-400px)] min-h-[300px] overflow-y-auto overflow-x-auto bg-white border-y border-[#D1CEC7] shadow-xs relative">
+          <div ref={tableContainerRef} className="max-h-[calc(100vh-270px)] min-h-[350px] overflow-y-auto overflow-x-auto bg-white border-x border-b border-[#D1CEC7] shadow-xs relative">
             <table className="w-full text-left border-collapse font-sans text-xs">
               <thead className="sticky top-0 z-20 bg-[#1A1A1A] text-[#F9F7F2] border-b border-[#D4AF37] select-none shadow-sm">
                 <tr className="bg-[#1A1A1A]">
@@ -2430,11 +2445,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                               return (
                                 <td key="toba" className="px-1.5 py-2 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                   {(() => {
-                                    const sponsorApp = getHouseholdSponsorTobaApplication(household, activeTobaType);
+                                    const hhTemple = temples.find((t) => (t.id || 'temple-main') === (household.templeId || 'temple-main')) || currentActiveTemple;
+                                    const sponsorApp = getHouseholdSponsorTobaApplication(household, activeTobaType, hhTemple);
                                     const isSponsorApplied = Boolean(sponsorApp.applied);
                                     const sponsorName = getHouseholdSponsorName(household);
-                                    const isHeadApplied = Boolean(getHouseholdTobaApplication(household, activeTobaType).applied);
-                                    const memberApps = (household.familyMembers || []).filter(m => getFamilyMemberTobaApplication(m, activeTobaType).applied);
+                                    const isHeadApplied = Boolean(getHouseholdTobaApplication(household, activeTobaType, hhTemple).applied);
+                                    const memberApps = (household.familyMembers || []).filter(m => getFamilyMemberTobaApplication(m, activeTobaType, hhTemple).applied);
                                     const totalTobaCount = (isHeadApplied ? 1 : 0) + memberApps.length;
 
                                     return (
@@ -2485,8 +2501,8 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                               );
                             case 'tamegaki':
                               return (
-                                <td key="tamegaki" className="px-2 py-2 whitespace-nowrap text-xs max-w-[130px] truncate text-[#444444]" title={getHouseholdSponsorTobaApplication(household, activeTobaType).tamegaki || ''}>
-                                  {getHouseholdSponsorTobaApplication(household, activeTobaType).tamegaki || '-'}
+                                <td key="tamegaki" className="px-2 py-2 whitespace-nowrap text-xs max-w-[130px] truncate text-[#444444]" title={getHouseholdSponsorTobaApplication(household, activeTobaType, temples.find((t) => (t.id || 'temple-main') === (household.templeId || 'temple-main')) || currentActiveTemple).tamegaki || ''}>
+                                  {getHouseholdSponsorTobaApplication(household, activeTobaType, temples.find((t) => (t.id || 'temple-main') === (household.templeId || 'temple-main')) || currentActiveTemple).tamegaki || '-'}
                                 </td>
                               );
                             case 'fee':
@@ -2609,9 +2625,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
       {/* VIEW MODE 2: 個別表示 (Individual Household Detail + Past Records) */}
       {viewMode === 'individual' && (
-        <div className="space-y-6 font-serif">
+        <div className="flex flex-col flex-1 min-h-0 font-serif space-y-0">
           {/* Individual Navigation Bar */}
-          <div className="bg-white border border-[#D1CEC7] p-3 sm:p-4 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="bg-white border-x border-b border-[#D1CEC7] p-3 sm:p-4 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
             {/* Back to list & Keyword Search */}
             <div className="flex flex-1 items-center space-x-3">
               <button
@@ -2681,7 +2697,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
           {/* 検索結果が0件の場合 */}
           {sortedHouseholds.length === 0 ? (
-            <div className="bg-white border border-[#D1CEC7] p-12 text-center text-[#888888] font-sans shadow-sm">
+            <div className="bg-white border-x border-b border-[#D1CEC7] p-12 text-center text-[#888888] font-sans shadow-sm">
               <p className="text-base font-bold text-[#444444] mb-2">検索条件に一致する檀家世帯が見つかりませんでした。</p>
               <p className="text-xs text-[#888888] mb-4">検索キーワード: 「{searchTerm}」</p>
               <button
@@ -2693,7 +2709,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               </button>
             </div>
           ) : currentIndividualHousehold ? (
-            <div className="bg-white border border-[#D1CEC7] shadow-sm overflow-hidden">
+            <div ref={individualContentRef} className="bg-white border-x border-b border-[#D1CEC7] shadow-sm overflow-y-auto max-h-[calc(100vh-235px)] min-h-[400px]">
               {/* Header Banner */}
             <div className="bg-[#1A1A1A] text-[#F9F7F2] p-6 border-b border-[#D4AF37] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
               <div className="w-full md:w-auto space-y-1">
@@ -3223,7 +3239,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                         </div>
                         {individualTobaSlots.map((slot) => {
                           const tobaType = slot.name;
-                          const app = getHouseholdTobaApplication(currentIndividualHousehold, tobaType, individualHouseholdTemple);
+                          const app = getHouseholdSponsorTobaApplication(currentIndividualHousehold, tobaType, individualHouseholdTemple);
                           const isApplied = Boolean(app.applied);
                           const sponsorName = getHouseholdSponsorName(currentIndividualHousehold);
                           const tamegaki = app.tamegaki || '';
@@ -3238,7 +3254,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                   type="button"
                                   onClick={() => {
                                     const nextVal = !isApplied;
-                                    const updated = setHouseholdTobaApplication(
+                                    const updated = setHouseholdSponsorTobaApplication(
                                       currentIndividualHousehold,
                                       tobaType,
                                       nextVal,

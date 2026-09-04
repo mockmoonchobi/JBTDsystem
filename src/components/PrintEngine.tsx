@@ -30,6 +30,7 @@ import { safeStorage } from '../utils/storageUtils';
 import { PostcardTemplateModal } from './PostcardTemplateModal';
 import { A4TemplateModal } from './A4TemplateModal';
 import { VerticalNoticeContent } from './VerticalNoticeContent';
+import { toGraphemes, safeJoinWithSpace } from '../utils/unicodeUtils';
 
 interface PrintEngineProps {
   households: Household[];
@@ -1099,7 +1100,7 @@ function convertNumberToKanji(nStr: string): string {
     const onesStr = ones === 0 ? '' : digits[ones];
     return tensStr + onesStr;
   } else {
-    return nStr.split('').map((d) => digits[parseInt(d, 10)] ?? d).join('');
+    return Array.from(nStr).map((d) => digits[parseInt(d, 10)] ?? d).join('');
   }
 }
 
@@ -1134,19 +1135,24 @@ function formatRecipientName(fullName: string, honorific: string = '様'): strin
     const parts = trimmed.split(/[\s　]+/);
     surname = parts[0] || '';
     givenName = parts.slice(1).join('') || '';
-  } else if (trimmed.length === 4) {
-    surname = trimmed.slice(0, 2);
-    givenName = trimmed.slice(2);
-  } else if (trimmed.length === 3) {
-    surname = trimmed.slice(0, 2);
-    givenName = trimmed.slice(2);
   } else {
-    surname = trimmed;
-    givenName = '';
+    // スペースがない場合は、Unicode文字（サロゲートペア「𣘺」やIVS異体字）単位で正確に分割
+    const chars = toGraphemes(trimmed);
+    if (chars.length === 4) {
+      surname = chars.slice(0, 2).join('');
+      givenName = chars.slice(2).join('');
+    } else if (chars.length === 3) {
+      surname = chars.slice(0, 2).join('');
+      givenName = chars.slice(2).join('');
+    } else {
+      surname = trimmed;
+      givenName = '';
+    }
   }
 
-  const spacedSurname = surname.split('').join('　');
-  const spacedGivenName = givenName.split('').join('　');
+  // サロゲートペア文字（「𣘺」U+2363A など）を絶対に分断しないよう safeJoinWithSpace で全角スペースを挿入
+  const spacedSurname = safeJoinWithSpace(surname, '　');
+  const spacedGivenName = safeJoinWithSpace(givenName, '　');
 
   let result = spacedSurname;
   if (spacedGivenName) {
@@ -1160,8 +1166,8 @@ function formatRecipientName(fullName: string, honorific: string = '様'): strin
 }
 
 function formatSpacedTempleName(mountainName?: string, templeName?: string): string {
-  const m = (mountainName || '慈光山').trim().split('').join(' ');
-  const t = (templeName || '圓福寺').trim().split('').join(' ');
+  const m = safeJoinWithSpace((mountainName || '慈光山').trim(), ' ');
+  const t = safeJoinWithSpace((templeName || '圓福寺').trim(), ' ');
   return `${m}　${t}`;
 }
 
@@ -1174,7 +1180,7 @@ function formatPostalCodeFullWidthDigits(postalCode?: string): string[] {
     '０': '０', '１': '１', '２': '２', '３': '３', '４': '４',
     '５': '５', '６': '６', '７': '７', '８': '８', '９': '９',
   };
-  return digitsOnly.split('').map((d) => halfToFull[d] || d);
+  return Array.from(digitsOnly).map((d) => halfToFull[d] || d);
 }
 
 function formatVerticalDigitsAndHyphens(text?: string): string {

@@ -50,6 +50,11 @@ import {
   convertDisasterEventsToRows,
   parseDisasterEventsFromRows
 } from '../utils/disasterMemorialUtils';
+import {
+  getHouseholdSponsorTobaApplication,
+  getFamilyMemberTobaApplication
+} from '../utils/tobaUtils';
+import { TobaApplicationItem } from '../types';
 
 export const SPREADSHEET_NAME = '寺院管理・檀家過去帳データ';
 
@@ -1162,8 +1167,20 @@ export async function exportToSheets(
 
   const householdRows = filteredHouseholds.map((h) => {
     const [cDate, cTime, uDate, uTime] = getAuditRowValues(h);
-    const toba1Applied = h.toba1Applied !== undefined ? h.toba1Applied : h.isSegakiToba;
-    const toba1Tamegaki = h.toba1Tamegaki !== undefined ? h.toba1Tamegaki : (h.segakiTamegaki || '');
+    const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
+    const tobaApp1 = getHouseholdSponsorTobaApplication(h, '塔婆申込１', hhTemple);
+    const tobaApp2 = getHouseholdSponsorTobaApplication(h, '塔婆申込２', hhTemple);
+    const tobaApp3 = getHouseholdSponsorTobaApplication(h, '塔婆申込３', hhTemple);
+
+    const isToba1Applied = Boolean(h.toba1Applied || h.isSegakiToba || tobaApp1.applied);
+    const toba1Tamegaki = h.toba1Tamegaki || h.segakiTamegaki || tobaApp1.tamegaki || '';
+
+    const isToba2Applied = Boolean(h.toba2Applied || tobaApp2.applied);
+    const toba2Tamegaki = h.toba2Tamegaki || tobaApp2.tamegaki || '';
+
+    const isToba3Applied = Boolean(h.toba3Applied || tobaApp3.applied);
+    const toba3Tamegaki = h.toba3Tamegaki || tobaApp3.tamegaki || '';
+
     return [
       h.id,
       getTempleLabel(h.templeId),
@@ -1178,12 +1195,12 @@ export async function exportToSheets(
       h.status || '',
       h.district || '',
       h.tombNumber || '',
-      toba1Applied ? '申込済' : '未申込',
+      isToba1Applied ? '申込済' : '未申込',
       toba1Tamegaki,
-      h.toba2Applied ? '申込済' : '未申込',
-      h.toba2Tamegaki || '',
-      h.toba3Applied ? '申込済' : '未申込',
-      h.toba3Tamegaki || '',
+      isToba2Applied ? '申込済' : '未申込',
+      toba2Tamegaki,
+      isToba3Applied ? '申込済' : '未申込',
+      toba3Tamegaki,
       h.fee1Amount !== undefined && h.fee1Amount !== null ? h.fee1Amount : (h.fee1 !== undefined && h.fee1 !== null ? h.fee1 : ''),
       h.fee2Amount !== undefined && h.fee2Amount !== null ? h.fee2Amount : (h.fee2 !== undefined && h.fee2 !== null ? h.fee2 : ''),
       h.fee3Amount !== undefined && h.fee3Amount !== null ? h.fee3Amount : (h.fee3 !== undefined && h.fee3 !== null ? h.fee3 : ''),
@@ -1231,10 +1248,22 @@ export async function exportToSheets(
 
   const familyRows: (string | number)[][] = [];
   filteredHouseholds.forEach((h) => {
+    const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
     (h.familyMembers || []).forEach((fm, idx) => {
       const [cDate, cTime, uDate, uTime] = getAuditRowValues(fm);
-      const toba1Applied = fm.toba1Applied !== undefined ? fm.toba1Applied : fm.isSegakiToba;
-      const toba1Tamegaki = fm.toba1Tamegaki !== undefined ? fm.toba1Tamegaki : (fm.segakiTamegaki || '');
+      const fmApp1 = getFamilyMemberTobaApplication(fm, '塔婆申込１', hhTemple);
+      const fmApp2 = getFamilyMemberTobaApplication(fm, '塔婆申込２', hhTemple);
+      const fmApp3 = getFamilyMemberTobaApplication(fm, '塔婆申込３', hhTemple);
+
+      const isFmToba1 = Boolean(fm.toba1Applied || fm.isSegakiToba || fmApp1.applied);
+      const toba1Tamegaki = fm.toba1Tamegaki !== undefined ? fm.toba1Tamegaki : (fm.segakiTamegaki || fmApp1.tamegaki || '');
+
+      const isFmToba2 = Boolean(fm.toba2Applied || fmApp2.applied);
+      const toba2Tamegaki = fm.toba2Tamegaki || fmApp2.tamegaki || '';
+
+      const isFmToba3 = Boolean(fm.toba3Applied || fmApp3.applied);
+      const toba3Tamegaki = fm.toba3Tamegaki || fmApp3.tamegaki || '';
+
       familyRows.push([
         fm.id || `FM-${h.id}-${idx + 1}`,
         getTempleLabel(h.templeId),
@@ -1245,12 +1274,12 @@ export async function exportToSheets(
         fm.phone || '',
         fm.address || '',
         (fm.isChiefMourner || fm.isSponsor) ? '施主' : '',
-        toba1Applied ? '申込済' : '未申込',
+        isFmToba1 ? '申込済' : '未申込',
         toba1Tamegaki,
-        fm.toba2Applied ? '申込済' : '未申込',
-        fm.toba2Tamegaki || '',
-        fm.toba3Applied ? '申込済' : '未申込',
-        fm.toba3Tamegaki || '',
+        isFmToba2 ? '申込済' : '未申込',
+        toba2Tamegaki,
+        isFmToba3 ? '申込済' : '未申込',
+        toba3Tamegaki,
         fm.notes || '',
         cDate,
         cTime,
@@ -2367,6 +2396,27 @@ export async function importFromSheets(
     }
   }
 
+  const isCheckMark = (val: any): boolean => {
+    const str = String(val || '').trim();
+    if (!str) return false;
+    if (['未申込', '未対象', '無', 'なし', '無し', 'false', '0', '未', '×'].includes(str.toLowerCase())) return false;
+    return (
+      str === '申込' ||
+      str === '申込済' ||
+      str === '対象' ||
+      str === '有' ||
+      str === 'あり' ||
+      str === '1' ||
+      str === '〇' ||
+      str === '○' ||
+      str === '✓' ||
+      str === '✔' ||
+      str.toLowerCase() === 'true' ||
+      (str.includes('申込') && !str.includes('未')) ||
+      (str.includes('対象') && !str.includes('未'))
+    );
+  };
+
   // 3. Parse Family Members Map (家族構成)
   const importAudit = getCurrentAuditFields();
   const familySheetName = findSheet(['家族構成', '家族', '家族一覧', '世帯員']);
@@ -2382,12 +2432,16 @@ export async function importFromSheets(
     const phoneIdx = findColIdx(familyHeaders, ['電話番号', '電話', '連絡先']);
     const addrIdx = findColIdx(familyHeaders, ['個別住所', '住所', '現住所', '別居住所', '連絡先住所']);
     const chiefIdx = findColIdx(familyHeaders, ['施主指定', '施主フラグ', '施主', 'isChiefMourner', 'isSponsor']);
-    const toba1Idx = findColIdx(familyHeaders, ['塔婆申込１', '塔婆申込1', '塔婆１', '塔婆1', '塔婆申込１申込', '施餓鬼塔婆申込', '施餓鬼塔婆', '施餓鬼申込', '施餓鬼', '塔婆申込', 'isSegakiToba', 'toba1Applied']);
-    const toba1TamegakiIdx = findColIdx(familyHeaders, ['塔婆申込１為書き', '塔婆申込1為書き', '塔婆１為書き', '塔婆1為書き', '施餓鬼為書き', '為書き', '施餓鬼為書', '為書', 'segakiTamegaki', 'toba1Tamegaki']);
-    const toba2Idx = findColIdx(familyHeaders, ['塔婆申込２', '塔婆申込2', '塔婆２', '塔婆2', '塔婆申込２申込', 'toba2Applied']);
-    const toba2TamegakiIdx = findColIdx(familyHeaders, ['塔婆申込２為書き', '塔婆申込2為書き', '塔婆２為書き', '塔婆2為書き', 'toba2Tamegaki']);
-    const toba3Idx = findColIdx(familyHeaders, ['塔婆申込３', '塔婆申込3', '塔婆３', '塔婆3', '塔婆申込３申込', 'toba3Applied']);
-    const toba3TamegakiIdx = findColIdx(familyHeaders, ['塔婆申込３為書き', '塔婆申込3為書き', '塔婆３為書き', '塔婆3為書き', 'toba3Tamegaki']);
+    const extraToba1 = [templeInfo?.tobaType1, ...(temples?.map(t => t.tobaType1) || [])].filter(Boolean) as string[];
+    const extraToba2 = [templeInfo?.tobaType2, ...(temples?.map(t => t.tobaType2) || [])].filter(Boolean) as string[];
+    const extraToba3 = [templeInfo?.tobaType3, ...(temples?.map(t => t.tobaType3) || [])].filter(Boolean) as string[];
+
+    const toba1Idx = findColIdx(familyHeaders, ['塔婆申込１', '塔婆申込1', '塔婆１', '塔婆1', '塔婆申込１申込', '施餓鬼塔婆申込', '施餓鬼塔婆', '施餓鬼申込', '施餓鬼', '塔婆申込', 'isSegakiToba', 'toba1Applied', ...extraToba1]);
+    const toba1TamegakiIdx = findColIdx(familyHeaders, ['塔婆申込１為書き', '塔婆申込1為書き', '塔婆１為書き', '塔婆1為書き', '施餓鬼為書き', '為書き', '施餓鬼為書', '為書', 'segakiTamegaki', 'toba1Tamegaki', ...extraToba1.map(n => `${n}為書き`)]);
+    const toba2Idx = findColIdx(familyHeaders, ['塔婆申込２', '塔婆申込2', '塔婆２', '塔婆2', '塔婆申込２申込', 'toba2Applied', ...extraToba2]);
+    const toba2TamegakiIdx = findColIdx(familyHeaders, ['塔婆申込２為書き', '塔婆申込2為書き', '塔婆２為書き', '塔婆2為書き', 'toba2Tamegaki', ...extraToba2.map(n => `${n}為書き`)]);
+    const toba3Idx = findColIdx(familyHeaders, ['塔婆申込３', '塔婆申込3', '塔婆３', '塔婆3', '塔婆申込３申込', 'toba3Applied', ...extraToba3]);
+    const toba3TamegakiIdx = findColIdx(familyHeaders, ['塔婆申込３為書き', '塔婆申込3為書き', '塔婆３為書き', '塔婆3為書き', 'toba3Tamegaki', ...extraToba3.map(n => `${n}為書き`)]);
     const notesIdx = findColIdx(familyHeaders, ['備考', 'メモ', '特記']);
     const fmCDateIdx = findColIdx(familyHeaders, ['作成日', '作成年月日', '登録日', 'createdDate', 'createdAt']);
     const fmCTimeIdx = findColIdx(familyHeaders, ['作成時間', '作成時刻', 'createdTime']);
@@ -2411,16 +2465,13 @@ export async function importFromSheets(
       const chiefVal = String((chiefIdx !== -1 ? row[chiefIdx] : '') || '').trim();
       const isChief = chiefVal === '施主' || chiefVal === '代表' || chiefVal === '当家' || chiefVal === '1' || chiefVal.toLowerCase() === 'true';
       
-      const toba1Val = String((toba1Idx !== -1 ? row[toba1Idx] : '') || '').trim();
-      const isToba1 = toba1Val === '申込' || toba1Val === '申込済' || toba1Val === '対象' || toba1Val === '有' || toba1Val === '1' || toba1Val.toLowerCase() === 'true' || (toba1Val.includes('申込') && !toba1Val.includes('未')) || (toba1Val.includes('対象') && !toba1Val.includes('未'));
+      const isToba1 = isCheckMark(toba1Idx !== -1 ? row[toba1Idx] : '');
       const toba1Tamegaki = String((toba1TamegakiIdx !== -1 ? row[toba1TamegakiIdx] : '') || '').trim();
 
-      const toba2Val = String((toba2Idx !== -1 ? row[toba2Idx] : '') || '').trim();
-      const isToba2 = toba2Val === '申込' || toba2Val === '申込済' || toba2Val === '対象' || toba2Val === '有' || toba2Val === '1' || toba2Val.toLowerCase() === 'true' || (toba2Val.includes('申込') && !toba2Val.includes('未')) || (toba2Val.includes('対象') && !toba2Val.includes('未'));
+      const isToba2 = isCheckMark(toba2Idx !== -1 ? row[toba2Idx] : '');
       const toba2Tamegaki = String((toba2TamegakiIdx !== -1 ? row[toba2TamegakiIdx] : '') || '').trim();
 
-      const toba3Val = String((toba3Idx !== -1 ? row[toba3Idx] : '') || '').trim();
-      const isToba3 = toba3Val === '申込' || toba3Val === '申込済' || toba3Val === '対象' || toba3Val === '有' || toba3Val === '1' || toba3Val.toLowerCase() === 'true' || (toba3Val.includes('申込') && !toba3Val.includes('未')) || (toba3Val.includes('対象') && !toba3Val.includes('未'));
+      const isToba3 = isCheckMark(toba3Idx !== -1 ? row[toba3Idx] : '');
       const toba3Tamegaki = String((toba3TamegakiIdx !== -1 ? row[toba3TamegakiIdx] : '') || '').trim();
 
       const rawCDate = fmCDateIdx !== -1 ? row[fmCDateIdx] : '';
@@ -2428,6 +2479,16 @@ export async function importFromSheets(
       const createdTime = normalizeAuditTime(fmCTimeIdx !== -1 ? row[fmCTimeIdx] : '') || '00:00:00';
       const updatedDate = normalizeAuditDate(fmUDateIdx !== -1 ? row[fmUDateIdx] : '') || createdDate;
       const updatedTime = normalizeAuditTime(fmUTimeIdx !== -1 ? row[fmUTimeIdx] : '') || (fmUDateIdx !== -1 && row[fmUDateIdx] ? '00:00:00' : createdTime);
+
+      const fmTobaApps: Record<string, TobaApplicationItem> = {
+        '塔婆申込１': { applied: isToba1, tamegaki: toba1Tamegaki || '' },
+        '施餓鬼塔婆': { applied: isToba1, tamegaki: toba1Tamegaki || '' },
+        '塔婆申込２': { applied: isToba2, tamegaki: toba2Tamegaki || '' },
+        '塔婆申込３': { applied: isToba3, tamegaki: toba3Tamegaki || '' },
+      };
+      if (templeInfo?.tobaType1) fmTobaApps[templeInfo.tobaType1.trim()] = { applied: isToba1, tamegaki: toba1Tamegaki || '' };
+      if (templeInfo?.tobaType2) fmTobaApps[templeInfo.tobaType2.trim()] = { applied: isToba2, tamegaki: toba2Tamegaki || '' };
+      if (templeInfo?.tobaType3) fmTobaApps[templeInfo.tobaType3.trim()] = { applied: isToba3, tamegaki: toba3Tamegaki || '' };
 
       const fm: FamilyMember = {
         id: String((fIdIdx !== -1 ? row[fIdIdx] : row[0]) || `FM-${hId}-${i + 1}`),
@@ -2447,6 +2508,7 @@ export async function importFromSheets(
         toba2Tamegaki: toba2Tamegaki || undefined,
         toba3Applied: isToba3,
         toba3Tamegaki: toba3Tamegaki || undefined,
+        tobaApplications: fmTobaApps,
         notes: String(row[resolvedNotesIdx] || '').trim(),
         createdDate,
         createdTime,
@@ -2481,12 +2543,16 @@ export async function importFromSheets(
     const statusIdx = findColIdx(householdHeaders, ['区分２', '区分2', '状態区分', 'ステータス', '状態']);
     const distIdx = findColIdx(householdHeaders, ['総代・世話人', '役職・地区', '総代', '世話人', '地区', '役職']);
     const tombIdx = findColIdx(householdHeaders, ['墓地番号', '墓所番号', '墓地', '納骨場所', '区画']);
-    const toba1Idx = findColIdx(householdHeaders, ['塔婆申込１', '塔婆申込1', '塔婆１', '塔婆1', '塔婆申込１申込', '施餓鬼塔婆申込', '施餓鬼塔婆', '施餓鬼申込', '施餓鬼', '塔婆申込', 'isSegakiToba', 'toba1Applied']);
-    const toba1TamegakiIdx = findColIdx(householdHeaders, ['塔婆申込１為書き', '塔婆申込1為書き', '塔婆１為書き', '塔婆1為書き', '施餓鬼為書き', '為書き', '施餓鬼為書', '為書', 'segakiTamegaki', 'toba1Tamegaki']);
-    const toba2Idx = findColIdx(householdHeaders, ['塔婆申込２', '塔婆申込2', '塔婆２', '塔婆2', '塔婆申込２申込', 'toba2Applied']);
-    const toba2TamegakiIdx = findColIdx(householdHeaders, ['塔婆申込２為書き', '塔婆申込2為書き', '塔婆２為書き', '塔婆2為書き', 'toba2Tamegaki']);
-    const toba3Idx = findColIdx(householdHeaders, ['塔婆申込３', '塔婆申込3', '塔婆３', '塔婆3', '塔婆申込３申込', 'toba3Applied']);
-    const toba3TamegakiIdx = findColIdx(householdHeaders, ['塔婆申込３為書き', '塔婆申込3為書き', '塔婆３為書き', '塔婆3為書き', 'toba3Tamegaki']);
+    const extraHhToba1 = [templeInfo?.tobaType1, ...(temples?.map(t => t.tobaType1) || [])].filter(Boolean) as string[];
+    const extraHhToba2 = [templeInfo?.tobaType2, ...(temples?.map(t => t.tobaType2) || [])].filter(Boolean) as string[];
+    const extraHhToba3 = [templeInfo?.tobaType3, ...(temples?.map(t => t.tobaType3) || [])].filter(Boolean) as string[];
+
+    const toba1Idx = findColIdx(householdHeaders, ['塔婆申込１', '塔婆申込1', '塔婆１', '塔婆1', '塔婆申込１申込', '施餓鬼塔婆申込', '施餓鬼塔婆', '施餓鬼申込', '施餓鬼', '塔婆申込', 'isSegakiToba', 'toba1Applied', ...extraHhToba1]);
+    const toba1TamegakiIdx = findColIdx(householdHeaders, ['塔婆申込１為書き', '塔婆申込1為書き', '塔婆１為書き', '塔婆1為書き', '施餓鬼為書き', '為書き', '施餓鬼為書', '為書', 'segakiTamegaki', 'toba1Tamegaki', ...extraHhToba1.map(n => `${n}為書き`)]);
+    const toba2Idx = findColIdx(householdHeaders, ['塔婆申込２', '塔婆申込2', '塔婆２', '塔婆2', '塔婆申込２申込', 'toba2Applied', ...extraHhToba2]);
+    const toba2TamegakiIdx = findColIdx(householdHeaders, ['塔婆申込２為書き', '塔婆申込2為書き', '塔婆２為書き', '塔婆2為書き', 'toba2Tamegaki', ...extraHhToba2.map(n => `${n}為書き`)]);
+    const toba3Idx = findColIdx(householdHeaders, ['塔婆申込３', '塔婆申込3', '塔婆３', '塔婆3', '塔婆申込３申込', 'toba3Applied', ...extraHhToba3]);
+    const toba3TamegakiIdx = findColIdx(householdHeaders, ['塔婆申込３為書き', '塔婆申込3為書き', '塔婆３為書き', '塔婆3為書き', 'toba3Tamegaki', ...extraHhToba3.map(n => `${n}為書き`)]);
     const fee1AmtIdx = findColIdx(householdHeaders, ['集金１金額', '集金1金額', '集金項目１金額', '集金項目1金額', '集金１', '集金1', '集金項目１', '集金項目1', 'fee1Amount', 'fee1']);
     const fee2AmtIdx = findColIdx(householdHeaders, ['集金２金額', '集金2金額', '集金項目２金額', '集金項目2金額', '集金２', '集金2', '集金項目２', '集金項目2', 'fee2Amount', 'fee2']);
     const fee3AmtIdx = findColIdx(householdHeaders, ['集金３金額', '集金3金額', '集金項目３金額', '集金項目3金額', '集金３', '集金3', '集金項目３', '集金項目3', 'fee3Amount', 'fee3']);
@@ -2537,16 +2603,13 @@ export async function importFromSheets(
       const district = String((distIdx !== -1 ? row[distIdx] : '') || '').trim();
       const tombNumber = String((tombIdx !== -1 ? row[tombIdx] : '') || '').trim();
 
-      const toba1Val = String((toba1Idx !== -1 ? row[toba1Idx] : '') || '').trim();
-      const isToba1 = toba1Val === '申込' || toba1Val === '申込済' || toba1Val === '対象' || toba1Val === '有' || toba1Val === '1' || toba1Val.toLowerCase() === 'true' || (toba1Val.includes('申込') && !toba1Val.includes('未')) || (toba1Val.includes('対象') && !toba1Val.includes('未'));
+      const isToba1 = isCheckMark(toba1Idx !== -1 ? row[toba1Idx] : '');
       const toba1Tamegaki = String((toba1TamegakiIdx !== -1 ? row[toba1TamegakiIdx] : '') || '').trim();
 
-      const toba2Val = String((toba2Idx !== -1 ? row[toba2Idx] : '') || '').trim();
-      const isToba2 = toba2Val === '申込' || toba2Val === '申込済' || toba2Val === '対象' || toba2Val === '有' || toba2Val === '1' || toba2Val.toLowerCase() === 'true' || (toba2Val.includes('申込') && !toba2Val.includes('未')) || (toba2Val.includes('対象') && !toba2Val.includes('未'));
+      const isToba2 = isCheckMark(toba2Idx !== -1 ? row[toba2Idx] : '');
       const toba2Tamegaki = String((toba2TamegakiIdx !== -1 ? row[toba2TamegakiIdx] : '') || '').trim();
 
-      const toba3Val = String((toba3Idx !== -1 ? row[toba3Idx] : '') || '').trim();
-      const isToba3 = toba3Val === '申込' || toba3Val === '申込済' || toba3Val === '対象' || toba3Val === '有' || toba3Val === '1' || toba3Val.toLowerCase() === 'true' || (toba3Val.includes('申込') && !toba3Val.includes('未')) || (toba3Val.includes('対象') && !toba3Val.includes('未'));
+      const isToba3 = isCheckMark(toba3Idx !== -1 ? row[toba3Idx] : '');
       const toba3Tamegaki = String((toba3TamegakiIdx !== -1 ? row[toba3TamegakiIdx] : '') || '').trim();
 
       const fee1Raw = fee1AmtIdx !== -1 ? row[fee1AmtIdx] : undefined;
@@ -2582,6 +2645,55 @@ export async function importFromSheets(
 
       householdTempleMap.set(householdId, templeId);
 
+      const hhTemple = (temples && temples.find((t) => (t.id || 'temple-main') === (templeId || 'temple-main'))) || templeInfo;
+
+      // Synchronize toba flags between household and designated sponsor family member if present
+      const sponsorMember = familyMembers.find((m) => m.isChiefMourner || m.isSponsor);
+      let finalToba1 = isToba1;
+      let finalToba2 = isToba2;
+      let finalToba3 = isToba3;
+      let finalToba1Tamegaki = toba1Tamegaki;
+      let finalToba2Tamegaki = toba2Tamegaki;
+      let finalToba3Tamegaki = toba3Tamegaki;
+
+      if (sponsorMember) {
+        if (!finalToba1 && sponsorMember.toba1Applied) {
+          finalToba1 = true;
+          if (sponsorMember.toba1Tamegaki) finalToba1Tamegaki = sponsorMember.toba1Tamegaki;
+        }
+        if (!finalToba2 && sponsorMember.toba2Applied) {
+          finalToba2 = true;
+          if (sponsorMember.toba2Tamegaki) finalToba2Tamegaki = sponsorMember.toba2Tamegaki;
+        }
+        if (!finalToba3 && sponsorMember.toba3Applied) {
+          finalToba3 = true;
+          if (sponsorMember.toba3Tamegaki) finalToba3Tamegaki = sponsorMember.toba3Tamegaki;
+        }
+        if (finalToba1 && !sponsorMember.toba1Applied) {
+          sponsorMember.toba1Applied = true;
+          sponsorMember.isSegakiToba = true;
+          if (finalToba1Tamegaki && !sponsorMember.toba1Tamegaki) sponsorMember.toba1Tamegaki = finalToba1Tamegaki;
+        }
+        if (finalToba2 && !sponsorMember.toba2Applied) {
+          sponsorMember.toba2Applied = true;
+          if (finalToba2Tamegaki && !sponsorMember.toba2Tamegaki) sponsorMember.toba2Tamegaki = finalToba2Tamegaki;
+        }
+        if (finalToba3 && !sponsorMember.toba3Applied) {
+          sponsorMember.toba3Applied = true;
+          if (finalToba3Tamegaki && !sponsorMember.toba3Tamegaki) sponsorMember.toba3Tamegaki = finalToba3Tamegaki;
+        }
+      }
+
+      const tobaApps: Record<string, TobaApplicationItem> = {
+        '塔婆申込１': { applied: finalToba1, tamegaki: finalToba1Tamegaki || '' },
+        '施餓鬼塔婆': { applied: finalToba1, tamegaki: finalToba1Tamegaki || '' },
+        '塔婆申込２': { applied: finalToba2, tamegaki: finalToba2Tamegaki || '' },
+        '塔婆申込３': { applied: finalToba3, tamegaki: finalToba3Tamegaki || '' },
+      };
+      if (hhTemple?.tobaType1) tobaApps[hhTemple.tobaType1.trim()] = { applied: finalToba1, tamegaki: finalToba1Tamegaki || '' };
+      if (hhTemple?.tobaType2) tobaApps[hhTemple.tobaType2.trim()] = { applied: finalToba2, tamegaki: finalToba2Tamegaki || '' };
+      if (hhTemple?.tobaType3) tobaApps[hhTemple.tobaType3.trim()] = { applied: finalToba3, tamegaki: finalToba3Tamegaki || '' };
+
       households.push({
         id: householdId,
         templeId,
@@ -2596,14 +2708,15 @@ export async function importFromSheets(
         status,
         district,
         tombNumber,
-        isSegakiToba: isToba1,
-        segakiTamegaki: toba1Tamegaki || undefined,
-        toba1Applied: isToba1,
-        toba1Tamegaki: toba1Tamegaki || undefined,
-        toba2Applied: isToba2,
-        toba2Tamegaki: toba2Tamegaki || undefined,
-        toba3Applied: isToba3,
-        toba3Tamegaki: toba3Tamegaki || undefined,
+        isSegakiToba: finalToba1,
+        segakiTamegaki: finalToba1Tamegaki || undefined,
+        toba1Applied: finalToba1,
+        toba1Tamegaki: finalToba1Tamegaki || undefined,
+        toba2Applied: finalToba2,
+        toba2Tamegaki: finalToba2Tamegaki || undefined,
+        toba3Applied: finalToba3,
+        toba3Tamegaki: finalToba3Tamegaki || undefined,
+        tobaApplications: tobaApps,
         fee1Amount: fee1Amount !== undefined ? fee1Amount : undefined,
         fee2Amount: fee2Amount !== undefined ? fee2Amount : undefined,
         fee3Amount: fee3Amount !== undefined ? fee3Amount : undefined,

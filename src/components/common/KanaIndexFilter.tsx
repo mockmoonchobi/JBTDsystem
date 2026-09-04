@@ -46,32 +46,32 @@ export const KanaIndexFilter: React.FC<KanaIndexFilterProps> = ({
   return (
     <div className={`space-y-1.5 font-sans ${className}`}>
       {/* Top row: Label and Reset */}
-      <div className="flex items-center justify-between text-[11px] text-gray-500 font-bold px-0.5">
-        <span className="flex items-center gap-1 text-[#8C2D19]">
-          <ArrowUpDown className="w-3 h-3" />
+      <div className="flex items-center justify-between text-xs text-gray-500 font-bold px-0.5">
+        <span className="flex items-center gap-1.5 text-[#8C2D19]">
+          <ArrowUpDown className="w-3.5 h-3.5" />
           <span>五十音インデックス:</span>
         </span>
         {isRowSelected && (
           <button
             type="button"
             onClick={onReset}
-            className="flex items-center gap-0.5 text-[#8C2D19] hover:underline font-bold text-xs cursor-pointer"
+            className="flex items-center gap-1 text-[#8C2D19] hover:underline font-bold text-xs sm:text-sm cursor-pointer"
           >
-            <X className="w-3 h-3" />
+            <X className="w-3.5 h-3.5" />
             <span>解除</span>
           </button>
         )}
       </div>
 
       {/* Row Buttons (全 あ か さ た な は ま や ら わ) */}
-      <div className="grid grid-cols-11 gap-1 text-center font-bold text-xs">
+      <div className="grid grid-cols-11 gap-1 text-center font-bold text-xs sm:text-sm">
         <button
           type="button"
           onClick={() => {
             onSelectRow('ALL');
             onSelectCol?.('ALL');
           }}
-          className={`py-1 rounded-xs transition-all cursor-pointer text-xs font-bold border ${
+          className={`py-1.5 rounded-xs transition-all cursor-pointer text-xs sm:text-sm font-bold border ${
             !isRowSelected
               ? getButtonActiveClasses()
               : 'bg-[#FAF8F5] hover:bg-[#EBE7DF] text-gray-700 border-[#D1CEC7]'
@@ -95,7 +95,7 @@ export const KanaIndexFilter: React.FC<KanaIndexFilterProps> = ({
                   onSelectCol?.('ALL');
                 }
               }}
-              className={`py-1 rounded-xs transition-all cursor-pointer text-xs font-bold border ${
+              className={`py-1.5 rounded-xs transition-all cursor-pointer text-xs sm:text-sm font-bold border ${
                 isSelected
                   ? getButtonActiveClasses()
                   : 'bg-[#FAF8F5] hover:bg-[#EBE7DF] text-gray-700 border-[#D1CEC7]'
@@ -109,14 +109,14 @@ export const KanaIndexFilter: React.FC<KanaIndexFilterProps> = ({
 
       {/* Sub-Column 2nd Level Drill-down (あ い う え お) when row is selected */}
       {isRowSelected && subCols.length > 0 && onSelectCol && (
-        <div className="bg-amber-50/80 p-1.5 rounded-xs border border-amber-300/80 flex items-center gap-1 text-xs animate-fadeIn">
-          <span className="text-[10px] text-[#8C2D19] font-bold shrink-0 px-1">
+        <div className="bg-amber-50/80 p-2 rounded-xs border border-amber-300/80 flex items-center gap-1.5 text-xs animate-fadeIn">
+          <span className="text-xs text-[#8C2D19] font-bold shrink-0 px-1">
             【{selectedRow}行】
           </span>
           <button
             type="button"
             onClick={() => onSelectCol('ALL')}
-            className={`px-2 py-0.5 rounded-xs text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-2.5 py-1 rounded-xs text-xs sm:text-sm font-bold border transition-colors cursor-pointer ${
               selectedCol === 'ALL' || selectedCol === 'all' || !selectedCol
                 ? getSubActiveClasses()
                 : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
@@ -131,7 +131,7 @@ export const KanaIndexFilter: React.FC<KanaIndexFilterProps> = ({
                 key={col}
                 type="button"
                 onClick={() => onSelectCol(isColSelected ? 'ALL' : col)}
-                className={`flex-1 py-0.5 rounded-xs text-xs font-bold border transition-colors cursor-pointer text-center ${
+                className={`flex-1 py-1 rounded-xs text-xs sm:text-sm font-bold border transition-colors cursor-pointer text-center ${
                   isColSelected
                     ? getSubActiveClasses()
                     : 'bg-white text-gray-800 border-gray-300 hover:bg-amber-100/50'

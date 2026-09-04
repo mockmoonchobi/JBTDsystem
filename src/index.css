@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-serif: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --font-serif: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", "MS Mincho", "MingLiU-ExtB", "SimSun-ExtB", "IPAmjMincho", serif;
   --font-sans: "Noto Sans JP", "BIZ UDPGothic", "Yu Gothic", "YuGothic", "Hiragino Sans", "Meiryo", sans-serif;
 }
 
 .font-serif {
-  font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  font-family: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", "MS Mincho", "MingLiU-ExtB", "SimSun-ExtB", "IPAmjMincho", serif;
 }
 
 /* Hide print-only container on normal screen view, but keep structure for print engine */

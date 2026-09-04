@@ -101,19 +101,47 @@ export function matchTobaSlot(
   tobaType: string,
   templeInfo?: Partial<TempleProfile> | null
 ): 1 | 2 | 3 | null {
+  const clean = (tobaType || '').trim();
   const name1 = (templeInfo?.tobaType1 !== undefined ? templeInfo.tobaType1 : '施餓鬼塔婆').trim();
   const name2 = (templeInfo?.tobaType2 || '').trim();
   const name3 = (templeInfo?.tobaType3 || '').trim();
 
-  if (tobaType === name1 || tobaType === '塔婆申込１' || tobaType === '施餓鬼塔婆' || tobaType === '施餓鬼' || tobaType === '大施餓鬼会') {
+  // Slot 1: Default toba / Segaki
+  if (
+    clean === '塔婆申込１' ||
+    clean === '塔婆申込1' ||
+    clean === '塔婆１' ||
+    clean === '塔婆1' ||
+    clean === '施餓鬼塔婆' ||
+    clean === '施餓鬼' ||
+    clean === '大施餓鬼会' ||
+    (name1 && clean === name1)
+  ) {
     return 1;
   }
-  if (name2 && (tobaType === name2 || tobaType === '塔婆申込２')) {
+
+  // Slot 2: Toba 2
+  if (
+    clean === '塔婆申込２' ||
+    clean === '塔婆申込2' ||
+    clean === '塔婆２' ||
+    clean === '塔婆2' ||
+    (name2 && clean === name2)
+  ) {
     return 2;
   }
-  if (name3 && (tobaType === name3 || tobaType === '塔婆申込３')) {
+
+  // Slot 3: Toba 3
+  if (
+    clean === '塔婆申込３' ||
+    clean === '塔婆申込3' ||
+    clean === '塔婆３' ||
+    clean === '塔婆3' ||
+    (name3 && clean === name3)
+  ) {
     return 3;
   }
+
   return null;
 }
 
@@ -241,8 +269,9 @@ export function setHouseholdTobaApplication(
   tamegaki?: string,
   templeInfo?: Partial<TempleProfile> | null
 ): Household {
+  const cleanType = (tobaType || '').trim();
   const currentMap = { ...(household.tobaApplications || {}) };
-  const currentApp = getHouseholdTobaApplication(household, tobaType, templeInfo);
+  const currentApp = getHouseholdTobaApplication(household, cleanType, templeInfo);
 
   let isApplied: boolean;
   let nextTamegaki: string;
@@ -255,7 +284,7 @@ export function setHouseholdTobaApplication(
     nextTamegaki = tamegaki !== undefined ? tamegaki : currentApp.tamegaki || '';
   }
 
-  currentMap[tobaType] = {
+  currentMap[cleanType] = {
     applied: isApplied,
     tamegaki: nextTamegaki,
   };
@@ -265,19 +294,30 @@ export function setHouseholdTobaApplication(
     tobaApplications: currentMap,
   };
 
-  // Sync to explicit slot fields
-  const slot = matchTobaSlot(tobaType, templeInfo);
-  if (slot === 1 || tobaType === '施餓鬼塔婆') {
+  // Sync to explicit slot fields and slot aliases
+  const slot = matchTobaSlot(cleanType, templeInfo);
+  const name1 = (templeInfo?.tobaType1 !== undefined ? templeInfo.tobaType1 : '施餓鬼塔婆').trim();
+  const name2 = (templeInfo?.tobaType2 || '').trim();
+  const name3 = (templeInfo?.tobaType3 || '').trim();
+
+  if (slot === 1 || cleanType === '施餓鬼塔婆') {
     updated.toba1Applied = isApplied;
     updated.toba1Tamegaki = nextTamegaki;
     updated.isSegakiToba = isApplied;
     updated.segakiTamegaki = nextTamegaki;
+    currentMap['塔婆申込１'] = { applied: isApplied, tamegaki: nextTamegaki };
+    currentMap['施餓鬼塔婆'] = { applied: isApplied, tamegaki: nextTamegaki };
+    if (name1) currentMap[name1] = { applied: isApplied, tamegaki: nextTamegaki };
   } else if (slot === 2) {
     updated.toba2Applied = isApplied;
     updated.toba2Tamegaki = nextTamegaki;
+    currentMap['塔婆申込２'] = { applied: isApplied, tamegaki: nextTamegaki };
+    if (name2) currentMap[name2] = { applied: isApplied, tamegaki: nextTamegaki };
   } else if (slot === 3) {
     updated.toba3Applied = isApplied;
     updated.toba3Tamegaki = nextTamegaki;
+    currentMap['塔婆申込３'] = { applied: isApplied, tamegaki: nextTamegaki };
+    if (name3) currentMap[name3] = { applied: isApplied, tamegaki: nextTamegaki };
   }
 
   return updated;
@@ -293,8 +333,9 @@ export function setFamilyMemberTobaApplication(
   tamegaki?: string,
   templeInfo?: Partial<TempleProfile> | null
 ): FamilyMember {
+  const cleanType = (tobaType || '').trim();
   const currentMap = { ...(member.tobaApplications || {}) };
-  const currentApp = getFamilyMemberTobaApplication(member, tobaType, templeInfo);
+  const currentApp = getFamilyMemberTobaApplication(member, cleanType, templeInfo);
 
   let isApplied: boolean;
   let nextTamegaki: string;
@@ -307,7 +348,7 @@ export function setFamilyMemberTobaApplication(
     nextTamegaki = tamegaki !== undefined ? tamegaki : currentApp.tamegaki || '';
   }
 
-  currentMap[tobaType] = {
+  currentMap[cleanType] = {
     applied: isApplied,
     tamegaki: nextTamegaki,
   };
@@ -317,19 +358,30 @@ export function setFamilyMemberTobaApplication(
     tobaApplications: currentMap,
   };
 
-  // Sync to explicit slot fields
-  const slot = matchTobaSlot(tobaType, templeInfo);
-  if (slot === 1 || tobaType === '施餓鬼塔婆') {
+  // Sync to explicit slot fields and slot aliases
+  const slot = matchTobaSlot(cleanType, templeInfo);
+  const name1 = (templeInfo?.tobaType1 !== undefined ? templeInfo.tobaType1 : '施餓鬼塔婆').trim();
+  const name2 = (templeInfo?.tobaType2 || '').trim();
+  const name3 = (templeInfo?.tobaType3 || '').trim();
+
+  if (slot === 1 || cleanType === '施餓鬼塔婆') {
     updated.toba1Applied = isApplied;
     updated.toba1Tamegaki = nextTamegaki;
     updated.isSegakiToba = isApplied;
     updated.segakiTamegaki = nextTamegaki;
+    currentMap['塔婆申込１'] = { applied: isApplied, tamegaki: nextTamegaki };
+    currentMap['施餓鬼塔婆'] = { applied: isApplied, tamegaki: nextTamegaki };
+    if (name1) currentMap[name1] = { applied: isApplied, tamegaki: nextTamegaki };
   } else if (slot === 2) {
     updated.toba2Applied = isApplied;
     updated.toba2Tamegaki = nextTamegaki;
+    currentMap['塔婆申込２'] = { applied: isApplied, tamegaki: nextTamegaki };
+    if (name2) currentMap[name2] = { applied: isApplied, tamegaki: nextTamegaki };
   } else if (slot === 3) {
     updated.toba3Applied = isApplied;
     updated.toba3Tamegaki = nextTamegaki;
+    currentMap['塔婆申込３'] = { applied: isApplied, tamegaki: nextTamegaki };
+    if (name3) currentMap[name3] = { applied: isApplied, tamegaki: nextTamegaki };
   }
 
   return updated;
@@ -390,7 +442,7 @@ export function isHouseholdSponsorAppliedForToba(
 /**
  * Sets the Toba application for the household's sponsor.
  * If a family member is designated as sponsor, updates that member's application.
- * Otherwise, updates the household head's application.
+ * Also keeps the household's top-level slot fields synchronized for list display and spreadsheet exports.
  */
 export function setHouseholdSponsorTobaApplication(
   household: Household,
@@ -407,8 +459,10 @@ export function setHouseholdSponsorTobaApplication(
       }
       return m;
     });
+    // Keep household-level slot fields in sync with sponsor application
+    const hhWithFields = setHouseholdTobaApplication(household, tobaType, appliedOrItem, tamegaki, templeInfo);
     return {
-      ...household,
+      ...hhWithFields,
       familyMembers: updatedMembers,
     };
   }

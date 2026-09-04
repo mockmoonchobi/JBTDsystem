@@ -58,7 +58,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#1F1F1F] border-t border-[#3A3A3A] shadow-2xl safe-area-bottom">
-      <div className="grid grid-cols-4 h-14">
+      <div className="grid grid-cols-4 h-16">
         {tabs.map((t) => {
           const isActive = t.isActive !== undefined ? t.isActive : activeTab === t.id;
           const Icon = t.icon;
@@ -79,10 +79,10 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
               )}
 
               <div className="relative">
-                <Icon className={`w-5 h-5 ${isActive ? 'text-[#D4AF37]' : 'text-[#9E988E]'}`} />
+                <Icon className={`w-6 h-6 ${isActive ? 'text-[#D4AF37]' : 'text-[#9E988E]'}`} />
                 {t.badge && (
                   <span
-                    className={`absolute -top-1.5 -right-3.5 px-1 py-0.2 text-[9px] font-black rounded-full leading-none shadow-xs ${
+                    className={`absolute -top-1.5 -right-3.5 px-1 py-0.2 text-[10px] font-black rounded-full leading-none shadow-xs ${
                       t.highlightBadge
                         ? 'bg-[#8C2D19] text-white ring-1 ring-white/30'
                         : isActive
@@ -94,7 +94,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
                   </span>
                 )}
               </div>
-              <span className={`text-[11px] mt-0.5 font-bold ${isActive ? 'text-[#F5F2EB]' : 'text-[#9E988E]'}`}>
+              <span className={`text-xs mt-1 font-bold ${isActive ? 'text-[#F5F2EB]' : 'text-[#9E988E]'}`}>
                 {t.label}
               </span>
             </button>
