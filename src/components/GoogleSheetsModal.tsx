@@ -32,8 +32,7 @@ import {
   Lock,
   Edit3,
   Eye,
-  UploadCloud,
-  History
+  UploadCloud
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { googleSignIn, logout, initAuth, getAccessToken, getCurrentUser } from '../lib/googleAuth';
@@ -68,7 +67,6 @@ interface GoogleSheetsModalProps {
   temples?: TempleProfile[];
   activeTempleId?: string;
   isStaffMode?: boolean;
-  onOpenOperationHistory?: () => void;
 }
 
 export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
@@ -90,7 +88,6 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   temples = [],
   activeTempleId = 'temple-main',
   isStaffMode = false,
-  onOpenOperationHistory,
 }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>('excel');
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
@@ -174,43 +171,78 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isConnected = Boolean(user && spreadsheetInfo?.id && syncStatus !== 'disconnected');
+
   // Handle Google Login & Setup Auto-Sync
   const handleLogin = async (isCleanImport: boolean = false) => {
     const clean = typeof isCleanImport === 'boolean' ? isCleanImport : false;
     setLoading(true);
     setStatusMessage({ type: 'loading', text: 'Googleアカウント認証中...' });
     try {
-      const res = await googleSignIn();
-      if (res) {
-        setUser(res.user);
-        setStatusMessage({ type: 'loading', text: 'GoogleDrive上のデータを確認・連携中...' });
+      let token = await getAccessToken();
+      let currentUser = getCurrentUser();
 
-        // Auto-detect or create Google Sheet
-        const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
-          preferredSheetId: spreadsheetInfo?.id,
-          onProgress: (text) => setStatusMessage({ type: 'loading', text }),
+      if (!token || !currentUser) {
+        const res = await googleSignIn();
+        if (!res) throw new Error('Googleログインがキャンセルされました。');
+        token = res.accessToken;
+        currentUser = res.user;
+      }
+      setUser(currentUser);
+      setStatusMessage({ type: 'loading', text: 'GoogleDrive上のデータを確認・連携中...' });
+
+      // Auto-detect or create Google Sheet
+      const sheet = await findOrCreateSpreadsheet(token, false, {
+        preferredSheetId: spreadsheetInfo?.id,
+        onProgress: (text) => setStatusMessage({ type: 'loading', text }),
+      });
+      setSpreadsheetInfo(sheet);
+      saveJsonState('temple_google_sheet_info', sheet);
+      
+      // Load permissions
+      loadPermissions(sheet.id);
+
+      if (onSyncWithGoogleDrive) {
+        const syncRes = await onSyncWithGoogleDrive(token, sheet.id, clean);
+        setStatusMessage({ 
+          type: 'success', 
+          text: `ログイン成功: ${currentUser.email} (GoogleDriveデータ連携完了: ${syncRes?.count ?? 0}件)` 
         });
-        setSpreadsheetInfo(sheet);
-        saveJsonState('temple_google_sheet_info', sheet);
-        
-        // Load permissions
-        loadPermissions(sheet.id);
-
-        if (onSyncWithGoogleDrive) {
-          const syncRes = await onSyncWithGoogleDrive(res.accessToken, sheet.id, clean);
-          setStatusMessage({ 
-            type: 'success', 
-            text: `ログイン成功: ${res.user.email} (GoogleDriveデータ連携完了: ${syncRes?.count ?? 0}件)` 
-          });
-        } else {
-          // Trigger initial sync after login
-          setTimeout(() => {
-            onTriggerManualSync();
-          }, 500);
-        }
+      } else {
+        // Trigger initial sync after login
+        setTimeout(() => {
+          onTriggerManualSync();
+        }, 500);
       }
     } catch (err: any) {
       console.error(err);
+      if (err?.isAuthError || err?.message?.includes('401') || err?.message?.includes('認証')) {
+        try {
+          setStatusMessage({ type: 'loading', text: 'Googleアカウントに再ログイン中...' });
+          const res = await googleSignIn();
+          if (res) {
+            setUser(res.user);
+            const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
+              preferredSheetId: spreadsheetInfo?.id,
+              onProgress: (text) => setStatusMessage({ type: 'loading', text }),
+            });
+            setSpreadsheetInfo(sheet);
+            saveJsonState('temple_google_sheet_info', sheet);
+            loadPermissions(sheet.id);
+            if (onSyncWithGoogleDrive) {
+              const syncRes = await onSyncWithGoogleDrive(res.accessToken, sheet.id, clean);
+              setStatusMessage({ 
+                type: 'success', 
+                text: `ログイン成功: ${res.user.email} (GoogleDriveデータ連携完了: ${syncRes?.count ?? 0}件)` 
+              });
+            }
+            return;
+          }
+        } catch (retryErr: any) {
+          setStatusMessage({ type: 'error', text: `認証エラー: ${retryErr.message || 'ログインに失敗しました。'}` });
+          return;
+        }
+      }
       setStatusMessage({ type: 'error', text: `認証エラー: ${err.message || 'ログインに失敗しました。'}` });
     } finally {
       setLoading(false);
@@ -721,23 +753,36 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               </div>
 
               {/* Account & Sheet Information */}
-              <div className="bg-[#F9F7F2] border border-[#D1CEC7] p-3.5 space-y-2.5 text-xs">
-                <div className="flex items-center justify-between border-b border-[#EBE7DF] pb-1.5">
-                  <span className="font-bold text-[#666666] uppercase tracking-wider">連携Googleアカウント</span>
+              <div className="bg-[#F9F7F2] border border-[#D1CEC7] p-3.5 space-y-3 text-xs">
+                <div className="flex items-center justify-between border-b border-[#EBE7DF] pb-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-[#666666] uppercase tracking-wider">連携Googleアカウント</span>
+                    {user ? (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 border border-emerald-300">
+                        ログイン中
+                      </span>
+                    ) : (
+                      <span className="text-[10px] bg-gray-200 text-gray-700 font-bold px-1.5 py-0.5 border border-gray-300">
+                        未ログイン
+                      </span>
+                    )}
+                  </div>
                   {user && (
                     <button
+                      type="button"
                       onClick={handleLogout}
                       className="px-2 py-0.5 bg-white hover:bg-gray-100 border border-[#D1CEC7] text-gray-700 font-bold text-[11px] flex items-center space-x-1 transition-colors cursor-pointer"
+                      title={isConnected ? 'Googleシートとの自動同期を停止して連携を解除します' : 'Googleアカウントからログアウトします'}
                     >
                       <LogOut className="w-3 h-3" />
-                      <span>連携解除</span>
+                      <span>{isConnected ? '連携解除' : 'ログアウト'}</span>
                     </button>
                   )}
                 </div>
 
                 {user ? (
                   <div className="flex items-center space-x-3 pt-0.5">
-                    <div className="w-7 h-7 rounded-full bg-emerald-800 text-emerald-100 flex items-center justify-center font-bold text-xs">
+                    <div className="w-7 h-7 rounded-full bg-emerald-800 text-emerald-100 flex items-center justify-center font-bold text-xs shrink-0">
                       {user.displayName ? user.displayName.charAt(0) : 'G'}
                     </div>
                     <div className="overflow-hidden">
@@ -746,14 +791,30 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3 pt-1">
-                    <p className="text-[11px] text-[#555555] leading-relaxed">
-                      Googleアカウントと連携すると、スプレッドシートとのリアルタイム自動同期・バックアップが行えます。連携方法を選択してください。
-                    </p>
+                  <div className="text-[11px] text-[#666666] leading-relaxed">
+                    Googleアカウントと連携すると、スプレッドシートとのリアルタイム自動同期・バックアップが行えます。連携方法を選択してください。
+                  </div>
+                )}
 
-                    <div className="space-y-3">
+                {/* ---------------------------------------------------- */}
+                {/* 1. 未接続の場合：3つの連携ボタンを必ず表示する */}
+                {/* ---------------------------------------------------- */}
+                {!isConnected ? (
+                  <div className="space-y-3 pt-2 border-t border-[#EBE7DF]">
+                    <div className="bg-amber-50 border border-amber-300 p-2 text-[11px] text-amber-900 rounded-xs flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                        <span>
+                          {user 
+                            ? `アカウント（${user.email}）で認証中ですが、スプレッドシートは未接続です。以下の連携方法を選択してください。` 
+                            : 'スプレッドシート未連携です。以下の連携方法を選択して同期を開始してください。'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
                       {/* 1. Googleシートと連携 */}
-                      <div className="bg-[#FAF9F5] border border-[#D4AF37]/60 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
+                      <div className="bg-[#FAF9F5] border border-[#D4AF37]/60 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
                         <div className="space-y-1 flex-1">
                           <div className="flex items-center space-x-2 text-[#1A1A1A] font-bold text-xs">
                             <FileSpreadsheet className="w-4 h-4 text-[#D4AF37] shrink-0" />
@@ -777,7 +838,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       </div>
 
                       {/* 2. 端末データを初期化して読込 */}
-                      <div className="bg-rose-50/40 border border-rose-200 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
+                      <div className="bg-rose-50/40 border border-rose-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
                         <div className="space-y-1 flex-1">
                           <div className="flex items-center space-x-2 text-rose-950 font-bold text-xs">
                             <Database className="w-4 h-4 text-rose-600 shrink-0" />
@@ -803,7 +864,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       </div>
 
                       {/* 3. Googleシートを初期化して書込 */}
-                      <div className="bg-sky-50/40 border border-sky-200 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
+                      <div className="bg-sky-50/40 border border-sky-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
                         <div className="space-y-1 flex-1">
                           <div className="flex items-center space-x-2 text-sky-950 font-bold text-xs">
                             <UploadCloud className="w-4 h-4 text-sky-600 shrink-0" />
@@ -829,65 +890,84 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       </div>
                     </div>
                   </div>
-                )}
-
-                {/* Connected Sheet Details */}
-                {user && spreadsheetInfo && (
-                  <div className="pt-2 border-t border-[#EBE7DF] space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-[#666666]">同期先スプレッドシート</span>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          type="button"
-                          onClick={handleCopyLink}
-                          className="text-xs font-bold text-gray-700 hover:text-black flex items-center space-x-1 cursor-pointer bg-white px-2 py-0.5 border border-[#D1CEC7]"
-                          title="スプレッドシートのリンクをコピー"
-                        >
-                          {copiedLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedLink ? 'コピー完了' : 'URLコピー'}</span>
-                        </button>
-                        <a
-                          href={spreadsheetInfo.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-bold text-indigo-700 hover:text-indigo-900 flex items-center space-x-1 underline text-[11px]"
-                        >
-                          <span>Google Sheetsで開く</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                    </div>
-                    <div className="bg-white p-2 border border-[#D1CEC7] flex items-center space-x-2">
-                      <Table className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                      <div className="overflow-hidden leading-tight flex-1">
-                        <div className="font-bold text-[#1A1A1A] truncate text-xs">寺院管理・檀家過去帳データ</div>
-                        <div className="text-[9px] text-[#888888] font-mono truncate">ID: {spreadsheetInfo.id}</div>
-                      </div>
-                    </div>
-
-                    {onOpenOperationHistory && (
-                      <div className="bg-blue-50/60 border border-blue-200 p-2.5 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <History className="w-4 h-4 text-blue-600 shrink-0" />
-                          <div>
-                            <div className="text-xs font-bold text-blue-900">操作・削除履歴（同期ログ）</div>
-                            <div className="text-[10px] text-blue-700">スプレッドシート上の「操作・削除履歴」シートと連動</div>
-                          </div>
+                ) : (
+                  /* ---------------------------------------------------- */
+                  /* 2. 接続中の場合：同期先シート詳細 & モード変更の導線 */
+                  /* ---------------------------------------------------- */
+                  spreadsheetInfo && (
+                    <div className="pt-2 border-t border-[#EBE7DF] space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-[#666666]">同期先スプレッドシート</span>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={handleCopyLink}
+                            className="text-xs font-bold text-gray-700 hover:text-black flex items-center space-x-1 cursor-pointer bg-white px-2 py-0.5 border border-[#D1CEC7]"
+                            title="スプレッドシートのリンクをコピー"
+                          >
+                            {copiedLink ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedLink ? 'コピー完了' : 'URLコピー'}</span>
+                          </button>
+                          <a
+                            href={spreadsheetInfo.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-bold text-indigo-700 hover:text-indigo-900 flex items-center space-x-1 underline text-[11px]"
+                          >
+                            <span>Google Sheetsで開く</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onClose();
-                            onOpenOperationHistory();
-                          }}
-                          className="px-2.5 py-1 bg-white hover:bg-blue-100 text-blue-800 border border-blue-300 font-bold text-xs flex items-center gap-1 rounded shadow-2xs transition-colors cursor-pointer"
-                        >
-                          <History className="w-3 h-3 text-blue-600" />
-                          <span>ログ一覧を見る</span>
-                        </button>
                       </div>
-                    )}
-                  </div>
+                      <div className="bg-white p-2 border border-[#D1CEC7] flex items-center space-x-2">
+                        <Table className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        <div className="overflow-hidden leading-tight flex-1">
+                          <div className="font-bold text-[#1A1A1A] truncate text-xs">寺院管理・檀家過去帳データ</div>
+                          <div className="text-[9px] text-[#888888] font-mono truncate">ID: {spreadsheetInfo.id}</div>
+                        </div>
+                      </div>
+
+                      {/* 接続中だが初期化読込・初期化書込をしたい時のための補助アコーディオン */}
+                      {!isStaffMode && (
+                        <div className="pt-1">
+                          <details className="text-[11px] text-[#666666] border border-[#E5E0D8] bg-[#FAF8F5] p-2 rounded-xs group">
+                            <summary className="font-bold text-gray-700 cursor-pointer select-none flex items-center justify-between">
+                              <span>データの初期化再同期（端末初期化 / シート初期化）</span>
+                              <span className="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                            </summary>
+                            <div className="pt-2.5 space-y-2 border-t border-[#E5E0D8] mt-2">
+                              <div className="flex items-center justify-between gap-2 bg-rose-50/60 border border-rose-200 p-2 rounded-xs">
+                                <div>
+                                  <div className="font-bold text-rose-900">端末データを初期化して読込</div>
+                                  <div className="text-[10px] text-rose-800">端末を初期化し、シートのデータを取り込み直します</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowResetAndLoginModal(true)}
+                                  className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 font-bold text-[10px] shrink-0 cursor-pointer"
+                                >
+                                  実行
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-between gap-2 bg-sky-50/60 border border-sky-200 p-2 rounded-xs">
+                                <div>
+                                  <div className="font-bold text-sky-900">Googleシートを初期化して書込</div>
+                                  <div className="text-[10px] text-sky-800">シート側を消去し、端末データで新規作成・上書きします</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCleanWriteModal(true)}
+                                  className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-bold text-[10px] shrink-0 cursor-pointer"
+                                >
+                                  実行
+                                </button>
+                              </div>
+                            </div>
+                          </details>
+                        </div>
+                      )}
+                    </div>
+                  )
                 )}
               </div>
 

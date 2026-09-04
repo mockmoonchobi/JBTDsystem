@@ -190,9 +190,12 @@ export default function App() {
   // Helper to obtain operator and device info for audit logging
   const getCurrentOperatorInfo = () => {
     const user = getCurrentUser();
-    const emailOrName = user?.displayName || user?.email || (isStaffMode ? 'スタッフ' : '寺院関係者');
+    // Googleシート保有アカウント（管理者側）であればログイン有無に関わらず「管理者」と統一
+    const operator = isStaffMode
+      ? (user?.displayName || user?.email || 'スタッフ')
+      : '管理者';
     const device = isStaffMode ? 'スマホ(スタッフ)' : (viewMode === 'mobile' ? 'スマホ' : 'PC');
-    return { operator: emailOrName, deviceInfo: device };
+    return { operator, deviceInfo: device };
   };
 
   // Navigate to Calendar with optional target date
@@ -260,6 +263,30 @@ export default function App() {
       window.removeEventListener('temple_deleted_records_changed', handleCustomChange);
     };
   }, [refreshDeletedRecords]);
+
+  // 過去ログの「寺院関係者」やGoogleアカウント名の表記ブレを「管理者」に自動マイグレーション
+  useEffect(() => {
+    const rawLogs = loadDeletedRecordsLog();
+    const currentUser = getCurrentUser();
+    let hasChanges = false;
+    const migrated = rawLogs.map((entry) => {
+      const op = entry.operator ? entry.operator.trim() : '';
+      let nextOp = op;
+      if (!op || op === '寺院関係者' || (currentUser && (op === currentUser.email || op === currentUser.displayName))) {
+        nextOp = '管理者';
+      }
+      if (nextOp !== entry.operator) {
+        hasChanges = true;
+        return { ...entry, operator: nextOp };
+      }
+      return entry;
+    });
+
+    if (hasChanges) {
+      saveDeletedRecordsLog(migrated);
+      setDeletedRecords(migrated);
+    }
+  }, []);
 
   const handleSaveBatchAccountingData = (data: BatchAccountingData | null) => {
     setBatchAccountingData(data);
@@ -692,6 +719,11 @@ export default function App() {
     saveDeletedRecordsLog([]);
     safeStorage.removeItem('temple_safety_snapshot');
     safeStorage.removeItem('temple_backup_before_sync');
+    setSyncStatus('disconnected');
+    setLastSyncTime(null);
+    setSyncErrorMessage(null);
+    safeStorage.removeItem('temple_google_sheet_info');
+    safeStorage.removeItem('temple_google_sheet_last_sync');
 
     setIsStartupLauncherOpen(false);
     isStartupLauncherOpenRef.current = false;
@@ -719,6 +751,12 @@ export default function App() {
     setFamilyMembers(INITIAL_FAMILY_MEMBERS);
     setPriests(INITIAL_PRIESTS);
     setActiveTempleId('temple-main');
+
+    setSyncStatus('disconnected');
+    setLastSyncTime(null);
+    setSyncErrorMessage(null);
+    safeStorage.removeItem('temple_google_sheet_info');
+    safeStorage.removeItem('temple_google_sheet_last_sync');
 
     saveJsonState('temple_profiles', INITIAL_TEMPLES);
     saveJsonState('temple_info', INITIAL_TEMPLE_INFO);
@@ -3206,7 +3244,6 @@ export default function App() {
           onExportExcel={handleExportExcel}
           onImportExcel={handleImportExcel}
           onOpenImportModal={() => handleOpenImportModal('household')}
-          onOpenOperationHistory={() => setIsOperationHistoryModalOpen(true)}
           onRestoreBackup={handleRestoreFromBackup}
           temples={temples}
           activeTempleId={activeTempleId}
@@ -3508,7 +3545,6 @@ export default function App() {
         onExportExcel={handleExportExcel}
         onImportExcel={handleImportExcel}
         onOpenImportModal={() => handleOpenImportModal('household')}
-        onOpenOperationHistory={() => setIsOperationHistoryModalOpen(true)}
         onRestoreBackup={handleRestoreFromBackup}
         onResetDatabase={handleResetDatabase}
         temples={temples}

@@ -32,7 +32,7 @@ import {
 } from '../utils/masterOptionsUtils';
 import { getAuditRowValues, normalizeAuditDate, normalizeAuditTime, getCurrentAuditFields } from '../utils/auditUtils';
 import { sanitizeAppDataset } from '../utils/sanitizeDataUtils';
-import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH } from '../utils/deletedRecordsLog';
+import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH, normalizeLogOperator } from '../utils/deletedRecordsLog';
 import { 
   getSavedBatchAccountingData, 
   getSavedBatchAccountingConfig,
@@ -1695,7 +1695,7 @@ export async function exportToSheets(
     String(entry.deletedTimestamp || ''),
     getTempleLabel(entry.templeId),
     getTempleId(entry.templeId),
-    entry.operator || '',
+    normalizeLogOperator(entry.operator),
     entry.deviceInfo || '',
   ]);
 
@@ -3225,7 +3225,8 @@ export async function importFromSheets(
         deletedTimestamp = Date.now();
       }
       const templeId = dTempleIdIdx !== -1 ? String(row[dTempleIdIdx] || '').trim() : (row[8] || undefined);
-      const operator = operatorIdx !== -1 ? String(row[operatorIdx] || '').trim() : (row[9] || undefined);
+      const rawOperator = operatorIdx !== -1 ? String(row[operatorIdx] || '').trim() : (row[9] || undefined);
+      const operator = normalizeLogOperator(rawOperator);
       const deviceInfo = deviceInfoIdx !== -1 ? String(row[deviceInfoIdx] || '').trim() : (row[10] || undefined);
 
       parsedDeletedRecords.push({

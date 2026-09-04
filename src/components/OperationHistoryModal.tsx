@@ -19,6 +19,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { DeletedRecordEntry } from '../types';
+import { getCurrentUser } from '../lib/googleAuth';
 
 interface OperationHistoryModalProps {
   isOpen: boolean;
@@ -58,6 +59,23 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
     return { total: deletedRecords.length, creates, updates, deletes };
   }, [deletedRecords]);
 
+  // Googleシート保有アカウント（管理者）または未設定・旧「寺院関係者」を「管理者」と統一表記
+  const currentUser = getCurrentUser();
+  const getDisplayOperatorName = (operator?: string) => {
+    if (!operator) return '管理者';
+    const clean = operator.trim();
+    if (!clean || clean === '寺院関係者' || clean === '管理者') return '管理者';
+    if (currentUser) {
+      if (currentUser.email && clean.toLowerCase() === currentUser.email.toLowerCase()) {
+        return '管理者';
+      }
+      if (currentUser.displayName && clean === currentUser.displayName) {
+        return '管理者';
+      }
+    }
+    return clean;
+  };
+
   // Filtered entries
   const filteredRecords = useMemo(() => {
     return deletedRecords.filter((r) => {
@@ -72,10 +90,12 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
       // Search term
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
+        const displayOp = getDisplayOperatorName(r.operator).toLowerCase();
+        const rawOp = (r.operator || '').toLowerCase();
         const matchLabel = (r.label || '').toLowerCase().includes(term);
         const matchId = (r.id || '').toLowerCase().includes(term);
         const matchLogId = (r.logId || '').toLowerCase().includes(term);
-        const matchOperator = (r.operator || '').toLowerCase().includes(term);
+        const matchOperator = displayOp.includes(term) || rawOp.includes(term);
         const matchDevice = (r.deviceInfo || '').toLowerCase().includes(term);
         if (!matchLabel && !matchId && !matchLogId && !matchOperator && !matchDevice) {
           return false;
@@ -84,7 +104,7 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
 
       return true;
     });
-  }, [deletedRecords, selectedAction, selectedEntity, searchTerm]);
+  }, [deletedRecords, selectedAction, selectedEntity, searchTerm, currentUser]);
 
   if (!isOpen) return null;
 
@@ -357,11 +377,23 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                             {formatDate(entry.deletedTimestamp || entry.deletedAt)}
                           </div>
                         </td>
-                        <td className="py-2.5 px-3.5 whitespace-nowrap text-xs text-slate-600">
-                          <div className="flex items-center gap-1">
-                            <UserIcon className="w-3.5 h-3.5 text-slate-400" />
-                            <span>{entry.operator || '管理者'}</span>
-                          </div>
+                        <td className="py-2.5 px-3.5 whitespace-nowrap text-xs">
+                          {(() => {
+                            const opName = getDisplayOperatorName(entry.operator);
+                            const isOwnerAdmin = opName === '管理者';
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                {isOwnerAdmin ? (
+                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                                ) : (
+                                  <UserIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                )}
+                                <span className={isOwnerAdmin ? 'font-medium text-slate-800' : 'text-slate-600'}>
+                                  {opName}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="py-2.5 px-3.5 whitespace-nowrap text-xs text-slate-500">
                           <div className="flex items-center gap-1">

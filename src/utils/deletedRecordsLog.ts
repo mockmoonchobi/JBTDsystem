@@ -5,12 +5,29 @@ export const MAX_DELETED_LOG_LENGTH = 1000;
 const STORAGE_KEY = 'temple_deleted_records_log';
 
 /**
+ * Normalizes operator name. Defaults empty or legacy "寺院関係者" to "管理者".
+ */
+export function normalizeLogOperator(operator?: string): string {
+  if (!operator) return '管理者';
+  const clean = operator.trim();
+  if (!clean || clean === '寺院関係者') {
+    return '管理者';
+  }
+  return clean;
+}
+
+/**
  * Loads deleted records log from localStorage
  */
 export function loadDeletedRecordsLog(): DeletedRecordEntry[] {
   const loaded = loadJsonState<DeletedRecordEntry[]>(STORAGE_KEY, []);
   if (!Array.isArray(loaded)) return [];
-  return loaded.filter((entry) => entry && entry.id && (entry.deletedTimestamp > 0 || !!entry.deletedAt));
+  return loaded
+    .filter((entry) => entry && entry.id && (entry.deletedTimestamp > 0 || !!entry.deletedAt))
+    .map((entry) => ({
+      ...entry,
+      operator: normalizeLogOperator(entry.operator),
+    }));
 }
 
 /**
@@ -22,6 +39,7 @@ export function saveDeletedRecordsLog(entries: DeletedRecordEntry[]): void {
     .map((entry) => ({
       ...entry,
       id: entry.id.trim(),
+      operator: normalizeLogOperator(entry.operator),
       deletedTimestamp: entry.deletedTimestamp > 0
         ? entry.deletedTimestamp
         : (entry.deletedAt ? new Date(entry.deletedAt).getTime() : Date.now()) || Date.now(),
@@ -72,7 +90,7 @@ export function recordOperationLog(
     label: label || `${entityType}:${cleanId}`,
     templeId,
     actionType,
-    operator,
+    operator: normalizeLogOperator(operator),
     deviceInfo,
   };
 
@@ -127,7 +145,7 @@ export function recordDeletedRecordsBatch(
     label: i.label || `${i.entityType}:${i.id}`,
     templeId: i.templeId,
     actionType: 'batch_delete',
-    operator,
+    operator: normalizeLogOperator(operator),
     deviceInfo,
   }));
 
@@ -169,14 +187,16 @@ export function mergeDeletedRecordsLogs(
     // Unique key for each operation log event: logId if available, otherwise recordId + actionType + rounded timestamp
     // (Round within 2000ms to eliminate exact duplicates across bidirectional sync rounds)
     const roundedTs = Math.floor(validTs / 2000) * 2000;
+    const normalizedOp = normalizeLogOperator(entry.operator);
     const key = entry.logId && entry.logId.trim()
       ? entry.logId.trim()
-      : `${cleanId}_${entry.actionType || 'delete'}_${roundedTs}_${entry.operator || ''}`;
+      : `${cleanId}_${entry.actionType || 'delete'}_${roundedTs}_${normalizedOp}`;
 
     if (!map.has(key)) {
       map.set(key, {
         ...entry,
         id: cleanId,
+        operator: normalizedOp,
         deletedTimestamp: validTs,
       });
     }
