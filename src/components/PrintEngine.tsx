@@ -1418,10 +1418,10 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
               id="envelope-betsuno-stamp"
               className="absolute bg-white select-none pointer-events-none"
               style={{
-                top: '4mm',
+                top: '6mm',
                 left: '0mm',
                 width: '20mm',
-                height: '28mm',
+                height: '24mm',
                 border: '1px solid #1c1917',
                 display: 'flex',
                 flexDirection: 'column',
@@ -1431,7 +1431,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
               {/* 上部スペース (約1/3の高さ、空欄) */}
               <div
                 style={{
-                  height: '8.5mm',
+                  height: '7mm',
                   borderBottom: '1px solid #1c1917',
                   boxSizing: 'border-box',
                   width: '100%',

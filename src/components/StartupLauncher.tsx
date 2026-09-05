@@ -172,7 +172,7 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
               </div>
               <p className="text-xs sm:text-sm text-amber-100/90 mt-2 leading-relaxed">
                 寺院管理者様から共有されたスプレッドシートへのデータ連携が準備されています。
-                「Googleアカウントでスタッフ連携を開始」を押すと、共有データに直接接続しスタッフモード（世帯・過去帳の追加/削除不可、予定・受付は全機能可能）として起動します。
+                「Googleアカウントでスタッフ連携を開始」を押すと、共有データに直接接続しスタッフモード（世帯・過去帳の追加/削除不可、予定帳・棚経巡回計画・ToDo・受付は全機能可能）として起動します。
               </p>
               <button
                 type="button"

@@ -38,6 +38,7 @@ interface TanagyoPatronMapModalProps {
   pastRecords?: PastRecord[];
   onBatchUpdateHouseholds: (updatedHouseholds: Household[], actionDescription?: string) => void;
   candidateDates?: string[];
+  onAddCandidateDate?: (date: string) => void;
 }
 
 // 日程ごとの識別カラーパレット
@@ -81,6 +82,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
   pastRecords,
   onBatchUpdateHouseholds,
   candidateDates = ['8/13', '8/14', '8/15'],
+  onAddCandidateDate,
 }) => {
   // 寺院ごとのピン枠線色を取得するヘルパー
   const getTempleBorderColor = (templeId?: string) => {
@@ -413,7 +415,14 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     setLocalHouseholds((prev) =>
       prev.map((h) => {
         if (h.id === householdId) {
-          return { ...h, ...updates };
+          const merged = { ...h, ...updates };
+          // tanagyoDate が設定されている場合、tanagyoTimeSlot が未指定ならデフォルトで '午前' を補完
+          if (merged.tanagyoDate && (!merged.tanagyoTimeSlot || merged.tanagyoTimeSlot.trim() === '')) {
+            merged.tanagyoTimeSlot = '午前';
+          }
+          // tanagyoMonthlyVisit は確実に true
+          merged.tanagyoMonthlyVisit = true;
+          return merged;
         }
         return h;
       })
@@ -427,7 +436,14 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     const clean = newDateInput.trim();
     if (!datesList.includes(clean)) {
       setDatesList((prev) => [...prev, clean]);
+      if (onAddCandidateDate) {
+        onAddCandidateDate(clean);
+      }
     }
+    // 直ちに追加した日程を作業対象として選択
+    setStep1SelectedDate(clean);
+    setStep2FilterDate(clean);
+    setStep3FilterDate(clean);
     setNewDateInput('');
   };
 
@@ -455,6 +471,8 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
         if (!assigned && !h.tanagyoPriestId && !h.tanagyoPriestName) {
           return {
             ...h,
+            tanagyoMonthlyVisit: true,
+            tanagyoTimeSlot: h.tanagyoTimeSlot || '午前',
             tanagyoPriestId: targetPriest.id,
             tanagyoPriestName: targetPriest.name,
           };
@@ -476,19 +494,13 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       return;
     }
 
-    if (
-      !window.confirm(
-        `【${step2FilterDate}】の全檀家（${patronsInDate.length}軒）の担当僧侶を、すべて「${targetPriest.name} 師」に一括設定しますか？`
-      )
-    ) {
-      return;
-    }
-
     setLocalHouseholds((prev) =>
       prev.map((h) => {
         if (h.tanagyoDate !== step2FilterDate) return h;
         return {
           ...h,
+          tanagyoMonthlyVisit: true,
+          tanagyoTimeSlot: h.tanagyoTimeSlot || '午前',
           tanagyoPriestId: targetPriest.id,
           tanagyoPriestName: targetPriest.name,
         };
@@ -507,20 +519,14 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       return;
     }
 
-    if (
-      !window.confirm(
-        `全日程のすべての棚経対象檀家（${tanagyoPatrons.length}軒）の担当僧侶を、一括で「${targetPriest.name} 師」に設定しますか？\n\n※1人で巡回されるお寺に最適です。`
-      )
-    ) {
-      return;
-    }
-
     const patronIdSet = new Set(tanagyoPatrons.map((h) => h.id));
     setLocalHouseholds((prev) =>
       prev.map((h) => {
         if (!patronIdSet.has(h.id)) return h;
         return {
           ...h,
+          tanagyoMonthlyVisit: true,
+          tanagyoTimeSlot: h.tanagyoTimeSlot || '午前',
           tanagyoPriestId: targetPriest.id,
           tanagyoPriestName: targetPriest.name,
         };
@@ -910,9 +916,11 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
           updateHouseholdAssignment(h.id, { tanagyoDate: nextDate });
         } else if (activeStep === 2) {
           // ステップ2: 担当僧侶のみを割り当て
-          const priestObj = priests.find((p) => p.id === step2SelectedPriestId);
+          const effectivePriestId = step2SelectedPriestId || (priests.length > 0 ? priests[0].id : '');
+          const priestObj = priests.find((p) => p.id === effectivePriestId);
           updateHouseholdAssignment(h.id, {
-            tanagyoPriestId: step2SelectedPriestId,
+            tanagyoMonthlyVisit: true,
+            tanagyoPriestId: effectivePriestId,
             tanagyoPriestName: priestObj ? priestObj.name : '',
           });
         } else if (activeStep === 3) {
@@ -1149,7 +1157,27 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     const initialMap = new Map(initialHouseholdsRef.current.map((h) => [h.id, h]));
     const propMap = new Map(households.map((h) => [h.id, h]));
 
-    const changedHouseholds = localHouseholds.filter((local) => {
+    // 保存対象の全世帯を正規化（訪問日がある世帯は timeSlot が空ならデフォルトで '午前' を補完、僧侶IDと名前の相互整合性を完全補完）
+    const normalizedHouseholds = localHouseholds.map((local) => {
+      let nextH = { ...local };
+      if (nextH.tanagyoDate && nextH.tanagyoDate.trim().length > 0) {
+        if (!nextH.tanagyoTimeSlot || nextH.tanagyoTimeSlot.trim().length === 0) {
+          nextH.tanagyoTimeSlot = '午前';
+        }
+        nextH.tanagyoMonthlyVisit = true;
+      }
+      // 担当僧侶のIDと名前の整合性を担保
+      if (nextH.tanagyoPriestId && !nextH.tanagyoPriestName) {
+        const p = priests.find((pr) => pr.id === nextH.tanagyoPriestId || pr.name === nextH.tanagyoPriestId);
+        if (p) nextH.tanagyoPriestName = p.name;
+      } else if (nextH.tanagyoPriestName && !nextH.tanagyoPriestId) {
+        const p = priests.find((pr) => pr.name === nextH.tanagyoPriestName || pr.id === nextH.tanagyoPriestName);
+        if (p) nextH.tanagyoPriestId = p.id;
+      }
+      return nextH;
+    });
+
+    const changedHouseholds = normalizedHouseholds.filter((local) => {
       const init = initialMap.get(local.id) || propMap.get(local.id);
       if (!init) return true; // 新規追加等
       // 棚経関連フィールドまたは実質データの変更を確認
@@ -1379,14 +1407,13 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                   onChange={(e) => setSelectedTempleFilter(e.target.value)}
                   className="bg-transparent font-bold text-gray-800 outline-hidden cursor-pointer text-xs"
                 >
-                  <option value="ALL">全寺院（本寺・兼務寺 合算: {allTanagyoPatrons.length}軒）</option>
+                  <option value="ALL">全寺院（合算: {allTanagyoPatrons.length}軒）</option>
                   {temples.map((t) => {
-                    const isM = t.isMain || t.id === 'temple-main';
                     const mainId = temples.find((x) => x.isMain)?.id || 'temple-main';
                     const count = allTanagyoPatrons.filter((h) => (h.templeId || mainId) === t.id).length;
                     return (
                       <option key={t.id} value={t.id}>
-                        {isM ? `【本寺】${t.name}` : `【兼務】${t.name}`} ({count}軒)
+                        {t.name} ({count}軒)
                       </option>
                     );
                   })}

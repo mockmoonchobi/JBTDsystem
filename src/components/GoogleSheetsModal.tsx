@@ -562,10 +562,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
             }`}
           >
-            <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-blue-500' : 'text-[#888888]'}`} />
+            <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-emerald-500' : 'text-[#888888]'}`} />
             <span>{isStaffMode ? 'Googleシート常時自動同期（連携状況）' : '② Googleシート常時自動同期'}</span>
             {syncStatus === 'synced' && (
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             )}
           </button>
         </div>
@@ -755,14 +755,14 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   </span>
                   <span className={`px-2 py-0.5 text-xs font-bold flex items-center space-x-1 ${
                     syncStatus === 'synced'
-                      ? 'bg-blue-900/80 text-blue-200 border border-blue-500'
+                      ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/60'
                       : syncStatus === 'syncing'
                       ? 'bg-amber-900/80 text-amber-200 border border-amber-500'
                       : syncStatus === 'error'
                       ? 'bg-rose-900/80 text-rose-200 border border-rose-500'
                       : 'bg-gray-800 text-gray-400 border border-gray-600'
                   }`}>
-                    {syncStatus === 'synced' && <Check className="w-3 h-3 text-blue-400" />}
+                    {syncStatus === 'synced' && <Check className="w-3 h-3 text-emerald-400" />}
                     {syncStatus === 'syncing' && <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />}
                     {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-rose-400" />}
                     <span>
@@ -1206,7 +1206,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         </span>
                       </div>
                       <p className="text-[11px] text-amber-900 leading-relaxed">
-                        このリンクを副住職様・寺族様・受付スタッフ様にLINEやメール等でお送りください。リンクを開くと自動的にスタッフ連携画面が立ち上がり、機能制限されたモバイル版（世帯・過去帳の新規/削除不可、予定・受付は全機能可能）として起動します。
+                        このリンクを副住職様・寺族様・受付スタッフ様にLINEやメール等でお送りください。リンクを開くと自動的にスタッフ連携画面が立ち上がり、機能制限されたモバイル版（世帯・過去帳の新規/削除不可、予定帳・棚経巡回計画・ToDo・受付は全機能可能）として起動します。
                       </p>
                       <div className="flex items-center gap-1.5 pt-1">
                         <input

@@ -298,32 +298,77 @@ export default function App() {
     }
   }, []);
 
-  // 既存ローカルストレージ内のダミー世帯住所に伏字「⚫️」が残っている場合、実在住所へ自動補正（国土地理院マップ連携用）
+  // ダミー檀家データの住所マイグレーション：丁目・番地は数字のまま、号をすべて「⚫️」に自動同期
   useEffect(() => {
     const rawHouseholds = loadJsonState<Household[]>('temple_households', []);
     if (!rawHouseholds || rawHouseholds.length === 0) return;
 
-    let hasBlackout = false;
-    const initialMap = new Map(INITIAL_HOUSEHOLDS.map((h) => [h.id, h.address]));
+    let hasChanges = false;
+    const initialAddressMap = new Map(INITIAL_HOUSEHOLDS.map((h) => [h.id, h.address]));
 
     const fixedHouseholds = rawHouseholds.map((h) => {
-      if (h.address && (h.address.includes('⚫️') || h.address.includes('●'))) {
-        hasBlackout = true;
-        const newAddr = initialMap.get(h.id);
+      let nextAddr = h.address;
+      let nextTanagyoAddr = h.tanagyoAddress;
+      let changed = false;
+
+      // 初期ダミー世帯の場合、最新のINITIAL_HOUSEHOLDS住所（号が⚫️）に同期
+      if (initialAddressMap.has(h.id)) {
+        const canonicalAddr = initialAddressMap.get(h.id);
+        if (canonicalAddr && h.address !== canonicalAddr) {
+          nextAddr = canonicalAddr;
+          changed = true;
+        }
+      } else if (h.address && /(\d+)-(\d+)-(\d+)$/.test(h.address)) {
+        // 一般のダミーデータ形式（X-Y-Z）で号が数字のままの場合、号を⚫️に変換
+        const masked = h.address.replace(/(\d+)-(\d+)-(\d+)$/, '$1-$2-⚫️');
+        if (masked !== h.address) {
+          nextAddr = masked;
+          changed = true;
+        }
+      }
+
+      if (h.tanagyoAddress && /(\d+)-(\d+)-(\d+)$/.test(h.tanagyoAddress)) {
+        const masked = h.tanagyoAddress.replace(/(\d+)-(\d+)-(\d+)$/, '$1-$2-⚫️');
+        if (masked !== h.tanagyoAddress) {
+          nextTanagyoAddr = masked;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        hasChanges = true;
         return {
           ...h,
-          address: newAddr || h.address.replace(/[⚫️●]/g, '1'),
-          tanagyoAddress: h.tanagyoAddress && (h.tanagyoAddress.includes('⚫️') || h.tanagyoAddress.includes('●'))
-            ? (newAddr || h.tanagyoAddress.replace(/[⚫️●]/g, '1'))
-            : h.tanagyoAddress,
+          address: nextAddr,
+          tanagyoAddress: nextTanagyoAddr,
         };
       }
       return h;
     });
 
-    if (hasBlackout) {
+    if (hasChanges) {
       saveJsonState('temple_households', fixedHouseholds);
       setHouseholds(fixedHouseholds);
+    }
+
+    // 家族データの住所も同様に号を⚫️に同期
+    const rawFamily = loadJsonState<FamilyMember[]>('temple_family_members', []);
+    if (rawFamily && rawFamily.length > 0) {
+      let familyChanged = false;
+      const fixedFamily = rawFamily.map((f) => {
+        if (f.address && /(\d+)-(\d+)-(\d+)$/.test(f.address)) {
+          const masked = f.address.replace(/(\d+)-(\d+)-(\d+)$/, '$1-$2-⚫️');
+          if (masked !== f.address) {
+            familyChanged = true;
+            return { ...f, address: masked };
+          }
+        }
+        return f;
+      });
+      if (familyChanged) {
+        saveJsonState('temple_family_members', fixedFamily);
+        setFamilyMembers(fixedFamily);
+      }
     }
   }, []);
 
@@ -3506,6 +3551,7 @@ export default function App() {
           memorialServices={activeMemorialServices}
           allMemorialServices={memorialServices}
           templeTodos={activeTempleTodos}
+          priests={priests}
           masterOptions={activeMasterOptions}
           onSaveHousehold={handleSaveHousehold}
           onDeleteHousehold={handleDeleteHousehold}
@@ -3729,11 +3775,13 @@ export default function App() {
             templeTodos={templeTodos}
             priests={priests}
             masterOptions={activeMasterOptions}
+            templeMasterOptionsMap={templeMasterOptionsMap}
             targetDate={calendarTargetDate}
             onAddService={handleAddService}
             onUpdateService={handleUpdateService}
             onDeleteService={handleDeleteService}
             onAddTransaction={handleAddTransaction}
+            onAddBatchTransactions={handleAddBatchTransactions}
             onDeleteTransaction={handleDeleteTransaction}
             onAddTodo={handleAddTodo}
             onUpdateTodo={handleUpdateTodo}

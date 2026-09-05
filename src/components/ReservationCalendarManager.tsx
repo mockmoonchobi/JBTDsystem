@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -62,6 +63,7 @@ import {
 import { safeStorage } from '../utils/storageUtils';
 import { TanagyoNoticeBoardPrintModal } from './TanagyoNoticeBoardPrintModal';
 import { TanagyoPatronMapModal } from './TanagyoPatronMapModal';
+import { TanagyoBatchAccountingModal } from './TanagyoBatchAccountingModal';
 import { HouseholdTempleBadge } from './HouseholdTempleBadge';
 import {
   formatCurrency,
@@ -104,11 +106,13 @@ interface ReservationCalendarManagerProps {
   priests?: Priest[];
   segakiTobaOrders?: any[];
   masterOptions?: MasterOptions;
+  templeMasterOptionsMap?: Record<string, MasterOptions>;
   targetDate?: string;
   onAddService: (service: MemorialService) => void;
   onUpdateService: (service: MemorialService) => void;
   onDeleteService: (id: string) => void;
   onAddTransaction: (transaction: Transaction) => void;
+  onAddBatchTransactions?: (transactions: Transaction[]) => void;
   onDeleteTransaction?: (id: string) => void;
   onAddTodo: (todo: TempleTodo) => void;
   onUpdateTodo: (todo: TempleTodo) => void;
@@ -162,9 +166,22 @@ const UnassignedTanagyoRow: React.FC<UnassignedTanagyoRowProps> = ({
   const defaultDate = household.tanagyoDate || (dateCandidates.length > 0 ? dateCandidates[0] : '8/13');
   const [date, setDate] = useState(defaultDate);
   const [timeSlot, setTimeSlot] = useState(household.tanagyoTimeSlot || '午前');
-  const [priestId, setPriestId] = useState(
-    household.tanagyoPriestId || (priests.length > 0 ? priests[0].id : '')
-  );
+  
+  // 僧侶の初期解決
+  const initialPriestId = useMemo(() => {
+    if (household.tanagyoPriestId) {
+      const p = priests.find((pr) => pr.id === household.tanagyoPriestId || pr.name === household.tanagyoPriestId);
+      if (p) return p.id;
+      return household.tanagyoPriestId;
+    }
+    if (household.tanagyoPriestName) {
+      const p = priests.find((pr) => pr.name === household.tanagyoPriestName || pr.id === household.tanagyoPriestName);
+      if (p) return p.id;
+    }
+    return priests.length > 0 ? priests[0].id : '';
+  }, [household.tanagyoPriestId, household.tanagyoPriestName, priests]);
+
+  const [priestId, setPriestId] = useState(initialPriestId);
 
   const niibonStatus = getHouseholdNiibonStatus(pastRecords, household.id, bonSeason);
 
@@ -176,6 +193,23 @@ const UnassignedTanagyoRow: React.FC<UnassignedTanagyoRowProps> = ({
       setDate(dateCandidates[0]);
     }
   }, [household.tanagyoDate, dateCandidates]);
+
+  // If household's saved priest changes, sync correctly
+  useEffect(() => {
+    if (household.tanagyoPriestId) {
+      const p = priests.find((pr) => pr.id === household.tanagyoPriestId || pr.name === household.tanagyoPriestId);
+      setPriestId(p ? p.id : household.tanagyoPriestId);
+    } else if (household.tanagyoPriestName) {
+      const p = priests.find((pr) => pr.name === household.tanagyoPriestName || pr.id === household.tanagyoPriestName);
+      if (p) setPriestId(p.id);
+    }
+  }, [household.tanagyoPriestId, household.tanagyoPriestName, priests]);
+
+  useEffect(() => {
+    if (household.tanagyoTimeSlot) {
+      setTimeSlot(household.tanagyoTimeSlot);
+    }
+  }, [household.tanagyoTimeSlot]);
 
   const handleSave = () => {
     if (!date.trim()) {
@@ -1059,11 +1093,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   templeTodos,
   priests = [],
   masterOptions,
+  templeMasterOptionsMap,
   targetDate,
   onAddService,
   onUpdateService,
   onDeleteService,
   onAddTransaction,
+  onAddBatchTransactions,
   onDeleteTransaction,
   onAddTodo,
   onUpdateTodo,
@@ -1200,20 +1236,34 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   const [isDropTargetUnassignedArea, setIsDropTargetUnassignedArea] = useState<boolean>(false);
   const [isTanagyoNoticeModalOpen, setIsTanagyoNoticeModalOpen] = useState<boolean>(false);
   const [isTanagyoMapModalOpen, setIsTanagyoMapModalOpen] = useState<boolean>(false);
+  const [isTanagyoAccountingModalOpen, setIsTanagyoAccountingModalOpen] = useState<boolean>(false);
   const [tanagyoTempleFilter, setTanagyoTempleFilter] = useState<string>('ALL');
+
+  // 全割当リセットの確認モーダル状態と通知メッセージ
+  const [showTanagyoResetConfirmModal, setShowTanagyoResetConfirmModal] = useState<boolean>(false);
+  const [tanagyoResetSuccessMessage, setTanagyoResetSuccessMessage] = useState<string | null>(null);
+
+  // 日程候補を追加・保持するハンドラ
+  const handleAddCandidateDate = (newDate: string) => {
+    const clean = newDate.trim();
+    if (!clean) return;
+    if (!tanagyoDateCandidates.includes(clean)) {
+      const updated = [...tanagyoDateCandidates, clean];
+      setTanagyoDateCandidates(updated);
+      safeStorage.setItem('temple_tanagyo_date_candidates', JSON.stringify(updated));
+    }
+  };
 
   // 1. 棚経対象の全檀信徒
   const tanagyoPatronHouseholds = useMemo(() => {
     return households.filter((h) => !!h.tanagyoMonthlyVisit);
   }, [households]);
 
-  // 判定ヘルパー: 日程・時間帯・担当僧侶がすべて割り当て済みか
+  // 判定ヘルパー: 日程および担当僧侶が割り当て済みか（時間帯未指定でも割当済みとして巡回計画表に表示）
   const isTanagyoFullyAssigned = (h: Household) => {
     return Boolean(
       h.tanagyoDate &&
       h.tanagyoDate.trim().length > 0 &&
-      h.tanagyoTimeSlot &&
-      h.tanagyoTimeSlot.trim().length > 0 &&
       (h.tanagyoPriestName || h.tanagyoPriestId)
     );
   };
@@ -1772,8 +1822,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     }
   };
 
-  // 全棚経対象者の割当を未割当に戻すリセット（地図上のリセット機能と同様に、一部割当または完全割当の全世帯を確実にクリア）
+  // 全割当リセット確認ダイアログを開く
   const handleResetAllTanagyoAssignments = () => {
+    setShowTanagyoResetConfirmModal(true);
+  };
+
+  // 全棚経対象者の割当を未割当に戻すリセット実行（地図上のリセット機能と完全に同じ確認UI・安全仕様）
+  const handleExecuteResetAllTanagyo = () => {
     const isFiltered = tanagyoTempleFilter !== 'ALL';
     const targetTemple = isFiltered ? temples?.find((t) => t.id === tanagyoTempleFilter) : null;
     const targetName = targetTemple ? `【${targetTemple.name}】` : '全寺院';
@@ -1797,13 +1852,11 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     });
 
     if (assignedPatrons.length === 0) {
-      alert(`${targetName}の棚経対象世帯は、すでにすべて未割当の状態です。`);
+      setShowTanagyoResetConfirmModal(false);
+      setTanagyoResetSuccessMessage(`${targetName}の棚経対象世帯は、すでにすべて未割当の状態です。`);
+      setTimeout(() => setTanagyoResetSuccessMessage(null), 4000);
       return;
     }
-
-    const confirmMsg = `${targetName}の棚経割当情報（${assignedPatrons.length}軒）の日程・時間帯・担当僧侶・巡回順序をすべて解除し、未割当に戻しますか？\n\n※檀家名簿自体の棚経対象設定は解除されません。`;
-
-    if (!window.confirm(confirmMsg)) return;
 
     const clearedHouseholds = assignedPatrons.map((h) => ({
       ...h,
@@ -1820,7 +1873,9 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       clearedHouseholds.forEach((h) => onUpdateHousehold(h));
     }
 
-    alert(`${targetName}の棚経割当（${clearedHouseholds.length}軒）をすべて解除し、未割当にリセットしました。`);
+    setShowTanagyoResetConfirmModal(false);
+    setTanagyoResetSuccessMessage(`${targetName}の棚経割当（${clearedHouseholds.length}軒）をすべて解除し、未割当にリセットしました。`);
+    setTimeout(() => setTanagyoResetSuccessMessage(null), 4000);
   };
 
   const defaultTempleVenue = `${templeInfo?.name || '自寺'} 本堂`;
@@ -4008,6 +4063,17 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   <span>巡回予定表印刷</span>
                 </button>
 
+                {/* Tanagyo Accounting Batch Modal Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsTanagyoAccountingModalOpen(true)}
+                  className="px-3 py-1.5 bg-[#8C2D19] hover:bg-[#702414] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer border border-[#D4AF37]/50"
+                  title="巡回担当・日付・順序順に棚経の会計（お布施・供養料）を出納帳へ一括入力・計上します"
+                >
+                  <DollarSign className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>💰 棚経 会計一括入力</span>
+                </button>
+
                 {/* View Section Filter */}
                 <div className="inline-flex rounded-xs border border-gray-300 overflow-hidden font-bold">
                   <button
@@ -4153,16 +4219,15 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                         onChange={(e) => setTanagyoTempleFilter(e.target.value)}
                         className="bg-transparent font-bold text-gray-800 outline-hidden cursor-pointer text-xs"
                       >
-                        <option value="ALL">全寺院（本寺・兼務寺 合算）</option>
+                        <option value="ALL">全寺院（合算）</option>
                         {temples.map((t) => {
-                          const isM = t.isMain || t.id === 'temple-main';
                           const mainId = temples.find((x) => x.isMain)?.id || 'temple-main';
                           const count = tanagyoPatronHouseholds.filter(
                             (h) => (h.templeId || mainId) === t.id
                           ).length;
                           return (
                             <option key={t.id} value={t.id}>
-                              {isM ? `【本寺】${t.name}` : `【兼務】${t.name}`} ({count}軒)
+                              {t.name} ({count}軒)
                             </option>
                           );
                         })}
@@ -4320,6 +4385,15 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>全巡回順序を確定・一括保存</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsTanagyoAccountingModalOpen(true)}
+                        className="px-3 py-1 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] font-bold text-xs flex items-center gap-1.5 rounded-xs shadow-xs cursor-pointer transition-colors border border-[#D4AF37]"
+                        title="巡回計画の担当・日付・順序順に棚経の会計（お布施・供養料）を出納帳へ一括入力・計上します"
+                      >
+                        <DollarSign className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        <span>💰 会計一括入力</span>
                       </button>
                     </div>
                   )}
@@ -4831,10 +4905,92 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
         </div>
       )}
 
-      {/* MODAL: 担当別 経路情報印刷プレビューモーダル */}
-      {printModalPriestData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 font-sans">
-          <div className="bg-white border-2 border-[#1A1A1A] w-full max-w-4xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden">
+      {/* MODAL: 担当別 経路情報印刷プレビューモーダル（Portal化＆背景アプリ完全非表示で印刷） */}
+      {printModalPriestData && createPortal(
+        <div className="tanagyo-route-print-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 font-sans print:p-0 print:static print:bg-transparent print:overflow-visible">
+          {/* 印刷専用スタイル：#root等のアプリ本体UIを完全に非表示化し、この台帳のみをA4縦で印刷 */}
+          <style>{`
+            @media print {
+              #root,
+              header,
+              nav,
+              aside,
+              footer,
+              .no-print,
+              .no-print * {
+                display: none !important;
+              }
+              @page {
+                size: A4 portrait;
+                margin: 10mm 12mm 10mm 12mm;
+              }
+              html, body {
+                background: #ffffff !important;
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .tanagyo-route-print-overlay {
+                position: static !important;
+                display: block !important;
+                background: transparent !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                overflow: visible !important;
+                width: 100% !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+              }
+              .tanagyo-route-print-card {
+                position: static !important;
+                display: block !important;
+                border: none !important;
+                box-shadow: none !important;
+                width: 100% !important;
+                max-width: none !important;
+                max-height: none !important;
+                height: auto !important;
+                overflow: visible !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: #ffffff !important;
+              }
+              .tanagyo-route-print-body {
+                padding: 0 !important;
+                margin: 0 !important;
+                overflow: visible !important;
+                max-height: none !important;
+                height: auto !important;
+              }
+              .tanagyo-route-date-section {
+                page-break-inside: auto !important;
+                break-inside: auto !important;
+              }
+              .tanagyo-route-slot-block {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                margin-bottom: 16px !important;
+                border: 1px solid #777 !important;
+                background: #ffffff !important;
+              }
+              table {
+                border-collapse: collapse !important;
+              }
+              th, td {
+                border-color: #777 !important;
+              }
+            }
+          `}</style>
+
+          <div className="tanagyo-route-print-card bg-white border-2 border-[#1A1A1A] w-full max-w-4xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden print:border-none print:shadow-none print:max-h-none print:w-full print:max-w-none">
             {/* Header (No print) */}
             <div className="bg-[#1A1A1A] text-[#D4AF37] p-3.5 flex items-center justify-between no-print shrink-0">
               <div className="flex items-center space-x-2 font-bold text-sm tracking-wider">
@@ -4861,7 +5017,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
             </div>
 
             {/* Printable Content Area */}
-            <div className="p-6 overflow-y-auto space-y-6 text-[#1A1A1A] print-area">
+            <div className="tanagyo-route-print-body p-6 overflow-y-auto space-y-6 text-[#1A1A1A] print:p-0 print:overflow-visible">
               {/* Document Header */}
               <div className="border-b-2 border-black pb-3 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
                 <div>
@@ -4881,9 +5037,9 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
               </div>
 
               {/* Dates and Slots Table */}
-              <div className="space-y-6">
+              <div className="space-y-6 print:space-y-4">
                 {printModalPriestData.dates.map((dObj) => (
-                  <div key={dObj.date} className="space-y-4 page-break-inside-avoid">
+                  <div key={dObj.date} className="tanagyo-route-date-section space-y-4 print:space-y-3">
                     <div className="bg-gray-100 border-l-4 border-[#1A1A1A] px-3 py-1.5 font-black text-sm text-[#1A1A1A]">
                       訪問日程: {dObj.date}
                     </div>
@@ -4891,7 +5047,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                     {dObj.slots.map((slot) => (
                       <div
                         key={slot.timeSlot}
-                        className="border border-gray-300 p-3 rounded-xs space-y-3 bg-white"
+                        className="tanagyo-route-slot-block border border-gray-300 p-3 rounded-xs space-y-3 bg-white"
                       >
                         <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
                           <span className="font-black text-xs px-2 py-0.5 bg-black text-white">
@@ -4902,51 +5058,51 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           </span>
                         </div>
 
-                        <div className="flex flex-col md:flex-row gap-4 items-start">
+                        <div className="flex flex-col sm:flex-row print:flex-row gap-3 items-start">
                           {/* Households Table */}
                           <div className="flex-1 overflow-x-auto w-full">
-                            <table className="w-full text-left text-xs border-collapse border border-gray-300">
+                            <table className="w-full text-left text-xs print:text-[11px] border-collapse border border-gray-400">
                               <thead>
-                                <tr className="bg-gray-100 text-gray-800 border-b border-gray-300">
-                                  <th className="p-1.5 text-center w-10 border-r border-gray-300">順</th>
-                                  <th className="p-1.5 font-bold border-r border-gray-300">施主名</th>
-                                  <th className="p-1.5 font-bold border-r border-gray-300">電話番号</th>
-                                  <th className="p-1.5 font-bold border-r border-gray-300">訪問先住所</th>
-                                  <th className="p-1.5 font-bold text-center w-16">完了</th>
+                                <tr className="bg-gray-100 text-gray-800 border-b border-gray-400">
+                                  <th className="p-1.5 print:p-1 text-center w-10 border-r border-gray-400">順</th>
+                                  <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">施主名</th>
+                                  <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">電話番号</th>
+                                  <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">訪問先住所</th>
+                                  <th className="p-1.5 print:p-1 font-bold text-center w-14">完了</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-gray-200">
+                              <tbody className="divide-y divide-gray-300">
                                 {slot.households.map((h, hIdx) => {
                                   const address = h.tanagyoAddress || h.address || '住所未登録';
                                   const niibonStatus = getHouseholdNiibonStatus(pastRecords, h.id, templeInfo?.bonSeason || '8月盆');
                                   return (
                                     <tr key={h.id} className="hover:bg-gray-50">
-                                      <td className="p-1.5 text-center font-bold border-r border-gray-200">
+                                      <td className="p-1.5 print:p-1 text-center font-bold border-r border-gray-300">
                                         {hIdx + 1}
                                       </td>
-                                      <td className="p-1.5 font-bold border-r border-gray-200 whitespace-nowrap">
+                                      <td className="p-1.5 print:p-1 font-bold border-r border-gray-300 whitespace-nowrap">
                                         <div className="flex items-center gap-1">
                                           <span>{h.familyHead} 様</span>
                                           {niibonStatus.isCurrentYearNiibon && (
-                                            <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 rounded-xs">
+                                            <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 rounded-xs print:border-gray-500">
                                               {niibonStatus.currentYearLabel}
                                             </span>
                                           )}
                                           {niibonStatus.isNextYearNiibon && (
-                                            <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-sky-50 text-sky-900 border border-sky-300 rounded-xs">
+                                            <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-sky-50 text-sky-900 border border-sky-300 rounded-xs print:border-gray-500">
                                               {niibonStatus.nextYearLabel}
                                             </span>
                                           )}
                                         </div>
                                       </td>
-                                      <td className="p-1.5 text-gray-700 border-r border-gray-200 whitespace-nowrap">
+                                      <td className="p-1.5 print:p-1 text-gray-700 border-r border-gray-300 whitespace-nowrap">
                                         {h.phone || h.mobile || '-'}
                                       </td>
-                                      <td className="p-1.5 text-gray-800 border-r border-gray-200">
+                                      <td className="p-1.5 print:p-1 text-gray-800 border-r border-gray-300">
                                         {address}
                                       </td>
-                                      <td className="p-1.5 text-center">
-                                        <div className="w-4 h-4 border border-gray-400 mx-auto rounded-xs"></div>
+                                      <td className="p-1.5 print:p-1 text-center">
+                                        <div className="w-4 h-4 border border-gray-500 mx-auto rounded-xs"></div>
                                       </td>
                                     </tr>
                                   );
@@ -4957,22 +5113,22 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
                           {/* QR Code(s) for Google Map route */}
                           {slot.households.length > 0 && slot.routeSegments && slot.routeSegments.length > 0 && (
-                            <div className="shrink-0 flex flex-wrap md:flex-col gap-2 items-center justify-start">
+                            <div className="shrink-0 flex flex-wrap sm:flex-col print:flex-col gap-2 items-center justify-start">
                               {slot.routeSegments.map((seg) => (
                                 <div
                                   key={seg.segmentIndex}
-                                  className="w-32 flex flex-col items-center justify-center p-2 bg-gray-50 border border-gray-200 rounded-xs text-center space-y-1"
+                                  className="w-32 print:w-28 flex flex-col items-center justify-center p-2 print:p-1.5 bg-gray-50 border border-gray-300 rounded-xs text-center space-y-1"
                                 >
                                   <QRCodeSVG
                                     value={seg.routeUrl}
-                                    size={84}
+                                    size={80}
                                     level="M"
                                     includeMargin={false}
                                   />
                                   <div className="text-[10px] font-black text-gray-800 leading-tight">
                                     {slot.routeSegments.length > 1 ? `区間${seg.segmentIndex + 1}: ${seg.label}` : `経路QR (${seg.label})`}
                                   </div>
-                                  <div className="text-[9px] text-gray-500 truncate max-w-[110px]">
+                                  <div className="text-[9px] text-gray-500 truncate max-w-[105px]">
                                     {seg.startFamilyHead}様〜{seg.endFamilyHead}様
                                   </div>
                                 </div>
@@ -4987,7 +5143,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MODAL: 枠間移動（振替）モーダル */}
@@ -5337,13 +5494,14 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   required
                   className="w-full p-2 border border-[#D1CEC7] bg-white font-bold text-sm"
                 >
-                  <option value="法要布施">法要布施</option>
-                  <option value="志納金">志納金</option>
-                  <option value="塔婆料">塔婆料</option>
-                  <option value="祠堂料">祠堂料</option>
-                  <option value="寄付金">寄付金</option>
-                  <option value="年会費">護持会費・年会費</option>
-                  <option value="その他">その他雑収入</option>
+                  {availableIncomeCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                  {!availableIncomeCategories.includes(recordAccountingModal.category) && (
+                    <option value={recordAccountingModal.category}>{recordAccountingModal.category}</option>
+                  )}
                 </select>
               </div>
 
@@ -5741,7 +5899,81 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
           }
         }}
         candidateDates={tanagyoDateCandidates.filter((d) => Boolean(d && d.trim()))}
+        onAddCandidateDate={handleAddCandidateDate}
       />
+
+      {/* お盆棚経 会計一括入力モーダル（出納帳一括計上） */}
+      <TanagyoBatchAccountingModal
+        isOpen={isTanagyoAccountingModalOpen}
+        onClose={() => setIsTanagyoAccountingModalOpen(false)}
+        households={households}
+        temples={temples}
+        templeInfo={templeInfo}
+        priests={priests}
+        transactions={transactions}
+        activeTempleId={activeTempleId}
+        masterOptions={masterOptions}
+        templeMasterOptionsMap={templeMasterOptionsMap}
+        onAddBatchTransactions={(newTxs) => {
+          if (onAddBatchTransactions) {
+            onAddBatchTransactions(newTxs);
+          } else {
+            // フォールバック: 個別に追加
+            newTxs.forEach((t) => onAddTransaction(t));
+          }
+        }}
+      />
+
+      {/* 全割当リセットの確認モーダル（地図モーダルと同一の安心確認UI・iframe内でも100%確実に動作） */}
+      {showTanagyoResetConfirmModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xs shadow-2xl border-2 border-red-500 max-w-md w-full p-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-600 mb-3">
+              <div className="p-2 bg-red-100 rounded-full">
+                <RotateCcw className="w-6 h-6 stroke-[2.5]" />
+              </div>
+              <h4 className="font-bold text-base text-gray-900">全割当を未割当にリセット</h4>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed mb-4">
+              {tanagyoTempleFilter !== 'ALL'
+                ? `【${temples?.find((t) => t.id === tanagyoTempleFilter)?.name || '選択中の寺院'}】`
+                : '【すべての寺院】'}
+              の棚経割当情報（訪問日程・時間帯・担当僧侶・巡回順序）を解除し、未割当リストに戻します。
+              <br />
+              <span className="text-gray-500 mt-1 block">
+                ※檀家名簿自体の棚経対象設定は解除されません。
+                <br />
+                ※解除した割当は元に戻せません。
+              </span>
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowTanagyoResetConfirmModal(false)}
+                className="px-3.5 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-100 border border-gray-300 rounded-xs cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteResetAllTanagyo}
+                className="px-4 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>未割当にリセットする</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* リセット完了トースト通知 */}
+      {tanagyoResetSuccessMessage && (
+        <div className="fixed bottom-6 right-6 z-60 bg-gray-900 text-white px-4 py-3 rounded-xs shadow-xl border border-gray-700 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-xs font-bold">{tanagyoResetSuccessMessage}</span>
+        </div>
+      )}
 
       {/* 予定・法要 削除確認ダイアログ */}
       {deleteConfirmService && (

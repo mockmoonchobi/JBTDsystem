@@ -88,6 +88,14 @@ const PRESET_COORDINATES: Record<string, LatLng> = {
   '東京都武蔵野市吉祥寺本町2-8-4': { lat: 35.7045, lng: 139.5788 },
 };
 
+// 丁目・番地は数字、号が「⚫️」のダミー住所パターンも静的プリセットに自動追加展開（初回即時表示対応）
+for (const [k, v] of Object.entries(PRESET_COORDINATES)) {
+  const masked = k.replace(/(\d+)-(\d+)-(\d+)$/, '$1-$2-⚫️');
+  if (masked !== k) {
+    PRESET_COORDINATES[masked] = v;
+  }
+}
+
 const CACHE_KEY = 'temple_geocache_v1';
 
 // ローカルストレージキャッシュの読み書き

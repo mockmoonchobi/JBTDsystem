@@ -372,7 +372,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenGoogleSheetsModal}
             className={`h-9 flex items-center space-x-2 px-3 border transition-colors shadow-xs cursor-pointer ${
               syncStatus === 'synced'
-                ? 'bg-blue-950/80 hover:bg-blue-900 text-blue-200 border-blue-500/60'
+                ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-500/60'
                 : syncStatus === 'syncing'
                 ? 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border-amber-500/60'
                 : syncStatus === 'error'
@@ -384,7 +384,7 @@ export const Header: React.FC<HeaderProps> = ({
             {syncStatus === 'syncing' ? (
               <RefreshCw className="w-4 h-4 shrink-0 text-amber-400 animate-spin" />
             ) : syncStatus === 'synced' ? (
-              <Cloud className="w-4 h-4 shrink-0 text-blue-400" />
+              <Cloud className="w-4 h-4 shrink-0 text-emerald-400" />
             ) : syncStatus === 'error' ? (
               <CloudOff className="w-4 h-4 shrink-0 text-rose-400" />
             ) : (
@@ -393,7 +393,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex flex-col items-start justify-center text-left leading-none space-y-0.5">
               <span className="font-bold text-xs flex items-center gap-1.5 whitespace-nowrap">
                 データ連携
-                {syncStatus === 'synced' && <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />}
+                {syncStatus === 'synced' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
               </span>
               <span className="text-[10px] opacity-75 font-mono whitespace-nowrap">
                 {syncStatus === 'synced' ? (lastSyncTime ? `同期済 (${lastSyncTime})` : '自動同期中') :

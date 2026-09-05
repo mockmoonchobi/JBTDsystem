@@ -265,7 +265,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
               className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-sm text-xs sm:text-sm font-bold flex items-center gap-1.5 border shadow-xs select-none cursor-default ${
                 syncStatus === 'syncing'
                   ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-                  : 'bg-blue-950/80 border-blue-500/80 text-blue-200'
+                  : 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
               }`}
               title="データ連携済（スタッフ用アプリのため連携設定・Excelダウンロードは制限されています）"
             >
@@ -276,7 +276,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                 </>
               ) : (
                 <>
-                  <Cloud className="w-4.5 h-4.5 text-blue-400 shrink-0" />
+                  <Cloud className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
                   <span className="whitespace-nowrap">連携済</span>
                 </>
               )}
@@ -290,7 +290,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                   syncStatus === 'syncing'
                     ? 'bg-amber-950/80 border-amber-500 text-amber-300'
                     : syncStatus === 'synced'
-                    ? 'bg-blue-950/80 border-blue-500/80 text-blue-200 hover:bg-blue-900'
+                    ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900'
                     : syncStatus === 'error'
                     ? 'bg-rose-950/80 border-rose-500/80 text-rose-200'
                     : 'bg-[#2A2A2A] hover:bg-[#383838] border-[#555555] text-[#F9F7F2]'
@@ -304,7 +304,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                   </>
                 ) : syncStatus === 'synced' ? (
                   <>
-                    <Cloud className="w-4.5 h-4.5 text-blue-400 shrink-0" />
+                    <Cloud className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
                     <span className="whitespace-nowrap">連携済</span>
                   </>
                 ) : syncStatus === 'error' ? (

@@ -7,15 +7,17 @@ import {
   TempleProfile, 
   MasterOptions, 
   TempleTodo,
-  Transaction 
+  Transaction,
+  Priest 
 } from '../../types';
-import { Calendar, ListTodo } from 'lucide-react';
+import { Calendar, ListTodo, Navigation } from 'lucide-react';
 import { MobileHeader } from './MobileHeader';
 import { MobileBottomNav, MobileTab } from './MobileBottomNav';
 import { MobileHouseholdView } from './MobileHouseholdView';
 import { MobileKakochoView } from './MobileKakochoView';
 import { MobileCalendarView } from './MobileCalendarView';
 import { MobileTodoView } from './MobileTodoView';
+import { MobileTanagyoView } from './MobileTanagyoView';
 import { MobileReceptionView } from './MobileReceptionView';
 import { MobileServiceModal } from './MobileServiceModal';
 import { MobileKakochoModal } from './MobileKakochoModal';
@@ -33,6 +35,7 @@ interface MobileAppProps {
   memorialServices: MemorialService[];
   allMemorialServices?: MemorialService[];
   templeTodos?: TempleTodo[];
+  priests?: Priest[];
   masterOptions?: MasterOptions;
   onSaveHousehold: (household: Household) => void;
   onDeleteHousehold: (id: string) => void;
@@ -64,6 +67,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   memorialServices = [],
   allMemorialServices,
   templeTodos = [],
+  priests = [],
   masterOptions,
   onSaveHousehold,
   onDeleteHousehold,
@@ -83,7 +87,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   isStaffMode = false,
 }) => {
   const [activeTab, setActiveTab] = useState<MobileTab>('households');
-  const [scheduleSubTab, setScheduleSubTab] = useState<'calendar' | 'todos'>('calendar');
+  const [scheduleSubTab, setScheduleSubTab] = useState<'calendar' | 'todos' | 'tanagyo'>('calendar');
   const todayStr = getTodayDateString();
 
   // Resolved list of all households and past records for lookups / modals
@@ -122,6 +126,11 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   const pendingTodos = useMemo(() => {
     return templeTodos.filter((t) => !t.completed);
   }, [templeTodos]);
+
+  // Assigned tanagyo count
+  const tanagyoAssignedCount = useMemo(() => {
+    return effectiveAllHouseholds.filter((h) => !!h.tanagyoMonthlyVisit && !!h.tanagyoDate).length;
+  }, [effectiveAllHouseholds]);
 
   // Trigger service booking from Household
   const handleOpenAddServiceFromHousehold = (householdId: string) => {
@@ -204,20 +213,20 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           <div className="flex flex-col min-h-[calc(100vh-8rem)]">
             {/* Top Sub-tab Switcher directly under Header */}
             <div className="px-3 py-2 bg-[#F5F2EB] border-b border-[#D1CEC7] shadow-2xs">
-              <div className="grid grid-cols-2 p-1 bg-[#E5E0D5] rounded-xs font-bold text-xs sm:text-sm gap-1.5">
+              <div className="grid grid-cols-3 p-1 bg-[#E5E0D5] rounded-xs font-bold text-xs sm:text-sm gap-1">
                 <button
                   type="button"
                   onClick={() => setScheduleSubTab('calendar')}
-                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1 transition-all cursor-pointer ${
                     scheduleSubTab === 'calendar'
                       ? 'bg-white text-[#8C2D19] shadow-xs font-bold'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <Calendar className="w-4.5 h-4.5" />
-                  <span className="text-xs sm:text-sm font-bold">予定帳</span>
+                  <Calendar className="w-4 h-4" />
+                  <span className="text-xs sm:text-sm font-bold">予定</span>
                   {upcomingServices.length > 0 && (
-                    <span className="px-2 py-0.5 bg-[#8C2D19] text-white text-xs font-bold rounded-full">
+                    <span className="px-1.5 py-0.2 bg-[#8C2D19] text-white text-[10px] font-bold rounded-full">
                       {upcomingServices.length}
                     </span>
                   )}
@@ -226,17 +235,35 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 <button
                   type="button"
                   onClick={() => setScheduleSubTab('todos')}
-                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1.5 transition-all cursor-pointer ${
+                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1 transition-all cursor-pointer ${
                     scheduleSubTab === 'todos'
                       ? 'bg-white text-[#8C2D19] shadow-xs font-bold'
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <ListTodo className="w-4.5 h-4.5" />
+                  <ListTodo className="w-4 h-4" />
                   <span className="text-xs sm:text-sm font-bold">ToDo</span>
                   {pendingTodos.length > 0 && (
-                    <span className="px-2 py-0.5 bg-[#D4AF37] text-[#1A1A1A] text-xs font-bold rounded-full">
+                    <span className="px-1.5 py-0.2 bg-[#D4AF37] text-[#1A1A1A] text-[10px] font-bold rounded-full">
                       {pendingTodos.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setScheduleSubTab('tanagyo')}
+                  className={`py-2 sm:py-2.5 rounded-xs flex items-center justify-center space-x-1 transition-all cursor-pointer ${
+                    scheduleSubTab === 'tanagyo'
+                      ? 'bg-white text-[#8C2D19] shadow-xs font-bold'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Navigation className="w-4 h-4" />
+                  <span className="text-xs sm:text-sm font-bold">棚経</span>
+                  {tanagyoAssignedCount > 0 && (
+                    <span className="px-1.5 py-0.2 bg-[#2563EB] text-white text-[10px] font-bold rounded-full">
+                      {tanagyoAssignedCount}
                     </span>
                   )}
                 </button>
@@ -244,7 +271,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             </div>
 
             {/* Subtab Content */}
-            {scheduleSubTab === 'calendar' ? (
+            {scheduleSubTab === 'calendar' && (
               <MobileCalendarView
                 memorialServices={memorialServices}
                 households={effectiveAllHouseholds}
@@ -257,7 +284,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 onSaveTodo={onSaveTodo}
                 onDeleteService={onDeleteService}
               />
-            ) : (
+            )}
+            {scheduleSubTab === 'todos' && (
               <MobileTodoView
                 templeTodos={templeTodos}
                 households={effectiveAllHouseholds}
@@ -267,6 +295,16 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 activeTempleId={activeTempleId}
                 onSaveTodo={onSaveTodo}
                 onDeleteTodo={onDeleteTodo}
+              />
+            )}
+            {scheduleSubTab === 'tanagyo' && (
+              <MobileTanagyoView
+                households={effectiveAllHouseholds}
+                temples={temples}
+                templeInfo={templeInfo}
+                priests={priests}
+                pastRecords={effectiveAllPastRecords}
+                isStaffMode={isStaffMode}
               />
             )}
           </div>
