@@ -78,19 +78,68 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
   const [filterTemple, setFilterTemple] = useState<string>('ALL');
   const [hideAlreadyRecorded, setHideAlreadyRecorded] = useState<boolean>(false);
 
-  // 寺院情報設定（区分・勘定科目マスタ）で登録されている収入勘定科目を解決
+  // 寺院情報設定（区分・勘定科目マスタ）で登録されている収入勘定科目を完全解決
   const incomeCategories = useMemo(() => {
-    let targetMaster = masterOptions;
-    if (filterTemple !== 'ALL' && templeMasterOptionsMap && templeMasterOptionsMap[filterTemple]) {
-      targetMaster = templeMasterOptionsMap[filterTemple];
-    } else if (activeTempleId !== 'ALL' && templeMasterOptionsMap && templeMasterOptionsMap[activeTempleId]) {
-      targetMaster = templeMasterOptionsMap[activeTempleId];
+    const catsSet = new Set<string>();
+
+    // 1. 絞り込み寺院が指定されている場合
+    if (filterTemple !== 'ALL') {
+      const fromMap = templeMasterOptionsMap?.[filterTemple]?.incomeCategories;
+      if (fromMap && fromMap.length > 0) fromMap.forEach((c) => c && catsSet.add(c.trim()));
+
+      const foundTemple = temples.find((t) => t.id === filterTemple);
+      const fromTemple = foundTemple?.masterOptions?.incomeCategories;
+      if (fromTemple && fromTemple.length > 0) fromTemple.forEach((c) => c && catsSet.add(c.trim()));
     }
 
-    const customCats = targetMaster?.incomeCategories || templeInfo?.masterOptions?.incomeCategories || [];
-    if (customCats && customCats.length > 0) {
-      return customCats;
+    // 2. 指定寺院で見つからなかった場合、または 'ALL' の場合、全寺院・全マスタから確実に統合
+    if (catsSet.size === 0) {
+      // templeMasterOptionsMap の全寺院から抽出
+      if (templeMasterOptionsMap) {
+        Object.values(templeMasterOptionsMap).forEach((m) => {
+          (m.incomeCategories || []).forEach((c) => c && catsSet.add(c.trim()));
+        });
+      }
+
+      // temples プロファイル一覧の masterOptions から抽出
+      if (temples && temples.length > 0) {
+        temples.forEach((t) => {
+          (t.masterOptions?.incomeCategories || []).forEach((c) => c && catsSet.add(c.trim()));
+        });
+      }
+
+      // masterOptions prop から抽出
+      if (masterOptions?.incomeCategories && masterOptions.incomeCategories.length > 0) {
+        masterOptions.incomeCategories.forEach((c) => c && catsSet.add(c.trim()));
+      }
+
+      // templeInfo.masterOptions から抽出
+      if (templeInfo?.masterOptions?.incomeCategories && templeInfo.masterOptions.incomeCategories.length > 0) {
+        templeInfo.masterOptions.incomeCategories.forEach((c) => c && catsSet.add(c.trim()));
+      }
+
+      // localStorage (temple_master_options, temple_master_options_map) から最新の設定を抽出
+      try {
+        const rawMap = localStorage.getItem('temple_master_options_map');
+        if (rawMap) {
+          const parsed = JSON.parse(rawMap);
+          Object.values(parsed).forEach((m: any) => {
+            (m?.incomeCategories || []).forEach((c: string) => c && catsSet.add(c.trim()));
+          });
+        }
+        const rawSingle = localStorage.getItem('temple_master_options');
+        if (rawSingle) {
+          const parsed = JSON.parse(rawSingle);
+          (parsed?.incomeCategories || []).forEach((c: string) => c && catsSet.add(c.trim()));
+        }
+      } catch {}
     }
+
+    const list = Array.from(catsSet).filter(Boolean);
+    if (list.length > 0) {
+      return list;
+    }
+
     return INITIAL_INCOME_CATEGORIES || [
       '法要布施',
       '護持会費',
@@ -102,18 +151,30 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
       '雑収入',
       'その他収入'
     ];
-  }, [masterOptions, templeInfo, filterTemple, activeTempleId, templeMasterOptionsMap]);
+  }, [masterOptions, templeInfo, filterTemple, activeTempleId, templeMasterOptionsMap, temples]);
 
   // 寺院情報設定マスタから納入受取方法を解決
   const paymentMethodOptions = useMemo(() => {
-    let targetMaster = masterOptions;
-    if (filterTemple !== 'ALL' && templeMasterOptionsMap && templeMasterOptionsMap[filterTemple]) {
-      targetMaster = templeMasterOptionsMap[filterTemple];
-    } else if (activeTempleId !== 'ALL' && templeMasterOptionsMap && templeMasterOptionsMap[activeTempleId]) {
-      targetMaster = templeMasterOptionsMap[activeTempleId];
+    const paySet = new Set<string>();
+    if (filterTemple !== 'ALL') {
+      const fromMap = templeMasterOptionsMap?.[filterTemple]?.paymentMethods;
+      if (fromMap && fromMap.length > 0) fromMap.forEach((p) => p && paySet.add(p.trim()));
     }
-    const list = targetMaster?.paymentMethods || templeInfo?.masterOptions?.paymentMethods || [];
-    if (list && list.length > 0) return list;
+    if (paySet.size === 0) {
+      if (templeMasterOptionsMap) {
+        Object.values(templeMasterOptionsMap).forEach((m) => {
+          (m.paymentMethods || []).forEach((p) => p && paySet.add(p.trim()));
+        });
+      }
+      if (masterOptions?.paymentMethods) {
+        masterOptions.paymentMethods.forEach((p) => p && paySet.add(p.trim()));
+      }
+      if (templeInfo?.masterOptions?.paymentMethods) {
+        templeInfo.masterOptions.paymentMethods.forEach((p) => p && paySet.add(p.trim()));
+      }
+    }
+    const list = Array.from(paySet).filter(Boolean);
+    if (list.length > 0) return list;
     return ['現金受付', 'QR受付時', '銀行振込', '郵便振替', 'その他'];
   }, [masterOptions, templeInfo, filterTemple, activeTempleId, templeMasterOptionsMap]);
 
@@ -125,8 +186,9 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
   const [batchPaymentMethod, setBatchPaymentMethod] = useState<string>('現金受付');
   const [quickAmountInput, setQuickAmountInput] = useState<number>(10000);
 
-  // 勘定科目選択ポップアップ表示ステート
+  // 勘定科目選択ポップアップ表示ステート（null のときは一括用、string のときは該当行の householdId 用）
   const [showCategoryPopup, setShowCategoryPopup] = useState<boolean>(false);
+  const [popupTargetRowId, setPopupTargetRowId] = useState<string | null>(null);
 
   // 各行の入力状態
   const [rows, setRows] = useState<HouseholdRowState[]>([]);
@@ -452,9 +514,12 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
                 </label>
                 <button
                   type="button"
-                  onClick={() => setShowCategoryPopup(true)}
+                  onClick={() => {
+                    setPopupTargetRowId(null);
+                    setShowCategoryPopup(true);
+                  }}
                   className="text-[11px] font-bold text-[#8C2D19] hover:text-[#702414] hover:underline flex items-center gap-0.5 cursor-pointer"
-                  title="寺院情報設定の勘定科目一覧からポップアップ選択"
+                  title="寺院情報設定で設定された勘定科目一覧ポップアップを開く"
                 >
                   <Layers className="w-3 h-3" />
                   <span>ポップアップ選択</span>
@@ -480,12 +545,15 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
                 </select>
                 <button
                   type="button"
-                  onClick={() => setShowCategoryPopup(true)}
-                  className="px-2 py-1.5 bg-white hover:bg-amber-50 border border-gray-300 text-gray-800 font-bold rounded-xs cursor-pointer text-xs flex items-center gap-0.5 shrink-0"
+                  onClick={() => {
+                    setPopupTargetRowId(null);
+                    setShowCategoryPopup(true);
+                  }}
+                  className="px-2 py-1.5 bg-[#8C2D19] hover:bg-[#702414] text-white font-bold rounded-xs cursor-pointer text-xs flex items-center gap-1 shrink-0 shadow-xs"
                   title="寺院情報設定で設定された勘定科目一覧ポップアップを開く"
                 >
-                  <span>一覧</span>
-                  <ChevronDown className="w-3 h-3 text-gray-500" />
+                  <Coins className="w-3 h-3" />
+                  <span>科目一覧</span>
                 </button>
               </div>
             </div>
@@ -757,28 +825,43 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
 
                     {/* 勘定科目（寺院情報設定マスタ連動・行個別変更可能） */}
                     <td className="p-2">
-                      <select
-                        value={row.category || batchCategory}
-                        onChange={(e) => handleRowCategoryChange(row.householdId, e.target.value)}
-                        disabled={!row.selected}
-                        className={`w-full px-1.5 py-1 border font-bold text-xs rounded-xs ${
-                          row.selected
-                            ? 'bg-white border-gray-300 text-gray-800 focus:ring-1 focus:ring-[#8C2D19]'
-                            : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                        }`}
-                        title="この世帯の勘定科目（寺院情報設定マスタ）"
-                      >
-                        {incomeCategories.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                        {!incomeCategories.includes(row.category || batchCategory) && (
-                          <option value={row.category || batchCategory}>
-                            {row.category || batchCategory}
-                          </option>
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={row.category || batchCategory}
+                          onChange={(e) => handleRowCategoryChange(row.householdId, e.target.value)}
+                          disabled={!row.selected}
+                          className={`flex-1 min-w-0 px-1.5 py-1 border font-bold text-xs rounded-xs ${
+                            row.selected
+                              ? 'bg-white border-gray-300 text-gray-800 focus:ring-1 focus:ring-[#8C2D19]'
+                              : 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                          }`}
+                          title="この世帯の勘定科目（寺院情報設定マスタ）"
+                        >
+                          {incomeCategories.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                          {!incomeCategories.includes(row.category || batchCategory) && (
+                            <option value={row.category || batchCategory}>
+                              {row.category || batchCategory}
+                            </option>
+                          )}
+                        </select>
+                        {row.selected && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPopupTargetRowId(row.householdId);
+                              setShowCategoryPopup(true);
+                            }}
+                            className="p-1 bg-white hover:bg-amber-50 text-[#8C2D19] border border-gray-300 rounded-xs cursor-pointer text-xs shrink-0"
+                            title="寺院情報設定の勘定科目一覧ポップアップから選択"
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      </select>
+                      </div>
                     </td>
 
                     {/* 住所 */}
@@ -879,87 +962,96 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
       </div>
 
       {/* 勘定科目選択ポップアップモーダル（寺院情報設定マスタ連動） */}
-      {showCategoryPopup && (
-        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
-          <div className="bg-white border-2 border-[#8C2D19] shadow-2xl rounded-xs max-w-lg w-full p-4 sm:p-5 animate-in fade-in zoom-in-95 space-y-3 font-sans text-gray-900">
-            {/* ポップアップヘッダー */}
-            <div className="flex items-center justify-between border-b border-gray-200 pb-2.5">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-amber-100 text-[#8C2D19] rounded-xs">
-                  <Coins className="w-5 h-5" />
+      {showCategoryPopup && (() => {
+        const targetRow = popupTargetRowId ? rows.find((r) => r.householdId === popupTargetRowId) : null;
+        const currentActiveCat = targetRow ? (targetRow.category || batchCategory) : batchCategory;
+
+        return (
+          <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3">
+            <div className="bg-white border-2 border-[#8C2D19] shadow-2xl rounded-xs max-w-lg w-full p-4 sm:p-5 animate-in fade-in zoom-in-95 space-y-3 font-sans text-gray-900">
+              {/* ポップアップヘッダー */}
+              <div className="flex items-center justify-between border-b border-gray-200 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-amber-100 text-[#8C2D19] rounded-xs">
+                    <Coins className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm sm:text-base text-gray-900 flex items-center gap-1.5">
+                      <span>{targetRow ? `【${targetRow.familyHead} 様】の勘定科目選択` : '勘定科目の選択（一括）'}</span>
+                      <span className="text-[10px] text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-xs font-bold">
+                        寺院情報設定 連動
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-gray-500">
+                      寺院情報設定（区分・勘定科目マスタ）に登録されている収入勘定科目（全{incomeCategories.length}件）です。
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-sm sm:text-base text-gray-900 flex items-center gap-1.5">
-                    <span>勘定科目の選択</span>
-                    <span className="text-[10px] text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-xs font-bold">
-                      寺院情報設定 連動
-                    </span>
-                  </h4>
-                  <p className="text-[11px] text-gray-500">
-                    寺院情報設定（区分・勘定科目マスタ）に登録されている収入勘定科目（全{incomeCategories.length}件）です。
-                  </p>
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryPopup(false)}
+                  className="text-gray-400 hover:text-gray-700 p-1 rounded-xs cursor-pointer"
+                  title="閉じる"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* ポップアップコンテンツ: 科目ボタングリッド */}
+              <div className="py-1">
+                <div className="text-xs font-bold text-gray-700 mb-2.5 flex items-center justify-between">
+                  <span>適用したい科目をクリックしてください：</span>
+                  <span className="text-[11px] text-[#8C2D19]">
+                    現在選択中: <strong className="font-black underline">{currentActiveCat}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1">
+                  {incomeCategories.map((cat) => {
+                    const isSelected = currentActiveCat === cat;
+                    return (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => {
+                          if (popupTargetRowId) {
+                            handleRowCategoryChange(popupTargetRowId, cat);
+                          } else {
+                            handleBatchCategoryChange(cat);
+                          }
+                          setShowCategoryPopup(false);
+                        }}
+                        className={`p-2.5 text-left border rounded-xs transition-all cursor-pointer flex items-center justify-between text-xs ${
+                          isSelected
+                            ? 'bg-[#8C2D19] text-white border-[#8C2D19] font-black shadow-xs ring-1 ring-[#8C2D19]'
+                            : 'bg-[#FAF9F5] text-gray-800 border-gray-300 hover:border-[#8C2D19] hover:bg-amber-50/60 font-bold'
+                        }`}
+                      >
+                        <span className="truncate">{cat}</span>
+                        {isSelected && <Check className="w-4 h-4 text-white shrink-0 ml-1" />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCategoryPopup(false)}
-                className="text-gray-400 hover:text-gray-700 p-1 rounded-xs cursor-pointer"
-                title="閉じる"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* ポップアップコンテンツ: 科目ボタングリッド */}
-            <div className="py-1">
-              <div className="text-xs font-bold text-gray-700 mb-2.5 flex items-center justify-between">
-                <span>適用したい科目をクリックしてください：</span>
-                <span className="text-[11px] text-[#8C2D19]">
-                  現在選択中: <strong className="font-black underline">{batchCategory}</strong>
+              {/* ポップアップフッター */}
+              <div className="pt-2.5 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <span className="text-[11px] text-gray-500">
+                  ※科目の追加・並べ替えは「寺院情報設定 ＞ 区分・勘定科目マスタ」で設定できます。
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCategoryPopup(false)}
+                  className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xs cursor-pointer text-xs self-end sm:self-auto"
+                >
+                  閉じる
+                </button>
               </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto pr-1">
-                {incomeCategories.map((cat) => {
-                  const isSelected = batchCategory === cat;
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => {
-                        handleBatchCategoryChange(cat);
-                        setShowCategoryPopup(false);
-                      }}
-                      className={`p-2.5 text-left border rounded-xs transition-all cursor-pointer flex items-center justify-between text-xs ${
-                        isSelected
-                          ? 'bg-[#8C2D19] text-white border-[#8C2D19] font-black shadow-xs ring-1 ring-[#8C2D19]'
-                          : 'bg-[#FAF9F5] text-gray-800 border-gray-300 hover:border-[#8C2D19] hover:bg-amber-50/60 font-bold'
-                      }`}
-                    >
-                      <span className="truncate">{cat}</span>
-                      {isSelected && <Check className="w-4 h-4 text-white shrink-0 ml-1" />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ポップアップフッター */}
-            <div className="pt-2.5 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-              <span className="text-[11px] text-gray-500">
-                ※科目の追加・並べ替えは「寺院情報設定 ＞ 区分・勘定科目マスタ」で設定できます。
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowCategoryPopup(false)}
-                className="px-4 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-xs cursor-pointer text-xs self-end sm:self-auto"
-              >
-                閉じる
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

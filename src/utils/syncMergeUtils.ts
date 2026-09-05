@@ -329,16 +329,34 @@ export function mergeHouseholds(
       const mergedFamily = mergeFamilyMembers(localHh.familyMembers || [], remoteHh.familyMembers || [], deletedLogMap).merged;
 
       if (remoteTime > localTime) {
-        // Remote is newer
+        // Remote is newer - adopt remote fields, but protect valid local pin coordinates if remote has none
+        const effectiveLat = (typeof remoteHh.latitude === 'number' && !isNaN(remoteHh.latitude))
+          ? remoteHh.latitude
+          : (typeof localHh.latitude === 'number' && !isNaN(localHh.latitude) ? localHh.latitude : undefined);
+        const effectiveLng = (typeof remoteHh.longitude === 'number' && !isNaN(remoteHh.longitude))
+          ? remoteHh.longitude
+          : (typeof localHh.longitude === 'number' && !isNaN(localHh.longitude) ? localHh.longitude : undefined);
+
         merged.push({
           ...remoteHh,
+          latitude: effectiveLat,
+          longitude: effectiveLng,
           familyMembers: mergedFamily,
         });
         updatedCount++;
       } else {
-        // Local is newer or equal
+        // Local is newer or equal - keep local, but inherit remote coordinates if local has none
+        const effectiveLat = (typeof localHh.latitude === 'number' && !isNaN(localHh.latitude))
+          ? localHh.latitude
+          : (typeof remoteHh.latitude === 'number' && !isNaN(remoteHh.latitude) ? remoteHh.latitude : undefined);
+        const effectiveLng = (typeof localHh.longitude === 'number' && !isNaN(localHh.longitude))
+          ? localHh.longitude
+          : (typeof remoteHh.longitude === 'number' && !isNaN(remoteHh.longitude) ? remoteHh.longitude : undefined);
+
         merged.push({
           ...localHh,
+          latitude: effectiveLat,
+          longitude: effectiveLng,
           familyMembers: mergedFamily,
         });
         localKeptCount++;

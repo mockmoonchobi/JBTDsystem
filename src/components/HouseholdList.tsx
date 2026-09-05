@@ -1598,11 +1598,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   };
 
   return (
-    <div className="flex flex-col space-y-0">
+    <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden space-y-0">
       {/* Top Banner & View Switcher Bar */}
-      <div className={`bg-[#1A1A1A] border-b border-[#D4AF37] p-3.5 sm:p-4 shadow-md flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 font-serif text-[#F9F7F2] shrink-0 ${
-        viewMode === 'individual' ? 'sticky top-0 sm:top-[96px] z-20' : ''
-      }`}>
+      <div className="bg-[#1A1A1A] border-b border-[#D4AF37] px-3 py-2 sm:px-4 sm:py-2.5 shadow-md flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 font-serif text-[#F9F7F2] shrink-0">
         <div>
           <div className="flex items-center flex-wrap gap-3">
             <div className="w-8 h-8 bg-[#D4AF37] text-[#1A1A1A] flex items-center justify-center font-bold font-sans text-xs shrink-0">
@@ -1919,9 +1917,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
       {/* VIEW MODE 1: リスト表示 (All Households Row/Table View) */}
       {viewMode === 'list' && (
-        <div className="font-sans flex flex-col flex-1 min-h-0 space-y-0">
+        <div className="font-sans flex flex-col flex-1 min-h-0 overflow-hidden space-y-0">
           {/* Table Container */}
-          <div ref={tableContainerRef} className="max-h-[calc(100vh-270px)] min-h-[350px] overflow-y-auto overflow-x-auto bg-white border-x border-b border-[#D1CEC7] shadow-xs relative">
+          <div ref={tableContainerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-auto bg-white border-x border-b border-[#D1CEC7] shadow-xs relative">
             <table className="w-full text-left border-collapse font-sans text-xs">
               <thead className="sticky top-0 z-20 bg-[#1A1A1A] text-[#F9F7F2] border-b border-[#D4AF37] select-none shadow-sm">
                 <tr className="bg-[#1A1A1A]">
@@ -2677,9 +2675,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
       {/* VIEW MODE 2: 個別表示 (Individual Household Detail + Past Records) */}
       {viewMode === 'individual' && (
-        <div className="flex flex-col flex-1 min-h-0 font-serif space-y-0">
+        <div className="flex flex-col flex-1 min-h-0 font-serif space-y-0 overflow-hidden">
           {/* Individual Navigation Bar */}
-          <div className="bg-white border-x border-b border-[#D1CEC7] p-3 sm:p-4 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
+          <div className="bg-white border-x border-b border-[#D1CEC7] px-3 py-2 sm:px-4 sm:py-2.5 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 shrink-0">
             {/* Back to list & Keyword Search */}
             <div className="flex flex-1 items-center space-x-3">
               <button
@@ -2749,7 +2747,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
           {/* 検索結果が0件の場合 */}
           {sortedHouseholds.length === 0 ? (
-            <div className="bg-white border-x border-b border-[#D1CEC7] p-12 text-center text-[#888888] font-sans shadow-sm">
+            <div className="bg-white border-x border-b border-[#D1CEC7] p-8 text-center text-[#888888] font-sans shadow-sm flex-1 min-h-0 overflow-y-auto">
               <p className="text-base font-bold text-[#444444] mb-2">検索条件に一致する檀家世帯が見つかりませんでした。</p>
               <p className="text-xs text-[#888888] mb-4">検索キーワード: 「{searchTerm}」</p>
               <button
@@ -2764,7 +2762,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
             <div
               ref={individualContentRef}
               onScroll={handleIndividualScroll}
-              className="bg-white border-x border-b border-[#D1CEC7] shadow-sm overflow-y-auto max-h-[calc(100vh-235px)] min-h-[400px]"
+              className="flex-1 min-h-0 overflow-y-auto bg-white border-x border-b border-[#D1CEC7] shadow-sm"
             >
               {/* Header Banner */}
             <div className="bg-[#1A1A1A] text-[#F9F7F2] p-6 border-b border-[#D4AF37] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -3765,12 +3763,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     <thead className="bg-[#1A1A1A] text-[#D4AF37] font-sans uppercase tracking-wider font-bold border-b border-[#D4AF37] sticky top-0 z-10">
                       <tr>
                         <th className="px-2.5 py-3 whitespace-nowrap bg-[#1A1A1A] w-[110px]">年月日</th>
-                        <th className="px-4 py-3 whitespace-nowrap bg-[#1A1A1A] min-w-[240px] text-left">戒名</th>
-                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[85px] text-center">新盆</th>
-                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[100px]">当時の施主名</th>
-                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[60px] text-center">続柄</th>
-                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[85px]">俗名</th>
+                        <th className="px-3 py-3 whitespace-nowrap bg-[#1A1A1A] min-w-[200px] text-left">戒名</th>
+                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[80px] text-center">新盆</th>
+                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[95px]">当時の施主</th>
+                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[55px] text-center">続柄</th>
+                        <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[80px]">俗名</th>
                         <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[50px] text-center">享年</th>
+                        <th className="px-2.5 py-3 whitespace-nowrap bg-[#1A1A1A] min-w-[130px]">備考</th>
                         <th className="px-2.5 py-3 text-right font-sans whitespace-nowrap bg-[#1A1A1A] w-[60px]">操作</th>
                       </tr>
                     </thead>
@@ -3778,7 +3777,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       {/* Empty state within fixed-height table */}
                       {currentHouseholdPastRecords.length === 0 && !isAddingNewPastRecordInline && (
                         <tr>
-                          <td colSpan={8} className="p-8 text-center text-[#888888] font-sans">
+                          <td colSpan={9} className="p-8 text-center text-[#888888] font-sans">
                             <div className="flex flex-col items-center justify-center space-y-3">
                               <BookOpen className="w-8 h-8 text-[#CCCCCC]" />
                               <div>
@@ -3810,129 +3809,123 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       )}
                       {/* NEW PAST RECORD INLINE ENTRY ROW */}
                       {isAddingNewPastRecordInline && (
-                        <React.Fragment>
-                          <tr className="bg-[#FFFDF0] border-2 border-[#D4AF37] font-sans">
-                            {/* 年月日 */}
-                            <td className="px-2 py-1.5">
-                              <input
-                                type="text"
-                                value={newPastRecordForm.deathDate || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  const autoNiibon = calculateNiibonFromDeathDate(val, templeInfo?.bonSeason || '8月盆');
+                        <tr className="bg-[#FFFDF0] border-2 border-[#D4AF37] font-sans">
+                          {/* 年月日 */}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.deathDate || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const autoNiibon = calculateNiibonFromDeathDate(val, templeInfo?.bonSeason || '8月盆');
+                                setNewPastRecordForm({
+                                  ...newPastRecordForm,
+                                  deathDate: val,
+                                  niibon: autoNiibon || newPastRecordForm.niibon
+                                });
+                              }}
+                              onFocus={(e) => e.target.select()}
+                              onBlur={(e) => {
+                                const normalized = normalizeDateInput(e.target.value, { mode: 'pastRecord' });
+                                if (normalized) {
                                   setNewPastRecordForm({
                                     ...newPastRecordForm,
-                                    deathDate: val,
-                                    niibon: autoNiibon || newPastRecordForm.niibon
+                                    deathDate: formatJapaneseEraDate(normalized, false),
+                                    niibon: calculateNiibonFromDeathDate(normalized, templeInfo?.bonSeason || '8月盆') || newPastRecordForm.niibon
                                   });
-                                }}
-                                onFocus={(e) => e.target.select()}
-                                onBlur={(e) => {
-                                  const normalized = normalizeDateInput(e.target.value, { mode: 'pastRecord' });
-                                  if (normalized) {
-                                    setNewPastRecordForm({
-                                      ...newPastRecordForm,
-                                      deathDate: formatJapaneseEraDate(normalized, false),
-                                      niibon: calculateNiibonFromDeathDate(normalized, templeInfo?.bonSeason || '8月盆') || newPastRecordForm.niibon
-                                    });
-                                  }
-                                }}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                placeholder="例: 令和8年8月8日"
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono font-bold"
-                              />
-                            </td>
-                            {/* 戒名 */}
-                            <td className="px-3 py-1.5">
-                              <input
-                                type="text"
-                                value={newPastRecordForm.dharmaName || ''}
-                                onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, dharmaName: e.target.value })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                placeholder="戒名・法名 *"
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-serif font-bold text-sm"
-                              />
-                            </td>
-                            {/* 新盆 */}
-                            <td className="px-2 py-1.5">
-                              <input
-                                type="text"
-                                value={newPastRecordForm.niibon || ''}
-                                onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, niibon: e.target.value })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                placeholder="新盆 (例: 令和8年新盆)"
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#D4AF37]"
-                              />
-                            </td>
-                            {/* 施主名 (固定) */}
-                            <td className="px-2 py-1.5 font-bold whitespace-nowrap">
-                              {currentIndividualHousehold.familyHead} 殿
-                            </td>
-                            {/* 続柄 */}
-                            <td className="px-1 py-1.5">
-                              <input
-                                type="text"
-                                value={newPastRecordForm.relationship || ''}
-                                onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, relationship: e.target.value })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                placeholder="続柄"
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs text-center"
-                              />
-                            </td>
-                            {/* 俗名 */}
-                            <td className="px-1 py-1.5">
-                              <input
-                                type="text"
-                                value={newPastRecordForm.secularName || ''}
-                                onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, secularName: e.target.value })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                placeholder="俗名"
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
-                              />
-                            </td>
-                            {/* 享年 */}
-                            <td className="px-1 py-1.5">
-                              <input
-                                type="number"
-                                value={newPastRecordForm.ageAtDeath || ''}
-                                onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, ageAtDeath: Number(e.target.value) })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono text-center"
-                              />
-                            </td>
-                            {/* 操作 */}
-                            <td className="px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
-                              <button
-                                onClick={handleSaveNewPastRecordInline}
-                                className="px-3 py-1 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold text-xs inline-flex items-center space-x-1 shadow-sm"
-                              >
-                                <Save className="w-3.5 h-3.5" />
-                                <span>保存</span>
-                              </button>
-                              <button
-                                onClick={() => setIsAddingNewPastRecordInline(false)}
-                                className="px-2.5 py-1 bg-white border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs hover:bg-[#EBE7DF]"
-                              >
-                                <span>取消</span>
-                              </button>
-                            </td>
-                          </tr>
-                          <tr className="bg-[#FFFDF0] font-sans border-b border-[#D4AF37]">
-                            <td colSpan={8} className="p-2">
-                              <div className="flex items-center space-x-1.5">
-                                <span className="font-bold text-xs text-[#1A1A1A] whitespace-nowrap">備考メモ:</span>
-                                <input
-                                  type="text"
-                                  value={newPastRecordForm.notes || ''}
-                                  onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, notes: e.target.value })}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                                  placeholder="メモ・特記事項"
-                                  className="w-full bg-white border border-[#1A1A1A] px-2 py-1 text-xs"
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        </React.Fragment>
+                                }
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="例: 令和8年8月8日"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono font-bold"
+                            />
+                          </td>
+                          {/* 戒名 */}
+                          <td className="px-3 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.dharmaName || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, dharmaName: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="戒名・法名 *"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-serif font-bold text-sm"
+                            />
+                          </td>
+                          {/* 新盆 */}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.niibon || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, niibon: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="新盆 (例: 令和8年新盆)"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#D4AF37]"
+                            />
+                          </td>
+                          {/* 当時の施主 (固定) */}
+                          <td className="px-2 py-1.5 font-bold whitespace-nowrap">
+                            {currentIndividualHousehold.familyHead} 殿
+                          </td>
+                          {/* 続柄 */}
+                          <td className="px-1 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.relationship || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, relationship: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="続柄"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs text-center"
+                            />
+                          </td>
+                          {/* 俗名 */}
+                          <td className="px-1 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.secularName || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, secularName: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="俗名"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
+                            />
+                          </td>
+                          {/* 享年 */}
+                          <td className="px-1 py-1.5">
+                            <input
+                              type="number"
+                              value={newPastRecordForm.ageAtDeath || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, ageAtDeath: Number(e.target.value) })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono text-center"
+                            />
+                          </td>
+                          {/* 備考 */}
+                          <td className="px-1.5 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.notes || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, notes: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="備考メモ"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
+                            />
+                          </td>
+                          {/* 操作 */}
+                          <td className="px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
+                            <button
+                              onClick={handleSaveNewPastRecordInline}
+                              className="px-3 py-1 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold text-xs inline-flex items-center space-x-1 shadow-sm"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>保存</span>
+                            </button>
+                            <button
+                              onClick={() => setIsAddingNewPastRecordInline(false)}
+                              className="px-2.5 py-1 bg-white border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs hover:bg-[#EBE7DF]"
+                            >
+                              <span>取消</span>
+                            </button>
+                          </td>
+                        </tr>
                       )}
                       {currentHouseholdPastRecords.map((record, rIdx) => {
                         const isEditingThisRecord = editingPastRecordId === record.id && inlinePastRecordForm;
@@ -4037,6 +4030,17 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                     className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono text-center"
                                   />
                                 </td>
+                                {/* 備考 (編集時) */}
+                                <td className="px-1.5 py-1.5">
+                                  <input
+                                    type="text"
+                                    value={inlinePastRecordForm.notes || ''}
+                                    onChange={(e) => setInlinePastRecordForm({ ...inlinePastRecordForm, notes: e.target.value })}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlinePastRecord(); }}
+                                    placeholder="備考"
+                                    className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
+                                  />
+                                </td>
                                 {/* 操作 (編集時) */}
                                 <td className="px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
                                   <button
@@ -4055,30 +4059,17 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                 </td>
                               </tr>
                               <tr className="bg-[#FFFDF0] font-sans">
-                                <td colSpan={8} className="p-2 border-t border-dashed border-[#D1CEC7]">
-                                  <div className="flex flex-col sm:flex-row items-center gap-3">
-                                    <div className="flex items-center space-x-1.5">
-                                      <span className="font-bold text-xs text-[#1A1A1A] whitespace-nowrap">檀信徒ID:</span>
-                                      <input
-                                        type="text"
-                                        value={inlinePastRecordForm.householdId || ''}
-                                        onChange={(e) => setInlinePastRecordForm({ ...inlinePastRecordForm, householdId: e.target.value })}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlinePastRecord(); }}
-                                        placeholder="例: H-1001"
-                                        className="bg-white border border-[#1A1A1A] px-2 py-1 text-xs font-mono w-28 font-bold"
-                                      />
-                                    </div>
-                                    <div className="flex-1 w-full flex items-center space-x-1.5">
-                                      <span className="font-bold text-xs text-[#1A1A1A] whitespace-nowrap">備考:</span>
-                                      <input
-                                        type="text"
-                                        value={inlinePastRecordForm.notes || ''}
-                                        onChange={(e) => setInlinePastRecordForm({ ...inlinePastRecordForm, notes: e.target.value })}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlinePastRecord(); }}
-                                        placeholder="備考メモ（Enterキーで保存）"
-                                        className="w-full bg-white border border-[#1A1A1A] px-2 py-1 text-xs"
-                                      />
-                                    </div>
+                                <td colSpan={9} className="p-2 border-t border-dashed border-[#D1CEC7]">
+                                  <div className="flex items-center space-x-1.5">
+                                    <span className="font-bold text-xs text-[#1A1A1A] whitespace-nowrap">檀信徒ID:</span>
+                                    <input
+                                      type="text"
+                                      value={inlinePastRecordForm.householdId || ''}
+                                      onChange={(e) => setInlinePastRecordForm({ ...inlinePastRecordForm, householdId: e.target.value })}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlinePastRecord(); }}
+                                      placeholder="例: H-1001"
+                                      className="bg-white border border-[#1A1A1A] px-2 py-1 text-xs font-mono w-28 font-bold"
+                                    />
                                   </div>
                                 </td>
                               </tr>
@@ -4105,7 +4096,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                 )}
                               </td>
                               {/* 戒名 */}
-                              <td className="px-4 py-3 font-bold text-[#1A1A1A] text-sm tracking-wide">
+                              <td className="px-3 py-3 font-bold text-[#1A1A1A] text-sm tracking-wide">
                                 {record.dharmaName}
                               </td>
                               {/* 新盆 */}
@@ -4118,7 +4109,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                   <span className="text-[#AAAAAA]">ー</span>
                                 )}
                               </td>
-                              {/* 当時の施主名 */}
+                              {/* 当時の施主 */}
                               <td className="px-2 py-3 font-bold text-[#1A1A1A] whitespace-nowrap">
                                 {headName}
                               </td>
@@ -4134,6 +4125,16 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                               <td className="px-1 py-3 font-mono text-[#2D2D2D] whitespace-nowrap text-center">
                                 {record.ageAtDeath ? `${record.ageAtDeath}歳` : '—'}
                               </td>
+                              {/* 備考 */}
+                              <td className="px-2.5 py-3 text-[#555555] font-sans text-xs max-w-[200px]">
+                                {record.notes && record.notes.trim() !== '' ? (
+                                  <span className="line-clamp-2" title={record.notes}>
+                                    {record.notes}
+                                  </span>
+                                ) : (
+                                  <span className="text-[#CCCCCC]">—</span>
+                                )}
+                              </td>
                               {/* 操作 */}
                               <td className="px-2.5 py-3 text-right font-sans whitespace-nowrap">
                                 <div className="flex items-center justify-end space-x-1.5" onClick={(e) => e.stopPropagation()}>
@@ -4147,13 +4148,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                 </div>
                               </td>
                             </tr>
-                            {record.notes && record.notes.trim() !== '' && (
-                              <tr className="bg-[#FAF9F5] border-t-0">
-                                <td colSpan={8} className="px-3.5 py-1.5 text-[#555555] font-sans pl-8 text-xs border-b border-[#EBE7DF]">
-                                  <span className="font-bold text-[#1A1A1A] mr-2">【備考】</span>{record.notes}
-                                </td>
-                              </tr>
-                            )}
                           </React.Fragment>
                         );
                       })}

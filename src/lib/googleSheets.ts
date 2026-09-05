@@ -816,6 +816,59 @@ export async function ensureSheetGridCapacities(
   }
 }
 
+// 檀家名簿の「緯度」「経度」列（Col 29, Col 30）の表示形式を明示的に数値（0.000000）にフォーマット
+// 過去の「作成日」等の日付書式がセルに残って経度が日付表示化（例: 1958/01/01）する問題を完全に防止・解除
+export async function formatHouseholdCoordinatesInSheets(
+  accessToken: string,
+  spreadsheetId: string
+): Promise<void> {
+  try {
+    const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title)`;
+    const metaRes = await fetchWithRetry(metaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }, 2, 500, 10000);
+    if (!metaRes.ok) return;
+    const metaJson = await metaRes.json();
+    const targetSheet = (metaJson.sheets || []).find((s: any) => s.properties?.title === '檀家名簿');
+    if (!targetSheet || targetSheet.properties?.sheetId === undefined) return;
+    const sheetId = targetSheet.properties.sheetId;
+
+    const batchUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
+    await fetchWithRetry(batchUpdateUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            repeatCell: {
+              range: {
+                sheetId,
+                startRowIndex: 1, // ヘッダー行を除く全行
+                startColumnIndex: 29, // Col 29: 緯度
+                endColumnIndex: 31,   // Col 30: 経度 (31は排他)
+              },
+              cell: {
+                userEnteredFormat: {
+                  numberFormat: {
+                    type: 'NUMBER',
+                    pattern: '0.000000',
+                  },
+                },
+              },
+              fields: 'userEnteredFormat.numberFormat',
+            },
+          },
+        ],
+      }),
+    }, 2, 500, 15000);
+  } catch (e) {
+    console.warn('Failed to format household coordinates in Google Sheets:', e);
+  }
+}
+
 // Completely clears all cell data from all sheets in the Google Spreadsheet.
 export async function clearAllSpreadsheetData(
   accessToken: string,
@@ -1213,8 +1266,8 @@ export async function exportToSheets(
       h.tanagyoOrder ?? '',
       h.tanagyoAddress || '',
       h.tanagyoNotes || '',
-      typeof h.latitude === 'number' && !isNaN(h.latitude) ? h.latitude : '',
-      typeof h.longitude === 'number' && !isNaN(h.longitude) ? h.longitude : '',
+      typeof h.latitude === 'number' && !isNaN(h.latitude) ? Number(h.latitude.toFixed(6)) : '',
+      typeof h.longitude === 'number' && !isNaN(h.longitude) ? Number(h.longitude.toFixed(6)) : '',
       h.notes || '',
       cDate,
       cTime,
@@ -1835,6 +1888,13 @@ export async function exportToSheets(
       throw updateErr;
     }
   }
+
+  // 檀家名簿の書き込みが含まれている場合、緯度・経度の列書式を確実に数値形式（0.000000）にフォーマットして日付化を防止
+  if (!targetTablesFilter || shouldIncludeSheet('檀家名簿')) {
+    await formatHouseholdCoordinatesInSheets(accessToken, spreadsheetId).catch((err) => {
+      console.warn('formatHouseholdCoordinatesInSheets warning:', err);
+    });
+  }
 }
 
 /**
@@ -2094,6 +2154,24 @@ export async function importFromSheets(
   };
 
   const cleanStr = (s: string) => String(s || '').trim().toLowerCase().replace(/[\s\r\n_（）()【】\[\]/・\-]/g, '');
+
+  // 緯度・経度の安全パース（日付文字列 "1958/01/01" や異常値が混入しても座標としてパースせず undefined を返す）
+  const parseCoordinateValue = (val: any, min: number, max: number): number | undefined => {
+    if (val === undefined || val === null || val === '') return undefined;
+    const str = String(val).trim();
+    // 日付形式（1958/01/01 や 1958-01-01 などスラッシュや年月日の文字が入ったもの）は座標ではないため確実に除外
+    if (str.includes('/') || str.includes('年') || str.includes('月') || str.includes('日')) {
+      return undefined;
+    }
+    if (str.lastIndexOf('-') > 0) {
+      return undefined;
+    }
+    const num = Number(str);
+    if (isNaN(num)) return undefined;
+    // 妥当な座標範囲チェック
+    if (num < min || num > max) return undefined;
+    return Math.round(num * 1000000) / 1000000;
+  };
 
   const findColIdx = (headers: string[], aliases: string[]): number => {
     if (!headers || headers.length === 0) return -1;
@@ -2640,8 +2718,8 @@ export async function importFromSheets(
 
       const rawLat = latIdx !== -1 ? row[latIdx] : undefined;
       const rawLng = lngIdx !== -1 ? row[lngIdx] : undefined;
-      const latitude = rawLat !== undefined && rawLat !== '' && !isNaN(Number(rawLat)) ? Number(rawLat) : undefined;
-      const longitude = rawLng !== undefined && rawLng !== '' && !isNaN(Number(rawLng)) ? Number(rawLng) : undefined;
+      const latitude = parseCoordinateValue(rawLat, -90, 90);
+      const longitude = parseCoordinateValue(rawLng, -180, 180);
 
       const notes = String((notesIdx !== -1 ? row[notesIdx] : '') || '').trim();
       const rawCreated = createdIdx !== -1 ? row[createdIdx] : '';

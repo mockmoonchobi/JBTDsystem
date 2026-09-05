@@ -289,11 +289,9 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                 className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-sm text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm border ${
                   syncStatus === 'syncing'
                     ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-                    : syncStatus === 'synced'
-                    ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900'
                     : syncStatus === 'error'
                     ? 'bg-rose-950/80 border-rose-500/80 text-rose-200'
-                    : 'bg-[#2A2A2A] hover:bg-[#383838] border-[#555555] text-[#F9F7F2]'
+                    : 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900'
                 }`}
                 title="Google スプレッドシート / Drive データ連携設定"
               >
@@ -302,11 +300,6 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                     <RefreshCw className="w-4.5 h-4.5 animate-spin text-amber-400 shrink-0" />
                     <span className="whitespace-nowrap">同期中</span>
                   </>
-                ) : syncStatus === 'synced' ? (
-                  <>
-                    <Cloud className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
-                    <span className="whitespace-nowrap">連携済</span>
-                  </>
                 ) : syncStatus === 'error' ? (
                   <>
                     <CloudOff className="w-4.5 h-4.5 text-rose-400 shrink-0" />
@@ -314,8 +307,9 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                   </>
                 ) : (
                   <>
-                    <Cloud className="w-4.5 h-4.5 text-[#D4AF37] shrink-0" />
-                    <span className="whitespace-nowrap">データ連携</span>
+                    <Cloud className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <span className="whitespace-nowrap">{syncStatus === 'synced' ? '連携済' : 'データ連携'}</span>
                   </>
                 )}
               </button>

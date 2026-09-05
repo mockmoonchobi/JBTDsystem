@@ -367,38 +367,34 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
 
-          {/* Data Link / Google Sheets Sync */}
+          {/* Data Link / Google Sheets Sync - 「総レコード数」と同一の緑色スタイル */}
           <button
             onClick={onOpenGoogleSheetsModal}
             className={`h-9 flex items-center space-x-2 px-3 border transition-colors shadow-xs cursor-pointer ${
-              syncStatus === 'synced'
-                ? 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-500/60'
-                : syncStatus === 'syncing'
+              syncStatus === 'syncing'
                 ? 'bg-amber-950/80 hover:bg-amber-900 text-amber-200 border-amber-500/60'
                 : syncStatus === 'error'
                 ? 'bg-rose-950/80 hover:bg-rose-900 text-rose-200 border-rose-500/60'
-                : 'bg-[#2A2A2A] hover:bg-[#333333] text-[#F9F7F2] border-[#444444]'
+                : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border-emerald-500/60'
             }`}
             title="Google スプレッドシート常時自動同期・Excel入出力"
           >
             {syncStatus === 'syncing' ? (
               <RefreshCw className="w-4 h-4 shrink-0 text-amber-400 animate-spin" />
-            ) : syncStatus === 'synced' ? (
-              <Cloud className="w-4 h-4 shrink-0 text-emerald-400" />
             ) : syncStatus === 'error' ? (
               <CloudOff className="w-4 h-4 shrink-0 text-rose-400" />
             ) : (
-              <FileSpreadsheet className="w-4 h-4 shrink-0 text-[#D4AF37]" />
+              <Cloud className="w-4 h-4 shrink-0 text-emerald-400" />
             )}
             <div className="flex flex-col items-start justify-center text-left leading-none space-y-0.5">
               <span className="font-bold text-xs flex items-center gap-1.5 whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 データ連携
-                {syncStatus === 'synced' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
               </span>
-              <span className="text-[10px] opacity-75 font-mono whitespace-nowrap">
+              <span className="text-[10px] opacity-80 font-mono whitespace-nowrap text-emerald-300">
                 {syncStatus === 'synced' ? (lastSyncTime ? `同期済 (${lastSyncTime})` : '自動同期中') :
                  syncStatus === 'syncing' ? '同期中...' :
-                 syncStatus === 'error' ? '同期エラー' : '未連携 / Excel'}
+                 syncStatus === 'error' ? '同期エラー' : '連携・Excel管理'}
               </span>
             </div>
           </button>

@@ -3643,7 +3643,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F9F7F2] text-[#2D2D2D] font-serif flex flex-col selection:bg-[#D4AF37] selection:text-[#1A1A1A]">
+    <div className={`bg-[#F9F7F2] text-[#2D2D2D] font-serif flex flex-col selection:bg-[#D4AF37] selection:text-[#1A1A1A] ${
+      activeTab === 'households' ? 'h-screen overflow-hidden' : 'min-h-screen'
+    }`}>
       {/* Startup Launcher Modal (Available on desktop launch / manual trigger) */}
       <StartupLauncher
         isOpen={isStartupLauncherOpen}
@@ -3686,7 +3688,11 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 flex-1 w-full">
+      <main className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex-1 w-full ${
+        activeTab === 'households'
+          ? 'py-1.5 sm:py-2 flex flex-col min-h-0 overflow-hidden'
+          : 'py-3.5 sm:py-4'
+      }`}>
         {activeTab === 'households' && (
           <HouseholdList
             households={activeHouseholds}
@@ -3849,7 +3855,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="no-print h-10 bg-[#EBE7DF] border-t border-[#D1CEC7] px-6 sm:px-8 flex items-center justify-between text-[10px] uppercase tracking-widest font-sans font-bold text-[#777777] mt-auto">
+      <footer className="no-print h-9 sm:h-10 bg-[#EBE7DF] border-t border-[#D1CEC7] px-6 sm:px-8 flex items-center justify-between text-[10px] uppercase tracking-widest font-sans font-bold text-[#777777] shrink-0 mt-auto">
         <div>TLS 1.3 暗号化連動中</div>
         <div>{activeTempleInfo.mountainName} {activeTempleInfo.name} 檀家管理システム Renge v4.0.2</div>
         <div>システム状態: 正常稼働</div>

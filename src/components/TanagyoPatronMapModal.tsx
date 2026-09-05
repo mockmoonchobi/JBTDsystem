@@ -72,6 +72,38 @@ export const TEMPLE_BORDER_PALETTE = [
   '#3B82F6', // 青
 ];
 
+// 手動調整したピン位置の安全なローカル永続キャッシュ
+const PIN_CACHE_KEY = 'temple_patron_custom_pins_v1';
+
+function getPinCache(): Record<string, { lat: number; lng: number }> {
+  try {
+    const raw = localStorage.getItem(PIN_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePinCoordToCache(householdId: string, lat: number, lng: number): void {
+  try {
+    const cache = getPinCache();
+    cache[householdId] = { lat, lng };
+    localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore
+  }
+}
+
+function removePinCoordFromCache(householdId: string): void {
+  try {
+    const cache = getPinCache();
+    delete cache[householdId];
+    localStorage.setItem(PIN_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore
+  }
+}
+
 export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
   isOpen,
   onClose,
@@ -206,8 +238,26 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
             assignedName = p.name;
           }
         }
+        // 緯度経度の安全な数値パースとローカルピンキャッシュからの確実な復元
+        let lat = typeof h.latitude === 'number' && !isNaN(h.latitude) ? h.latitude : (h.latitude ? Number(h.latitude) : undefined);
+        let lng = typeof h.longitude === 'number' && !isNaN(h.longitude) ? h.longitude : (h.longitude ? Number(h.longitude) : undefined);
+        if (lat !== undefined && (isNaN(lat) || lat < -90 || lat > 90)) lat = undefined;
+        if (lng !== undefined && (isNaN(lng) || lng < -180 || lng > 180)) lng = undefined;
+
+        // 世帯データに座標が欠落していても、ローカル永続キャッシュにあれば自動復元
+        const cachedPin = getPinCache()[h.id];
+        if ((lat === undefined || lng === undefined) && cachedPin) {
+          lat = cachedPin.lat;
+          lng = cachedPin.lng;
+        } else if (lat !== undefined && lng !== undefined) {
+          // 有効な座標があればキャッシュにも同期保持
+          savePinCoordToCache(h.id, lat, lng);
+        }
+
         return {
           ...h,
+          latitude: lat,
+          longitude: lng,
           tanagyoPriestId: assignedId,
           tanagyoPriestName: assignedName,
         };
@@ -708,14 +758,20 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       let baseCoord: { lat: number; lng: number } | null = null;
       let isCustom = false;
 
-      // 1. 手動設定された正確な緯度経度がある場合を最優先
-      if (
-        typeof h.latitude === 'number' &&
-        typeof h.longitude === 'number' &&
-        !isNaN(h.latitude) &&
-        !isNaN(h.longitude)
-      ) {
-        baseCoord = { lat: h.latitude, lng: h.longitude };
+      // 1. 手動設定された正確な緯度経度がある場合を最優先（ピンキャッシュからも補完）
+      let lat = typeof h.latitude === 'number' ? h.latitude : (h.latitude ? Number(h.latitude) : undefined);
+      let lng = typeof h.longitude === 'number' ? h.longitude : (h.longitude ? Number(h.longitude) : undefined);
+      if (lat !== undefined && (isNaN(lat) || lat < -90 || lat > 90)) lat = undefined;
+      if (lng !== undefined && (isNaN(lng) || lng < -180 || lng > 180)) lng = undefined;
+
+      const cached = getPinCache()[h.id];
+      if ((lat === undefined || lng === undefined) && cached) {
+        lat = cached.lat;
+        lng = cached.lng;
+      }
+
+      if (lat !== undefined && lng !== undefined) {
+        baseCoord = { lat, lng };
         isCustom = true;
       } else {
         // 2. 国土地理院住所検索の座標
@@ -893,7 +949,8 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
         const newLat = Math.round(newLatLng.lat * 1000000) / 1000000;
         const newLng = Math.round(newLatLng.lng * 1000000) / 1000000;
 
-        // ドラッグした正確な位置をこの世帯の緯度経度として保存
+        // ドラッグした正確な位置をこの世帯の緯度経度として保存し、ローカル永続キャッシュにも即時同期
+        savePinCoordToCache(h.id, newLat, newLng);
         updateHouseholdAssignment(h.id, {
           latitude: newLat,
           longitude: newLng,
@@ -993,6 +1050,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
           resetBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
+            removePinCoordFromCache(h.id);
             updateHouseholdAssignment(h.id, {
               latitude: undefined,
               longitude: undefined,
