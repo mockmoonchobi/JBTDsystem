@@ -89,7 +89,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   activeTempleId = 'temple-main',
   isStaffMode = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>('excel');
+  const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>(() => isStaffMode ? 'sheets' : 'excel');
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
   const [loading, setLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | 'loading'; text: string } | null>(null);
@@ -539,31 +539,33 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
         {/* Tab Switcher */}
         <div className="flex border-b border-[#D1CEC7] bg-[#F2EFE9] text-xs font-bold shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('excel')}
-            className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'excel'
-                ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
-                : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
-            }`}
-          >
-            <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
-            <span>① Excel入出力 (.xlsx) ＆ 他DB取込</span>
-          </button>
+          {!isStaffMode && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('excel')}
+              className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'excel'
+                  ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
+                  : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
+              <span>① Excel入出力 (.xlsx) ＆ 他DB取込</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab('sheets')}
             className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'sheets'
+              activeTab === 'sheets' || isStaffMode
                 ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
                 : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
             }`}
           >
-            <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-emerald-600' : 'text-[#888888]'}`} />
-            <span>② Googleシート常時自動同期</span>
+            <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-blue-500' : 'text-[#888888]'}`} />
+            <span>{isStaffMode ? 'Googleシート常時自動同期（連携状況）' : '② Googleシート常時自動同期'}</span>
             {syncStatus === 'synced' && (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             )}
           </button>
         </div>
@@ -600,7 +602,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           )}
 
           {/* ==================== TAB 1: EXCEL IO & EXTERNAL DB ==================== */}
-          {activeTab === 'excel' && (
+          {activeTab === 'excel' && !isStaffMode && (
             <div className="space-y-3.5">
               {/* Excel Local File Export/Import */}
               <div className="bg-[#FAF8F5] border border-[#D4AF37]/60 p-3.5 space-y-3">
@@ -753,14 +755,14 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   </span>
                   <span className={`px-2 py-0.5 text-xs font-bold flex items-center space-x-1 ${
                     syncStatus === 'synced'
-                      ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-500'
+                      ? 'bg-blue-900/80 text-blue-200 border border-blue-500'
                       : syncStatus === 'syncing'
                       ? 'bg-amber-900/80 text-amber-200 border border-amber-500'
                       : syncStatus === 'error'
                       ? 'bg-rose-900/80 text-rose-200 border border-rose-500'
                       : 'bg-gray-800 text-gray-400 border border-gray-600'
                   }`}>
-                    {syncStatus === 'synced' && <Check className="w-3 h-3 text-emerald-400" />}
+                    {syncStatus === 'synced' && <Check className="w-3 h-3 text-blue-400" />}
                     {syncStatus === 'syncing' && <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />}
                     {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-rose-400" />}
                     <span>

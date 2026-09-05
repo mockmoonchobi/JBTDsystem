@@ -88,6 +88,7 @@ import { withCreationAudit, withUpdateAudit, getCurrentAuditFields } from './uti
 import { migrateAllDankaIds } from './utils/dankaIdUtils';
 import { sanitizeAppDataset } from './utils/sanitizeDataUtils';
 import { useAppHistory } from './hooks/useAppHistory';
+import { getPreviousDay } from './utils/calendarUtils';
 import { syncTobaTodosList } from './utils/tobaTodoSync';
 import { 
   recordDeletedRecord, 
@@ -297,6 +298,35 @@ export default function App() {
     }
   }, []);
 
+  // 既存ローカルストレージ内のダミー世帯住所に伏字「⚫️」が残っている場合、実在住所へ自動補正（国土地理院マップ連携用）
+  useEffect(() => {
+    const rawHouseholds = loadJsonState<Household[]>('temple_households', []);
+    if (!rawHouseholds || rawHouseholds.length === 0) return;
+
+    let hasBlackout = false;
+    const initialMap = new Map(INITIAL_HOUSEHOLDS.map((h) => [h.id, h.address]));
+
+    const fixedHouseholds = rawHouseholds.map((h) => {
+      if (h.address && (h.address.includes('⚫️') || h.address.includes('●'))) {
+        hasBlackout = true;
+        const newAddr = initialMap.get(h.id);
+        return {
+          ...h,
+          address: newAddr || h.address.replace(/[⚫️●]/g, '1'),
+          tanagyoAddress: h.tanagyoAddress && (h.tanagyoAddress.includes('⚫️') || h.tanagyoAddress.includes('●'))
+            ? (newAddr || h.tanagyoAddress.replace(/[⚫️●]/g, '1'))
+            : h.tanagyoAddress,
+        };
+      }
+      return h;
+    });
+
+    if (hasBlackout) {
+      saveJsonState('temple_households', fixedHouseholds);
+      setHouseholds(fixedHouseholds);
+    }
+  }, []);
+
   const handleSaveBatchAccountingData = (data: BatchAccountingData | null) => {
     setBatchAccountingData(data);
     syncStateRef.current.batchAccountingData = data;
@@ -503,6 +533,45 @@ export default function App() {
   useEffect(() => {
     handleRequestRedoRef.current = handleRequestRedo;
   }, [handleRequestRedo]);
+
+  // 既存出納データの兼務寺院 templeId 不整合の自動修復
+  useEffect(() => {
+    if (households.length === 0 || transactions.length === 0) return;
+
+    let hasMisalignedTx = false;
+    const mainTemple = temples.find((t) => t.isMain);
+    const mainTempleId = mainTemple?.id || 'temple-main';
+    const hhMap = new Map(households.map((h) => [h.id, h]));
+
+    for (const t of transactions) {
+      if (t.householdId) {
+        const hh = hhMap.get(t.householdId);
+        const expectedTempleId = hh?.templeId || (/^K\d+-/i.test(t.householdId) ? temples.find((item) => !item.isMain)?.id : undefined);
+        if (expectedTempleId && expectedTempleId !== mainTempleId && expectedTempleId !== 'temple-main') {
+          if (!t.templeId || t.templeId === mainTempleId || t.templeId === 'temple-main') {
+            hasMisalignedTx = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (hasMisalignedTx) {
+      const sanitized = sanitizeAppDataset({
+        households,
+        pastRecords,
+        transactions,
+        memorialServices,
+        templeTodos,
+        familyMembers,
+        temples,
+        templeInfo,
+      });
+      setTransactions(sanitized.transactions);
+      syncStateRef.current.transactions = sanitized.transactions;
+      saveJsonState('temple_transactions', sanitized.transactions);
+    }
+  }, [households, transactions, temples, templeInfo, pastRecords, memorialServices, templeTodos, familyMembers]);
 
   // Active master options based on active temple
   const activeMasterOptions = useMemo(() => {
@@ -1880,9 +1949,9 @@ export default function App() {
         });
 
         if (hasIncomingRemoteUpdates && !isDisposed) {
-          // 他スタッフや別端末からのデータ更新が検出されたため、画面を妨げずにサイレント同期（isSilent: true）を実行
+          // 他スタッフや別端末からのデータ更新が操作履歴から判明したため、データ連携を黄色表示にして端末データを更新
           if (!isSyncInProgressRef.current && !isCleanWritingRef.current) {
-            await syncWithGoogleDriveRef.current(token, sheet.id, false /* isClean */, true /* isSilent */);
+            await syncWithGoogleDriveRef.current(token, sheet.id, false /* isClean */, false /* isSilent: false で必ず黄色回転マーク表示 */);
           }
         }
       } catch (err) {
@@ -2454,11 +2523,42 @@ export default function App() {
   };
 
   const handleBatchUpdateHouseholds = (updatedList: Household[], description?: string) => {
-    recordHistory(description || `${updatedList.length}件の世帯情報を一括更新`);
-    const { operator, deviceInfo } = getCurrentOperatorInfo();
     const existingMap = new Map(households.map((h) => [h.id, h]));
+
+    // 実際に差分のある世帯のみ抽出（変更のない無関係な世帯を二重除外）
+    const actuallyChangedList = updatedList.filter((h) => {
+      const exist = existingMap.get(h.id);
+      if (!exist) return true;
+      // 実質的データに差分があるか比較
+      return (
+        (h.familyHead || '') !== (exist.familyHead || '') ||
+        (h.postalCode || '') !== (exist.postalCode || '') ||
+        (h.address || '') !== (exist.address || '') ||
+        (h.phone || '') !== (exist.phone || '') ||
+        (h.mobile || '') !== (exist.mobile || '') ||
+        h.tanagyoMonthlyVisit !== exist.tanagyoMonthlyVisit ||
+        (h.tanagyoDate || '') !== (exist.tanagyoDate || '') ||
+        (h.tanagyoTimeSlot || '') !== (exist.tanagyoTimeSlot || '') ||
+        (h.tanagyoPriestId || '') !== (exist.tanagyoPriestId || '') ||
+        (h.tanagyoPriestName || '') !== (exist.tanagyoPriestName || '') ||
+        h.tanagyoOrder !== exist.tanagyoOrder ||
+        h.latitude !== exist.latitude ||
+        h.longitude !== exist.longitude ||
+        (h.tanagyoAddress || '') !== (exist.tanagyoAddress || '') ||
+        (h.tanagyoNotes || '') !== (exist.tanagyoNotes || '') ||
+        (h.templeId || '') !== (exist.templeId || '') ||
+        JSON.stringify(h) !== JSON.stringify(exist)
+      );
+    });
+
+    if (actuallyChangedList.length === 0) {
+      return;
+    }
+
+    recordHistory(description || `${actuallyChangedList.length}件の世帯情報を一括更新`);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
     const updateMap = new Map(
-      updatedList.map((h) => {
+      actuallyChangedList.map((h) => {
         const exist = existingMap.get(h.id);
         const audited = withUpdateAudit(h, exist);
         recordOperationLog(
@@ -2473,7 +2573,12 @@ export default function App() {
         return [h.id, audited];
       })
     );
-    setHouseholds((prev) => prev.map((h) => updateMap.get(h.id) || h));
+    setHouseholds((prev) => {
+      const nextList = prev.map((h) => updateMap.get(h.id) || h);
+      saveJsonState('temple_households', nextList);
+      syncStateRef.current.households = nextList;
+      return nextList;
+    });
   };
 
   const handleDeleteHousehold = (id: string) => {
@@ -2695,11 +2800,58 @@ export default function App() {
     );
     setMemorialServices((prev) => prev.filter((s) => s.id !== id));
 
-    // 関連する塔婆タスクも削除
-    if (existing) {
-      setTempleTodos((prevTodos) =>
-        prevTodos.filter((t) => t.relatedServiceId !== id)
-      );
+    // 関連する塔婆タスク・ToDoも連動して確実に削除
+    const targetDate = existing?.scheduledDate ? (normalizeDateInput(existing.scheduledDate) || existing.scheduledDate) : null;
+    const prevDate = targetDate ? getPreviousDay(targetDate) : null;
+    const dharma = existing?.dharmaName?.trim();
+    const deceased = existing?.deceasedName?.trim();
+    const cleanMourner = existing?.chiefMourner?.replace(/(家|様)+$/g, '').trim();
+
+    const deletedTodoItems: { id: string; entityType: 'templeTodo'; label?: string; templeId?: string }[] = [];
+
+    setTempleTodos((prevTodos) =>
+      prevTodos.filter((t) => {
+        // 1. relatedServiceId が一致する場合は無条件に削除
+        if (t.relatedServiceId && t.relatedServiceId === id) {
+          deletedTodoItems.push({ id: t.id, entityType: 'templeTodo', label: t.title, templeId: t.templeId });
+          return false;
+        }
+
+        // 2. existingが存在し、塔婆作成・塔婆関連のタスクである場合
+        if (existing) {
+          const isTobaTask =
+            t.category === '塔婆揮毫' ||
+            t.category === '塔婆準備' ||
+            t.category === '塔婆' ||
+            t.title?.includes('塔婆作成') ||
+            t.title?.includes('塔婆');
+
+          if (isTobaTask) {
+            // 日程が法要予定日またはその前日と一致
+            const dateMatch = targetDate && (t.dueDate === targetDate || t.dueDate === prevDate);
+
+            // 世帯が一致
+            const householdMatch = existing.householdId && t.householdId && t.householdId === existing.householdId;
+
+            // 戒名・俗名・施主名がタイトルやメモ、施主名と一致
+            const nameMatch =
+              (dharma && (t.title?.includes(dharma) || t.notes?.includes(dharma))) ||
+              (deceased && (t.title?.includes(deceased) || t.notes?.includes(deceased))) ||
+              (cleanMourner && (t.title?.includes(cleanMourner) || t.householdHeadName?.includes(cleanMourner) || t.notes?.includes(cleanMourner)));
+
+            if (dateMatch && (householdMatch || nameMatch)) {
+              deletedTodoItems.push({ id: t.id, entityType: 'templeTodo', label: t.title, templeId: t.templeId });
+              return false; // 削除
+            }
+          }
+        }
+
+        return true; // 保持
+      })
+    );
+
+    if (deletedTodoItems.length > 0) {
+      recordDeletedRecordsBatch(deletedTodoItems, operator, deviceInfo);
     }
   };
 
@@ -2799,14 +2951,60 @@ export default function App() {
   };
 
   // Handlers: Transactions CRUD
+  const resolveTxTempleId = (tx: Partial<Transaction>): string => {
+    const mainTempleId = mainTempleProfile?.id || 'temple-main';
+
+    // 1. 紐付く世帯がある場合、世帯の所属寺院を最優先
+    if (tx.householdId) {
+      const hh = households.find((h) => h.id === tx.householdId);
+      if (hh?.templeId) {
+        return hh.templeId;
+      }
+      // 世帯IDプレフィックス (K0-, K1- など) からの推測
+      const cleanHId = tx.householdId.trim().toUpperCase();
+      const kMatch = cleanHId.match(/^K(\d+)-/);
+      if (kMatch) {
+        const kNum = parseInt(kMatch[1], 10);
+        const nonMainTemples = temples.filter((t) => !t.isMain);
+        if (nonMainTemples[kNum]) {
+          return nonMainTemples[kNum].id;
+        }
+        if (nonMainTemples.length > 0) {
+          return nonMainTemples[0].id;
+        }
+      }
+    }
+
+    // 2. 紐付く法要がある場合、法要の所属寺院
+    if (tx.relatedServiceId) {
+      const s = memorialServices.find((item) => item.id === tx.relatedServiceId);
+      if (s?.templeId) {
+        return s.templeId;
+      }
+    }
+
+    // 3. 既に明示的に兼務寺院のtempleIdがセットされている場合
+    if (tx.templeId && tx.templeId !== mainTempleId && tx.templeId !== 'temple-main') {
+      return tx.templeId;
+    }
+
+    // 4. 明示的なtempleIdが指定されていればそれを使用
+    if (tx.templeId) {
+      return tx.templeId;
+    }
+
+    // 5. デフォルト寺院（合算時は本寺、個別時はactiveTempleId、全寺院表示時は本寺）
+    return isAccountingCombined
+      ? mainTempleId
+      : (activeTempleId === 'ALL' ? mainTempleId : activeTempleId);
+  };
+
   const handleAddTransaction = (transaction: Transaction) => {
     recordHistory(`出納「${transaction.notes || transaction.category}」を追加`);
-    const defaultTempleId = isAccountingCombined
-      ? (mainTempleProfile?.id || 'temple-main')
-      : (activeTempleId === 'ALL' ? (mainTempleProfile?.id || 'temple-main') : activeTempleId);
+    const resolvedTempleId = resolveTxTempleId(transaction);
     const txWithTemple: Transaction = {
       ...transaction,
-      templeId: transaction.templeId || defaultTempleId,
+      templeId: resolvedTempleId,
     };
     const auditedTx = withCreationAudit(txWithTemple);
     const { operator, deviceInfo } = getCurrentOperatorInfo();
@@ -2825,7 +3023,13 @@ export default function App() {
   const handleAddBatchTransactions = (newTransactions: Transaction[]) => {
     if (newTransactions.length === 0) return;
     recordHistory(`出納「一括会計受付」${newTransactions.length}件を追加`);
-    const auditedList = newTransactions.map((t) => withCreationAudit(t));
+    const auditedList = newTransactions.map((t) => {
+      const resolvedTempleId = resolveTxTempleId(t);
+      return withCreationAudit({
+        ...t,
+        templeId: resolvedTempleId,
+      });
+    });
     const { operator, deviceInfo } = getCurrentOperatorInfo();
     auditedList.forEach((auditedTx) => {
       recordOperationLog(
@@ -3334,7 +3538,7 @@ export default function App() {
           }}
           onDeleteTodo={handleDeleteTodo}
           onSwitchToDesktop={() => handleSetViewMode('desktop')}
-          onOpenGoogleSheetsModal={() => setIsGoogleSheetsModalOpen(true)}
+          onOpenGoogleSheetsModal={isStaffMode ? undefined : () => setIsGoogleSheetsModalOpen(true)}
           onAddTransaction={handleAddTransaction}
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
@@ -3344,7 +3548,7 @@ export default function App() {
 
         {/* Google Sheets Sync Modal available in mobile mode */}
         <GoogleSheetsModal
-          isOpen={isGoogleSheetsModalOpen}
+          isOpen={!isStaffMode && isGoogleSheetsModalOpen}
           onClose={() => setIsGoogleSheetsModalOpen(false)}
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
@@ -3353,10 +3557,10 @@ export default function App() {
           onPullFromSheets={handlePullFromSheets}
           onSyncWithGoogleDrive={syncWithGoogleDrive}
           onCleanWriteToSheets={cleanWriteToGoogleSheets}
-          onExportExcel={handleExportExcel}
-          onImportExcel={handleImportExcel}
-          onOpenImportModal={() => handleOpenImportModal('household')}
-          onRestoreBackup={handleRestoreFromBackup}
+          onExportExcel={isStaffMode ? undefined : handleExportExcel}
+          onImportExcel={isStaffMode ? undefined : handleImportExcel}
+          onOpenImportModal={isStaffMode ? undefined : () => handleOpenImportModal('household')}
+          onRestoreBackup={isStaffMode ? undefined : handleRestoreFromBackup}
           temples={temples}
           activeTempleId={activeTempleId}
           isStaffMode={isStaffMode}

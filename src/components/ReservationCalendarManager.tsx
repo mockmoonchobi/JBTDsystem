@@ -61,6 +61,8 @@ import {
 } from '../types';
 import { safeStorage } from '../utils/storageUtils';
 import { TanagyoNoticeBoardPrintModal } from './TanagyoNoticeBoardPrintModal';
+import { TanagyoPatronMapModal } from './TanagyoPatronMapModal';
+import { HouseholdTempleBadge } from './HouseholdTempleBadge';
 import {
   formatCurrency,
   formatJapaneseEraDate,
@@ -135,6 +137,8 @@ interface UnassignedTanagyoRowProps {
   dateCandidates: string[];
   pastRecords?: PastRecord[];
   bonSeason?: string;
+  temples?: TempleProfile[];
+  templeInfo?: TempleInfo;
   onAssign: (household: Household, date: string, timeSlot: string, priestId: string) => void;
   onDragStart?: (household: Household) => void;
   onDragEnd?: () => void;
@@ -148,6 +152,8 @@ const UnassignedTanagyoRow: React.FC<UnassignedTanagyoRowProps> = ({
   dateCandidates,
   pastRecords = [],
   bonSeason = '8月盆',
+  temples,
+  templeInfo,
   onAssign,
   onDragStart,
   onDragEnd,
@@ -216,6 +222,12 @@ const UnassignedTanagyoRow: React.FC<UnassignedTanagyoRowProps> = ({
       <td className="p-2.5 font-bold text-[#1A1A1A] whitespace-nowrap">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span>{household.familyHead} 様</span>
+          <HouseholdTempleBadge
+            household={household}
+            temples={temples}
+            mainTempleInfo={templeInfo}
+            size="2xs"
+          />
           {household.district && (
             <span className="text-[10px] px-1.5 py-0.2 bg-gray-100 text-gray-600 rounded-xs">
               {household.district}
@@ -241,6 +253,14 @@ const UnassignedTanagyoRow: React.FC<UnassignedTanagyoRowProps> = ({
         {household.phone && (
           <div className="text-[11px] text-gray-500 font-normal">TEL: {household.phone}</div>
         )}
+      </td>
+      <td className="p-2.5 whitespace-nowrap">
+        <HouseholdTempleBadge
+          household={household}
+          temples={temples}
+          mainTempleInfo={templeInfo}
+          size="xs"
+        />
       </td>
       <td className="p-2.5 text-gray-700 min-w-[200px]">
         <div className="flex items-start gap-1">
@@ -913,6 +933,121 @@ export const extractTobaTaskCoreInfo = (
   };
 };
 
+/**
+ * 予定帳の会計入力等で、通夜・葬儀・枕経などのように予定自体に戒名がない場合に、
+ * その家の過去帳から最新の戒名を取得して返却するヘルパー関数
+ */
+export const getServiceEffectiveDharmaInfo = (
+  service: MemorialService | null | undefined,
+  pastRecords: PastRecord[] = [],
+  households: Household[] = []
+): {
+  dharmaName: string;
+  secularName?: string;
+  isLatestFallback: boolean;
+} | null => {
+  if (!service) return null;
+
+  // 1. service に直接 dharmaName が入力されている場合
+  if (service.dharmaName && service.dharmaName.trim()) {
+    let secular = service.deceasedName?.trim();
+    if (!secular && pastRecords) {
+      const matchedPast = pastRecords.find(
+        (p) =>
+          (service.deceasedId && p.id === service.deceasedId) ||
+          (p.dharmaName &&
+            p.dharmaName.trim() === service.dharmaName?.trim() &&
+            (!service.householdId || p.householdId === service.householdId)) ||
+          (p.dharmaName && p.dharmaName.trim() === service.dharmaName?.trim())
+      );
+      secular = matchedPast?.secularName || matchedPast?.deceasedName;
+    }
+    return {
+      dharmaName: service.dharmaName.trim(),
+      secularName: secular,
+      isLatestFallback: false,
+    };
+  }
+
+  // 2. service に deceasedId があり、過去帳に合致するものがある場合
+  if (service.deceasedId && pastRecords) {
+    const p = pastRecords.find((r) => r.id === service.deceasedId);
+    if (p && p.dharmaName && p.dharmaName.trim()) {
+      return {
+        dharmaName: p.dharmaName.trim(),
+        secularName: p.secularName || p.deceasedName,
+        isLatestFallback: false,
+      };
+    }
+  }
+
+  // 3. 通夜・葬儀・枕経、または予定自体に戒名がない場合：その家の最新の戒名を取得
+  const cleanMourner = (service.chiefMourner || '').replace(/(家|様)+$/g, '').trim();
+
+  let targetHouseholdId = service.householdId;
+  if (!targetHouseholdId && cleanMourner) {
+    const matchedHh = households.find((h) => {
+      const sponsor = getHouseholdSponsorName(h) || h.familyHead || '';
+      const hHead = sponsor.replace(/(家|様)+$/g, '').trim();
+      const fHead = (h.familyHead || '').replace(/(家|様)+$/g, '').trim();
+      return (
+        (hHead && (hHead === cleanMourner || hHead.includes(cleanMourner) || cleanMourner.includes(hHead))) ||
+        (fHead && (fHead === cleanMourner || fHead.includes(cleanMourner) || cleanMourner.includes(fHead)))
+      );
+    });
+    if (matchedHh) {
+      targetHouseholdId = matchedHh.id;
+    }
+  }
+
+  let candidateRecords: PastRecord[] = [];
+  if (targetHouseholdId) {
+    candidateRecords = pastRecords.filter((p) => p.householdId === targetHouseholdId);
+  }
+  if (candidateRecords.length === 0 && cleanMourner) {
+    candidateRecords = pastRecords.filter((p) => {
+      const pHead = (p.householdHeadName || '').replace(/(家|様)+$/g, '').trim();
+      return (
+        pHead &&
+        (pHead === cleanMourner ||
+          pHead.includes(cleanMourner) ||
+          cleanMourner.includes(pHead))
+      );
+    });
+  }
+
+  const withDharma = candidateRecords.filter((p) => p.dharmaName && p.dharmaName.trim());
+  if (withDharma.length > 0) {
+    const sorted = [...withDharma].sort((a, b) => {
+      const normA = normalizeDateInput(a.deathDate || '') || '';
+      const normB = normalizeDateInput(b.deathDate || '') || '';
+      if (normA && normB) return normB.localeCompare(normA); // 新しい命日順（降順）
+      if (normA && !normB) return -1;
+      if (!normA && normB) return 1;
+      const dateA = a.createdDate || a.createdAt || a.id || '';
+      const dateB = b.createdDate || b.createdAt || b.id || '';
+      return dateB.localeCompare(dateA);
+    });
+
+    const latest = sorted[0];
+    return {
+      dharmaName: latest.dharmaName.trim(),
+      secularName: latest.secularName || latest.deceasedName,
+      isLatestFallback: true,
+    };
+  }
+
+  // 4. 戒名が過去帳にもないが、俗名が service.deceasedName にある場合
+  if (service.deceasedName && service.deceasedName.trim()) {
+    return {
+      dharmaName: `(俗名) ${service.deceasedName.trim()}`,
+      isLatestFallback: false,
+    };
+  }
+
+  return null;
+};
+
 export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProps> = ({
   memorialServices,
   households,
@@ -1064,6 +1199,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   const [dropTargetPosition, setDropTargetPosition] = useState<'before' | 'after' | null>(null);
   const [isDropTargetUnassignedArea, setIsDropTargetUnassignedArea] = useState<boolean>(false);
   const [isTanagyoNoticeModalOpen, setIsTanagyoNoticeModalOpen] = useState<boolean>(false);
+  const [isTanagyoMapModalOpen, setIsTanagyoMapModalOpen] = useState<boolean>(false);
+  const [tanagyoTempleFilter, setTanagyoTempleFilter] = useState<string>('ALL');
 
   // 1. 棚経対象の全檀信徒
   const tanagyoPatronHouseholds = useMemo(() => {
@@ -1086,6 +1223,15 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     return tanagyoPatronHouseholds
       .filter((h) => !isTanagyoFullyAssigned(h))
       .filter((h) => {
+        if (tanagyoTempleFilter !== 'ALL') {
+          const mainTemple = temples?.find((t) => t.isMain) || temples?.[0];
+          const mainTempleId = mainTemple?.id || templeInfo?.id || 'temple-main';
+          const hTempleId = h.templeId || mainTempleId;
+          if (hTempleId !== tanagyoTempleFilter) return false;
+        }
+        return true;
+      })
+      .filter((h) => {
         if (!tanagyoSearchTerm) return true;
         const q = tanagyoSearchTerm.toLowerCase();
         const addr = (h.tanagyoAddress || h.address || '').toLowerCase();
@@ -1099,7 +1245,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
         const addrB = b.tanagyoAddress || b.address || '';
         return addrA.localeCompare(addrB, 'ja');
       });
-  }, [tanagyoPatronHouseholds, tanagyoSearchTerm]);
+  }, [tanagyoPatronHouseholds, tanagyoSearchTerm, tanagyoTempleFilter, temples, templeInfo]);
 
   // 3. 割当済みリスト（担当別 → 日程順 → 午前/午後順 → 順序tanagyoOrder順）
   const assignedTanagyoGroups = useMemo(() => {
@@ -1107,6 +1253,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     
     // 検索フィルタ
     const filteredAssigned = assigned.filter((h) => {
+      if (tanagyoTempleFilter !== 'ALL') {
+        const mainTemple = temples?.find((t) => t.isMain) || temples?.[0];
+        const mainTempleId = mainTemple?.id || templeInfo?.id || 'temple-main';
+        const hTempleId = h.templeId || mainTempleId;
+        if (hTempleId !== tanagyoTempleFilter) return false;
+      }
       if (tanagyoPriestFilter !== 'ALL') {
         if (h.tanagyoPriestId !== tanagyoPriestFilter && h.tanagyoPriestName !== tanagyoPriestFilter) {
           return false;
@@ -1620,6 +1772,57 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     }
   };
 
+  // 全棚経対象者の割当を未割当に戻すリセット（地図上のリセット機能と同様に、一部割当または完全割当の全世帯を確実にクリア）
+  const handleResetAllTanagyoAssignments = () => {
+    const isFiltered = tanagyoTempleFilter !== 'ALL';
+    const targetTemple = isFiltered ? temples?.find((t) => t.id === tanagyoTempleFilter) : null;
+    const targetName = targetTemple ? `【${targetTemple.name}】` : '全寺院';
+
+    const mainTemple = temples?.find((t) => t.isMain) || temples?.[0];
+    const mainTempleId = mainTemple?.id || templeInfo?.id || 'temple-main';
+
+    // 何らかの棚経割当情報（訪問日程・時間帯・担当僧侶ID/名・巡回順序）が設定されている世帯を抽出
+    const assignedPatrons = tanagyoPatronHouseholds.filter((h) => {
+      if (tanagyoTempleFilter !== 'ALL') {
+        const hTempleId = h.templeId || mainTempleId;
+        if (hTempleId !== tanagyoTempleFilter) return false;
+      }
+      return Boolean(
+        (h.tanagyoDate && h.tanagyoDate.trim().length > 0) ||
+        (h.tanagyoTimeSlot && h.tanagyoTimeSlot.trim().length > 0) ||
+        (h.tanagyoPriestId && h.tanagyoPriestId.trim().length > 0) ||
+        (h.tanagyoPriestName && h.tanagyoPriestName.trim().length > 0) ||
+        (typeof h.tanagyoOrder === 'number')
+      );
+    });
+
+    if (assignedPatrons.length === 0) {
+      alert(`${targetName}の棚経対象世帯は、すでにすべて未割当の状態です。`);
+      return;
+    }
+
+    const confirmMsg = `${targetName}の棚経割当情報（${assignedPatrons.length}軒）の日程・時間帯・担当僧侶・巡回順序をすべて解除し、未割当に戻しますか？\n\n※檀家名簿自体の棚経対象設定は解除されません。`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const clearedHouseholds = assignedPatrons.map((h) => ({
+      ...h,
+      tanagyoDate: '',
+      tanagyoTimeSlot: '',
+      tanagyoPriestId: '',
+      tanagyoPriestName: '',
+      tanagyoOrder: undefined,
+    }));
+
+    if (onBatchUpdateHouseholds) {
+      onBatchUpdateHouseholds(clearedHouseholds, `棚経割当を一括解除・未割当へリセット（${targetName}・${assignedPatrons.length}軒）`);
+    } else if (onUpdateHousehold) {
+      clearedHouseholds.forEach((h) => onUpdateHousehold(h));
+    }
+
+    alert(`${targetName}の棚経割当（${clearedHouseholds.length}軒）をすべて解除し、未割当にリセットしました。`);
+  };
+
   const defaultTempleVenue = `${templeInfo?.name || '自寺'} 本堂`;
 
   // Helper to check if a service is a household memorial service (accounting & memorial list applicable)
@@ -1861,6 +2064,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   // Reservation / Event Modal State (Unified with MobileServiceModal)
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [editingService, setEditingService] = useState<MemorialService | null>(null);
+  const [deleteConfirmService, setDeleteConfirmService] = useState<MemorialService | null>(null);
   const [serviceModalInitialDate, setServiceModalInitialDate] = useState<string | undefined>(undefined);
   const [serviceModalInitialHhId, setServiceModalInitialHhId] = useState<string | undefined>(undefined);
   const [serviceModalInitialPastId, setServiceModalInitialPastId] = useState<string | undefined>(undefined);
@@ -1935,8 +2139,6 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     notes: string;
   } | null>(null);
 
-  // Service Delete Confirm State
-  const [deleteConfirmService, setDeleteConfirmService] = useState<MemorialService | null>(null);
 
   // Month navigation
   const handlePrevMonth = () => {
@@ -2138,12 +2340,30 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     setEditingService(null);
   };
 
-  // Delete Service from Modal
+  // Delete Service from Modal (削除確認ダイアログを開く)
   const handleDeleteServiceFromModal = (serviceOrId: string | MemorialService) => {
-    const id = typeof serviceOrId === 'string' ? serviceOrId : serviceOrId.id;
-    if (onDeleteService) {
-      onDeleteService(id);
+    const s = typeof serviceOrId === 'string'
+      ? memorialServices.find((x) => x.id === serviceOrId)
+      : serviceOrId;
+    if (s) {
+      setDeleteConfirmService(s);
+    } else {
+      const id = typeof serviceOrId === 'string' ? serviceOrId : serviceOrId.id;
+      if (onDeleteService) {
+        onDeleteService(id);
+      }
+      setShowServiceModal(false);
+      setEditingService(null);
     }
+  };
+
+  // 予定・法要の削除確定実行（確認ダイアログ内の「削除する」ボタン1回押下で即時実行）
+  const handleExecuteDeleteService = () => {
+    if (!deleteConfirmService) return;
+    if (onDeleteService) {
+      onDeleteService(deleteConfirmService.id);
+    }
+    setDeleteConfirmService(null);
     setShowServiceModal(false);
     setEditingService(null);
   };
@@ -2376,6 +2596,25 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     const dateStr = normalizeDateInput(accountingReceivedDate) || todayStr;
     const s = accountingModalService;
 
+    // 所属寺院IDの確実な解決（兼務寺の檀家の場合は確実に兼務寺院IDを設定）
+    let resolvedTempleId = s.templeId;
+    if (s.householdId) {
+      const hh = households.find((h) => h.id === s.householdId);
+      if (hh?.templeId) {
+        resolvedTempleId = hh.templeId;
+      }
+    }
+    if (!resolvedTempleId && s.deceasedId) {
+      const pr = pastRecords.find((r) => r.id === s.deceasedId);
+      if (pr?.templeId) {
+        resolvedTempleId = pr.templeId;
+      }
+    }
+    if (!resolvedTempleId) {
+      const serviceTempleMeta = getServiceTempleInfo(s);
+      resolvedTempleId = serviceTempleMeta.id;
+    }
+
     validRows.forEach((row, idx) => {
       const txId = `TX-SRV-${Date.now()}-${idx + 1}`;
       
@@ -2397,6 +2636,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
       const tx: Transaction = {
         id: txId,
+        templeId: resolvedTempleId,
         date: dateStr,
         householdId: s.householdId,
         householdHeadName: s.chiefMourner,
@@ -2445,8 +2685,29 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
     const normDate = normalizeDateInput(service.scheduledDate) || todayStr;
     const txId = `TX-${Date.now()}`;
+
+    // 所属寺院IDの確実な解決（兼務寺の檀家の場合は確実に兼務寺院IDを設定）
+    let resolvedTempleId = service.templeId;
+    if (service.householdId) {
+      const hh = households.find((h) => h.id === service.householdId);
+      if (hh?.templeId) {
+        resolvedTempleId = hh.templeId;
+      }
+    }
+    if (!resolvedTempleId && service.deceasedId) {
+      const pr = pastRecords.find((r) => r.id === service.deceasedId);
+      if (pr?.templeId) {
+        resolvedTempleId = pr.templeId;
+      }
+    }
+    if (!resolvedTempleId) {
+      const serviceTempleMeta = getServiceTempleInfo(service);
+      resolvedTempleId = serviceTempleMeta.id;
+    }
+
     const newTx: Transaction = {
       id: txId,
+      templeId: resolvedTempleId,
       date: normDate,
       householdId: service.householdId,
       householdHeadName: service.chiefMourner,
@@ -3126,7 +3387,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                   title="出納帳に記帳済み（二重入力防止のため会計入力完了済）"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                  <span>記載済{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
+                                  <span>記載済</span>
                                 </span>
                               ) : (
                                 <button
@@ -3434,7 +3695,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                               title="出納帳に記帳済み（二重入力防止のため会計入力完了済）"
                             >
                               <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                              <span>記載済{totalPaid > 0 ? ` (${formatCurrency(totalPaid)})` : ''}</span>
+                              <span>記載済</span>
                             </span>
                           ) : (
                             <button
@@ -3863,9 +4124,51 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       {unassignedTanagyoList.length}件
                     </span>
                   </div>
-                  <span className="text-xs text-gray-500 font-medium hidden sm:inline">
-                    ※行ドラッグで巡回枠へ即時割当可能
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsTanagyoMapModalOpen(true)}
+                    className="px-2.5 py-1 bg-[#8C2D19] hover:bg-[#702414] text-white font-bold text-xs rounded-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition-colors border border-[#D4AF37]/50"
+                    title="国土地理院地図上で未割当檀家のピンを確認し、日程・担当・巡回順序を視覚的に計画・割当します"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>🗺️ 地図上で計画・割当</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResetAllTanagyoAssignments}
+                    className="px-2 py-1 bg-white hover:bg-red-50 text-red-700 font-bold text-xs rounded-xs cursor-pointer shadow-2xs border border-red-300 flex items-center gap-1 transition-colors"
+                    title="棚経の日程・担当・順序などの割当をすべて解除し、未割当の状態に戻します"
+                  >
+                    <RotateCcw className="w-3 h-3 text-red-600" />
+                    <span>全割当を未割当にリセット</span>
+                  </button>
+
+                  {/* 所属寺院絞り込みセレクター */}
+                  {temples && temples.length > 1 && (
+                    <div className="flex items-center space-x-1 text-xs bg-amber-50/80 border border-[#D4AF37] px-2 py-1 rounded-xs shadow-2xs">
+                      <span className="text-gray-600 font-bold whitespace-nowrap">所属寺院:</span>
+                      <select
+                        value={tanagyoTempleFilter}
+                        onChange={(e) => setTanagyoTempleFilter(e.target.value)}
+                        className="bg-transparent font-bold text-gray-800 outline-hidden cursor-pointer text-xs"
+                      >
+                        <option value="ALL">全寺院（本寺・兼務寺 合算）</option>
+                        {temples.map((t) => {
+                          const isM = t.isMain || t.id === 'temple-main';
+                          const mainId = temples.find((x) => x.isMain)?.id || 'temple-main';
+                          const count = tanagyoPatronHouseholds.filter(
+                            (h) => (h.templeId || mainId) === t.id
+                          ).length;
+                          return (
+                            <option key={t.id} value={t.id}>
+                              {isM ? `【本寺】${t.name}` : `【兼務】${t.name}`} ({count}軒)
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 {/* 訪問日程クイック候補（3枠）設定バー */}
@@ -3937,6 +4240,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       <tr className="bg-[#1A1A1A] text-white text-xs">
                         <th className="p-2.5 text-center w-14 font-bold text-[#D4AF37]">移動 / 番号</th>
                         <th className="p-2.5 font-bold">氏名</th>
+                        <th className="p-2.5 font-bold">所属寺院</th>
                         <th className="p-2.5 font-bold">住所（棚経住所優先）</th>
                         <th className="p-2.5 font-bold text-center">訪問日程</th>
                         <th className="p-2.5 font-bold text-center">午前/午後</th>
@@ -3954,6 +4258,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           dateCandidates={tanagyoDateCandidates}
                           pastRecords={pastRecords}
                           bonSeason={templeInfo?.bonSeason}
+                          temples={temples}
+                          templeInfo={templeInfo}
                           onAssign={handleAssignTanagyo}
                           isDragging={draggedTanagyo?.householdId === h.id}
                           onDragStart={(draggedH) => {
@@ -3996,15 +4302,26 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                     <span>ドラッグ＆ドロップまたは上下ボタンで巡回順序を入れ替え</span>
                   </div>
                   {assignedTanagyoGroups.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleNormalizeAllTanagyoOrders}
-                      className="px-3 py-1 bg-[#8C2D19] hover:bg-[#702414] text-white font-bold text-xs flex items-center gap-1.5 rounded-xs shadow-xs cursor-pointer transition-colors"
-                      title="現在の表示順に基づき、全世帯の巡回順序番号（No.1〜）を確定してGoogleシート・Excel出力へ反映します"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>全巡回順序を確定・一括保存</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleResetAllTanagyoAssignments}
+                        className="px-2.5 py-1 bg-white hover:bg-red-50 text-red-700 font-bold text-xs flex items-center gap-1 rounded-xs shadow-2xs border border-red-300 cursor-pointer transition-colors"
+                        title="現在の割当（日程・時間帯・担当僧侶・巡回順序）をすべて解除し、未割当リストに戻します"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-red-600" />
+                        <span>全割当を未割当にリセット</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleNormalizeAllTanagyoOrders}
+                        className="px-3 py-1 bg-[#8C2D19] hover:bg-[#702414] text-white font-bold text-xs flex items-center gap-1.5 rounded-xs shadow-xs cursor-pointer transition-colors"
+                        title="現在の表示順に基づき、全世帯の巡回順序番号（No.1〜）を確定してGoogleシート・Excel出力へ反映します"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>全巡回順序を確定・一括保存</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -4342,6 +4659,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                                           <span className="font-bold text-[#1A1A1A]">
                                                             {h.familyHead} 様
                                                           </span>
+                                                          <HouseholdTempleBadge
+                                                            household={h}
+                                                            temples={temples}
+                                                            mainTempleInfo={templeInfo}
+                                                            size="2xs"
+                                                          />
                                                           {h.phone && (
                                                             <span className="text-[10px] text-gray-500">
                                                               (TEL: {h.phone})
@@ -4978,14 +5301,31 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
             </div>
 
             <form onSubmit={handleConfirmRecordAccounting} className="p-4 space-y-3.5 text-xs">
-              <div className="p-3 bg-[#FAF7F0] border border-[#D1CEC7] space-y-1">
-                <div className="text-gray-600">施主（世帯主）: <strong className="text-black font-bold">{recordAccountingModal.service.chiefMourner} 様</strong></div>
-                <div className="text-gray-600">法要種別: <span className="font-bold text-[#8C2D19]">{recordAccountingModal.service.memorialType}</span></div>
-                {recordAccountingModal.service.dharmaName && (
-                  <div className="text-gray-600">戒名: <span className="font-bold text-black">{recordAccountingModal.service.dharmaName}</span></div>
-                )}
-                <div className="text-gray-600">予定日: <span>{recordAccountingModal.service.scheduledDate}</span></div>
-              </div>
+              {(() => {
+                const dharmaInfo = getServiceEffectiveDharmaInfo(recordAccountingModal.service, pastRecords, households);
+                return (
+                  <div className="p-3 bg-[#FAF7F0] border border-[#D1CEC7] space-y-1">
+                    <div className="text-gray-600">施主（世帯主）: <strong className="text-black font-bold">{recordAccountingModal.service.chiefMourner} 様</strong></div>
+                    <div className="text-gray-600">法要種別: <span className="font-bold text-[#8C2D19]">{recordAccountingModal.service.memorialType}</span></div>
+                    {dharmaInfo && (
+                      <div className="text-gray-600 flex items-center gap-1.5 flex-wrap">
+                        <span>戒名:</span>
+                        <span className="font-bold text-black">{dharmaInfo.dharmaName}</span>
+                        {dharmaInfo.secularName && <span>({dharmaInfo.secularName})</span>}
+                        {dharmaInfo.isLatestFallback && (
+                          <span
+                            className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1 py-0.2 rounded-xs"
+                            title="法要予定に直接の戒名指定がないため、過去帳からこの世帯の最新の戒名を表示しています"
+                          >
+                            最新戒名
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div className="text-gray-600">予定日: <span>{recordAccountingModal.service.scheduledDate}</span></div>
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block font-bold text-[#333333] mb-1">
@@ -5091,48 +5431,64 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
             <div className="p-5 overflow-y-auto space-y-4 text-xs">
               {/* Target Service Info */}
-              <div className="p-3 bg-[#FAF7F0] border border-[#D4AF37]/40 rounded-xs space-y-1.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    施主: <strong className="text-black font-bold text-sm">{accountingModalService.chiefMourner} 様</strong>
-                  </div>
-                  <div className="text-[#8C2D19] font-bold">
-                    {accountingModalService.memorialType}（{accountingModalService.scheduledDate} {accountingModalService.scheduledTime}）
-                  </div>
-                </div>
-                {accountingModalService.dharmaName && (
-                  <div className="text-gray-700">
-                    戒名・故人: <strong className="text-black">{accountingModalService.dharmaName}</strong>
-                    {accountingModalService.deceasedName ? ` (${accountingModalService.deceasedName})` : ''}
-                  </div>
-                )}
-                {accountingModalService.tobaCount && accountingModalService.tobaCount > 0 ? (
-                  <div className="text-[#8C2D19] font-bold text-[11px]">
-                    🎋 塔婆予約: {accountingModalService.tobaCount}本
-                    {accountingModalService.tobaSponsors && accountingModalService.tobaSponsors.length > 0 ? ` (志主: ${accountingModalService.tobaSponsors.filter(Boolean).join('、')})` : ''}
-                  </div>
-                ) : null}
-                {accountingModalService.notes && accountingModalService.notes.trim() !== '' && (
-                  <div className="pt-1 border-t border-[#D4AF37]/20 flex items-center justify-between gap-2 bg-amber-50/70 p-1.5 rounded-xs text-[11px]">
-                    <div className="text-[#78350F] flex items-center gap-1 truncate">
-                      <span className="font-bold shrink-0">📝 予約時の備考:</span>
-                      <span className="truncate">{accountingModalService.notes}</span>
+              {(() => {
+                const dharmaInfo = getServiceEffectiveDharmaInfo(accountingModalService, pastRecords, households);
+                return (
+                  <div className="p-3 bg-[#FAF7F0] border border-[#D4AF37]/40 rounded-xs space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        施主: <strong className="text-black font-bold text-sm">{accountingModalService.chiefMourner} 様</strong>
+                      </div>
+                      <div className="text-[#8C2D19] font-bold">
+                        {accountingModalService.memorialType}（{accountingModalService.scheduledDate} {accountingModalService.scheduledTime}）
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (accountingItemRows.length > 0) {
-                          handleUpdateAccountingRow(accountingItemRows[0].id, 'notes', accountingModalService.notes);
-                        }
-                      }}
-                      className="shrink-0 px-2 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold rounded-xs cursor-pointer text-[10px]"
-                      title="この備考を1行目の明細摘要にコピーします"
-                    >
-                      明細1行目に反映
-                    </button>
+                    {dharmaInfo && (
+                      <div className="text-gray-700 flex flex-wrap items-center gap-1.5">
+                        <span>戒名・故人:</span>
+                        <strong className="text-black">{dharmaInfo.dharmaName}</strong>
+                        {dharmaInfo.secularName ? (
+                          <span className="text-gray-600">({dharmaInfo.secularName})</span>
+                        ) : null}
+                        {dharmaInfo.isLatestFallback && (
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-xs text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-sans"
+                            title="法要予定に直接の戒名指定がないため、過去帳からこの世帯の最新の戒名を表示しています"
+                          >
+                            最新の戒名
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {accountingModalService.tobaCount && accountingModalService.tobaCount > 0 ? (
+                      <div className="text-[#8C2D19] font-bold text-[11px]">
+                        🎋 塔婆予約: {accountingModalService.tobaCount}本
+                        {accountingModalService.tobaSponsors && accountingModalService.tobaSponsors.length > 0 ? ` (志主: ${accountingModalService.tobaSponsors.filter(Boolean).join('、')})` : ''}
+                      </div>
+                    ) : null}
+                    {accountingModalService.notes && accountingModalService.notes.trim() !== '' && (
+                      <div className="pt-1 border-t border-[#D4AF37]/20 flex items-center justify-between gap-2 bg-amber-50/70 p-1.5 rounded-xs text-[11px]">
+                        <div className="text-[#78350F] flex items-center gap-1 truncate">
+                          <span className="font-bold shrink-0">📝 予約時の備考:</span>
+                          <span className="truncate">{accountingModalService.notes}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (accountingItemRows.length > 0) {
+                              handleUpdateAccountingRow(accountingItemRows[0].id, 'notes', accountingModalService.notes);
+                            }
+                          }}
+                          className="shrink-0 px-2 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-950 font-bold rounded-xs cursor-pointer text-[10px]"
+                          title="この備考を1行目の明細摘要にコピーします"
+                        >
+                          明細1行目に反映
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Already Registered Transactions */}
               {(() => {
@@ -5358,47 +5714,6 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
         </div>
       )}
 
-      {/* Modal: Service Delete Confirmation */}
-      {deleteConfirmService && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 font-sans no-print">
-          <div className="bg-white border-2 border-red-600 w-full max-w-sm shadow-2xl p-5 space-y-4">
-            <div className="flex items-center space-x-2 text-red-600 font-bold text-base">
-              <Trash2 className="w-5 h-5" />
-              <span>法要・予約の削除確認</span>
-            </div>
-
-            <p className="text-xs text-gray-700 leading-relaxed">
-              以下の法要・予約予定を削除してもよろしいですか？
-            </p>
-
-            <div className="p-3 bg-red-50 border border-red-200 text-xs space-y-1">
-              <div className="font-bold text-red-900">{deleteConfirmService.chiefMourner} 様</div>
-              <div className="text-red-800">法要: {deleteConfirmService.memorialType}</div>
-              <div className="text-red-700">予定日: {deleteConfirmService.scheduledDate} {deleteConfirmService.scheduledTime}</div>
-            </div>
-
-            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-gray-200">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmService(null)}
-                className="px-3 py-1.5 border border-gray-300 text-gray-600 hover:bg-gray-100 font-bold text-xs cursor-pointer"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onDeleteService(deleteConfirmService.id);
-                  setDeleteConfirmService(null);
-                }}
-                className="px-4 py-1.5 bg-red-600 text-white font-bold text-xs hover:bg-red-700 transition-colors cursor-pointer"
-              >
-                削除する
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 本堂掲示用 お盆棚経巡回予定表 印刷モーダル */}
       <TanagyoNoticeBoardPrintModal
@@ -5408,7 +5723,104 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
         priests={priests}
         templeName={templeInfo?.name || '寺院'}
         templeInfo={templeInfo}
+        temples={temples}
       />
+
+      {/* お盆棚経・訪問マップ巡回計画モーダル（国土地理院地図連携） */}
+      <TanagyoPatronMapModal
+        isOpen={isTanagyoMapModalOpen}
+        onClose={() => setIsTanagyoMapModalOpen(false)}
+        households={households}
+        priests={priests}
+        templeInfo={templeInfo}
+        temples={temples}
+        pastRecords={pastRecords}
+        onBatchUpdateHouseholds={(updated, desc) => {
+          if (onBatchUpdateHouseholds) {
+            onBatchUpdateHouseholds(updated, desc);
+          }
+        }}
+        candidateDates={tanagyoDateCandidates.filter((d) => Boolean(d && d.trim()))}
+      />
+
+      {/* 予定・法要 削除確認ダイアログ */}
+      {deleteConfirmService && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-[#FAF7F0] border-2 border-red-700 rounded-xs shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-red-700 text-white px-4 py-3 flex items-center justify-between shadow-xs">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="w-5 h-5 text-amber-300 stroke-[2.5]" />
+                <h3 className="font-serif font-black text-base tracking-wide">予定・法要の削除確認</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmService(null)}
+                className="text-white/80 hover:text-white p-1 cursor-pointer"
+                title="閉じる"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-sm font-bold text-gray-800">
+                以下の予定・法要データを削除します。よろしいですか？
+              </p>
+
+              <div className="bg-white border border-[#D1CEC7] p-3.5 rounded-xs space-y-2 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                  <span className="text-gray-500 font-bold">日時:</span>
+                  <span className="font-black text-gray-800">
+                    {deleteConfirmService.scheduledDate} {deleteConfirmService.scheduledTime || ''}
+                  </span>
+                </div>
+                {deleteConfirmService.chiefMourner && (
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <span className="text-gray-500 font-bold">施主・家名:</span>
+                    <span className="font-bold text-gray-800">{deleteConfirmService.chiefMourner} 様</span>
+                  </div>
+                )}
+                {(deleteConfirmService.dharmaName || deleteConfirmService.deceasedName) && (
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <span className="text-gray-500 font-bold">故人・法名:</span>
+                    <span className="font-bold text-gray-800">
+                      {deleteConfirmService.dharmaName || deleteConfirmService.deceasedName}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 font-bold">法要・予定種別:</span>
+                  <span className="font-bold text-[#8C2D19] bg-amber-50 px-2 py-0.5 rounded-xs border border-amber-200">
+                    {deleteConfirmService.memorialType || deleteConfirmService.notes || '法要'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xs text-[11px] text-amber-900 leading-relaxed">
+                ※この予定を削除すると、関連する塔婆作成タスク・ToDoも連動して自動削除されます。
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#D1CEC7]">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmService(null)}
+                  className="px-4 py-2 bg-white border border-[#D1CEC7] text-gray-700 hover:bg-gray-100 font-bold text-xs rounded-xs cursor-pointer shadow-xs"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteDeleteService}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-xs cursor-pointer flex items-center gap-1.5 shadow-sm transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>削除する</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

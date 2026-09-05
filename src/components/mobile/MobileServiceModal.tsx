@@ -21,7 +21,8 @@ import {
   HelpCircle,
   RotateCcw,
   Plus,
-  Minus
+  Minus,
+  AlertTriangle
 } from 'lucide-react';
 import { DateInputWithEra, TimeSelectorInput } from '../DateTimeInputs';
 import { getTodayDateString, calculateEndTime } from '../../utils/calendarUtils';
@@ -134,10 +135,15 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
   const [householdDistrictFilter, setHouseholdDistrictFilter] = useState('ALL');
   const [householdKanaFilter, setHouseholdKanaFilter] = useState('ALL');
   const [householdKanaColFilter, setHouseholdKanaColFilter] = useState('ALL');
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
   // Initialize or reset form when modal opens or props change
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setIsConfirmDeleteOpen(false);
+      return;
+    }
+    setIsConfirmDeleteOpen(false);
 
     if (service) {
       // Editing existing service -> Go directly to details
@@ -1382,7 +1388,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                   >
                     終日
                   </button>
-                  {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map((time) => (
+                  {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map((time) => (
                     <button
                       key={time}
                       type="button"
@@ -2461,12 +2467,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
               <div className="pt-2 text-center">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (confirm('本当にこの予定・法事データを削除しますか？')) {
-                      onDelete(service.id);
-                      onClose();
-                    }
-                  }}
+                  onClick={() => setIsConfirmDeleteOpen(true)}
                   className="text-red-600 hover:text-red-800 text-sm font-bold py-2.5 px-4 border border-red-300 bg-red-50 rounded-xs flex items-center gap-1.5 mx-auto cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -2495,6 +2496,91 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
               <Save className="w-5 h-5" />
               <span>{isEditing ? '予定を更新' : '予定を登録'}</span>
             </button>
+          </div>
+        )}
+
+        {/* 削除確認ダイアログ */}
+        {isConfirmDeleteOpen && service && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="bg-[#FAF7F0] border-2 border-red-700 rounded-xs shadow-2xl max-w-sm w-full overflow-hidden animate-in zoom-in-95 duration-150">
+              <div className="bg-red-700 text-white px-4 py-3 flex items-center justify-between shadow-xs">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-300 stroke-[2.5]" />
+                  <h3 className="font-serif font-black text-sm tracking-wide">予定・法要の削除確認</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsConfirmDeleteOpen(false)}
+                  className="text-white/80 hover:text-white p-1 cursor-pointer"
+                  title="閉じる"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3.5">
+                <p className="text-xs font-bold text-gray-800">
+                  この予定・法要データを削除します。よろしいですか？
+                </p>
+
+                <div className="bg-white border border-[#D1CEC7] p-3 rounded-xs space-y-1.5 text-xs">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                    <span className="text-gray-500 font-bold">日時:</span>
+                    <span className="font-black text-gray-800">
+                      {formData.scheduledDate} {formData.scheduledTime || ''}
+                    </span>
+                  </div>
+                  {formData.chiefMourner && (
+                    <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                      <span className="text-gray-500 font-bold">施主・家名:</span>
+                      <span className="font-bold text-gray-800">{formData.chiefMourner} 様</span>
+                    </div>
+                  )}
+                  {(formData.dharmaName || formData.deceasedName) && (
+                    <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                      <span className="text-gray-500 font-bold">故人・法名:</span>
+                      <span className="font-bold text-gray-800">
+                        {formData.dharmaName || formData.deceasedName}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 font-bold">種別:</span>
+                    <span className="font-bold text-[#8C2D19] bg-amber-50 px-2 py-0.5 rounded-xs border border-amber-200">
+                      {formData.memorialType || formData.notes || '法要'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-2 bg-amber-50 border border-amber-300 rounded-xs text-[11px] text-amber-900 leading-relaxed">
+                  ※この予定を削除すると、関連する塔婆作成タスク・ToDoも連動して自動削除されます。
+                </div>
+
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#D1CEC7]">
+                  <button
+                    type="button"
+                    onClick={() => setIsConfirmDeleteOpen(false)}
+                    className="px-3.5 py-1.5 bg-white border border-[#D1CEC7] text-gray-700 hover:bg-gray-100 font-bold text-xs rounded-xs cursor-pointer shadow-xs"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onDelete) {
+                        onDelete(service.id);
+                      }
+                      setIsConfirmDeleteOpen(false);
+                      onClose();
+                    }}
+                    className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-xs cursor-pointer flex items-center gap-1.5 shadow-sm transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>削除する</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

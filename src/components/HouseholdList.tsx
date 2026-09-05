@@ -819,29 +819,30 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       onAddService(newService);
     } else {
       onCreateMemorialService(pastRecord || { id: '', householdId: household.id, householdHeadName: getHouseholdSponsorName(household) || household.familyHead, dharmaName: '', secularName: '', deathDate: normalizedDate, relationship: '', burialLocation: '', templeId: targetTempleId }, bookingServiceForm.memorialType, normalizedDate);
-    }
-
-    // If tobaCount > 0, auto-register Todo task for previous day
-    if (Number(bookingServiceForm.tobaCount) > 0 && onAddTodo) {
-      const prevDate = getPreviousDay(normalizedDate);
-      const validSponsors = (bookingServiceForm.tobaSponsors || []).filter((s) => s.trim() !== '');
-      const sponsorStr = validSponsors.length > 0 ? validSponsors.join('・') : (bookingServiceForm.chiefMourner || getHouseholdSponsorName(household) || household.familyHead);
       
-      const newTodo: TempleTodo = {
-        id: `TD-${Date.now()}`,
-        templeId: targetTempleId,
-        title: `【塔婆作成タスク】${pastRecord?.dharmaName || (getHouseholdSponsorName(household) || household.familyHead) + '様'} (${bookingServiceForm.memorialType}) 塔婆${bookingServiceForm.tobaCount}本 (施主: ${sponsorStr})`,
-        dueDate: prevDate,
-        dueTime: '16:00',
-        priority: 'high',
-        category: '塔婆準備',
-        completed: false,
-        householdId: household.id,
-        householdHeadName: bookingServiceForm.chiefMourner || getHouseholdSponsorName(household) || household.familyHead,
-        notes: `法事日時: ${normalizedDate} ${bookingServiceForm.scheduledTime}～\n塔婆種別: ${bookingServiceForm.tobaType}\n本数: ${bookingServiceForm.tobaCount}本\n志主: ${sponsorStr}\n戒名: ${pastRecord?.dharmaName || '先祖代々'}${targetTemple?.name ? `\n寺院: ${targetTemple.name}` : ''}`,
-        createdAt: new Date().toISOString().slice(0, 10).replace(/-/g, '/'),
-      };
-      onAddTodo(newTodo);
+      // onAddService がないフォールバック時のみ手動で塔婆ToDoを登録
+      if (Number(bookingServiceForm.tobaCount) > 0 && onAddTodo) {
+        const prevDate = getPreviousDay(normalizedDate);
+        const validSponsors = (bookingServiceForm.tobaSponsors || []).filter((s) => s.trim() !== '');
+        const sponsorStr = validSponsors.length > 0 ? validSponsors.join('・') : (bookingServiceForm.chiefMourner || getHouseholdSponsorName(household) || household.familyHead);
+        
+        const newTodo: TempleTodo = {
+          id: `TD-${Date.now()}`,
+          templeId: targetTempleId,
+          title: `【塔婆作成タスク】${pastRecord?.dharmaName || (getHouseholdSponsorName(household) || household.familyHead) + '様'} (${bookingServiceForm.memorialType}) 塔婆${bookingServiceForm.tobaCount}本 (施主: ${sponsorStr})`,
+          dueDate: prevDate,
+          dueTime: '16:00',
+          priority: 'high',
+          category: '塔婆準備',
+          completed: false,
+          householdId: household.id,
+          householdHeadName: bookingServiceForm.chiefMourner || getHouseholdSponsorName(household) || household.familyHead,
+          relatedServiceId: newService.id,
+          notes: `法事日時: ${normalizedDate} ${bookingServiceForm.scheduledTime}～\n塔婆種別: ${bookingServiceForm.tobaType}\n本数: ${bookingServiceForm.tobaCount}本\n志主: ${sponsorStr}\n戒名: ${pastRecord?.dharmaName || '先祖代々'}${targetTemple?.name ? `\n寺院: ${targetTemple.name}` : ''}`,
+          createdAt: new Date().toISOString().slice(0, 10).replace(/-/g, '/'),
+        };
+        onAddTodo(newTodo);
+      }
     }
 
     alert(`【予定を登録しました】\n施主: ${bookingServiceForm.chiefMourner} 様\n種別: ${bookingServiceForm.memorialType}\n日時: ${normalizedDate} ${bookingServiceForm.scheduledTime}～\n会場: ${finalVenue}\n\nカレンダー画面に切り替わります。`);
@@ -928,6 +929,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
     const newTx: Transaction = {
       id: `TX-${Date.now()}`,
+      templeId: currentIndividualHousehold.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples.find((t) => t.isMain)?.id || 'temple-main')),
       date: normalizedDate,
       householdId: currentIndividualHousehold.id,
       householdHeadName: `${currentIndividualHousehold.familyHead} 殿`,
@@ -990,6 +992,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
     const newTx: Transaction = {
       id: `TX-${Date.now()}`,
+      templeId: currentIndividualHousehold.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples.find((t) => t.isMain)?.id || 'temple-main')),
       date: transactionFormData.date || new Date().toISOString().split('T')[0],
       householdId: currentIndividualHousehold.id,
       householdHeadName: transactionFormData.householdHeadName || currentIndividualHousehold.familyHead,

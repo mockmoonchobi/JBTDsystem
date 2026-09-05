@@ -79,6 +79,8 @@ export interface Household {
   tanagyoPriestId?: string; // 担当僧侶ID
   tanagyoPriestName?: string; // 担当僧侶名
   tanagyoOrder?: number; // 訪問順序
+  latitude?: number; // カスタム緯度（地図ピン手動調整位置 または 正確な緯度）
+  longitude?: number; // カスタム経度（地図ピン手動調整位置 または 正確な経度）
   createdAt: string;
   // 監査フィールド (作成日・作成時間・修正日・修正時間)
   createdDate?: string;

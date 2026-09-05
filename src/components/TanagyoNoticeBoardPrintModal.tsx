@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Printer, Settings2, Users, Filter, Calendar, UserCheck } from 'lucide-react';
 import { Household, TempleProfile, Priest } from '../types';
 import { getHouseholdSponsorName } from '../utils/memorialCalculator';
+import { getHouseholdTempleMeta } from '../utils/templeUtils';
 
 interface TanagyoNoticeBoardPrintModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface TanagyoNoticeBoardPrintModalProps {
   priests?: { id: string; name: string; role?: string; isMain?: boolean }[];
   templeName?: string;
   templeInfo?: TempleProfile;
+  temples?: TempleProfile[];
 }
 
 interface NoticeSlot {
@@ -31,6 +33,7 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
   priests = [],
   templeName = '寺院',
   templeInfo,
+  temples = [],
 }) => {
   // Title for the notice board & editable header fields
   const [title, setTitle] = useState<string>('お盆棚経 巡回予定一覧');
@@ -50,10 +53,12 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // Filters within Modal
+  const [selectedTempleFilter, setSelectedTempleFilter] = useState<string>('ALL');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('ALL');
   const [selectedPriestFilter, setSelectedPriestFilter] = useState<string>('ALL');
   const [showUnscheduled, setShowUnscheduled] = useState<boolean>(true);
   const [showAddress, setShowAddress] = useState<boolean>(false);
+  const [showTempleBadge, setShowTempleBadge] = useState<boolean>(true);
 
   // List of distinct dates available in households
   const availableDates = useMemo(() => {
@@ -72,6 +77,14 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
     let list = households.filter((h) => {
       const isTarget = Boolean(h.tanagyoDate || h.tanagyoTimeSlot || h.tanagyoMonthlyVisit);
       if (!isTarget) return false;
+
+      // Temple filter
+      if (selectedTempleFilter !== 'ALL') {
+        const mainTemple = temples.find((t) => t.isMain) || temples[0];
+        const mainTempleId = mainTemple?.id || templeInfo?.id || 'temple-main';
+        const hTempleId = h.templeId || mainTempleId;
+        if (hTempleId !== selectedTempleFilter) return false;
+      }
 
       // Priest filter
       if (selectedPriestFilter !== 'ALL') {
@@ -267,6 +280,25 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
                 />
               </div>
 
+              {/* Temple Filter */}
+              {temples && temples.length > 1 && (
+                <div className="flex items-center space-x-1.5">
+                  <span className="font-bold text-stone-700 whitespace-nowrap">寺院:</span>
+                  <select
+                    value={selectedTempleFilter}
+                    onChange={(e) => setSelectedTempleFilter(e.target.value)}
+                    className="bg-white border border-stone-300 rounded px-2 py-1 text-xs text-stone-800 focus:outline-none"
+                  >
+                    <option value="ALL">全寺院（本寺・兼務寺 合算）</option>
+                    {temples.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.isMain ? `【本寺】${t.name}` : `【兼務】${t.name}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Date Filter */}
               <div className="flex items-center space-x-1.5">
                 <Calendar className="w-3.5 h-3.5 text-stone-600" />
@@ -356,6 +388,19 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
                 />
                 <span className="text-xs">住所表示</span>
               </label>
+
+              {/* Toggle Temple Badge */}
+              {temples && temples.length > 1 && (
+                <label className="flex items-center space-x-1 text-stone-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showTempleBadge}
+                    onChange={(e) => setShowTempleBadge(e.target.checked)}
+                    className="rounded text-stone-800"
+                  />
+                  <span className="text-xs font-bold">寺院名表示</span>
+                </label>
+              )}
 
               {/* Toggle Advanced Header Edit */}
               <button
@@ -502,6 +547,7 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
                         {slot.households.map((item, hIdx) => {
                           const h = item.household;
                           const sponsor = getHouseholdSponsorName(h);
+                          const templeMeta = getHouseholdTempleMeta(h, temples, templeInfo);
                           return (
                             <div
                               key={h.id || hIdx}
@@ -514,9 +560,14 @@ export const TanagyoNoticeBoardPrintModal: React.FC<TanagyoNoticeBoardPrintModal
 
                               {/* Patron Name & Sponsor & optional Address */}
                               <div className="flex-1 min-w-0 px-1 text-center">
-                                <div className="text-[14px] sm:text-[15px] font-black text-stone-950 tracking-wider truncate">
-                                  {h.familyHead || '（氏名未登録）'}
-                                  <span className="text-xs font-normal text-stone-600 ml-1">様</span>
+                                <div className="text-[14px] sm:text-[15px] font-black text-stone-950 tracking-wider truncate flex items-center justify-center gap-1">
+                                  <span>{h.familyHead || '（氏名未登録）'}</span>
+                                  <span className="text-xs font-normal text-stone-600">様</span>
+                                  {showTempleBadge && temples && temples.length > 1 && (
+                                    <span className="text-[9px] px-1 py-0.2 rounded-2xs border border-stone-400 bg-stone-100 text-stone-800 font-bold whitespace-nowrap">
+                                      {templeMeta.shortBadgeLabel}
+                                    </span>
+                                  )}
                                 </div>
                                 {sponsor && sponsor !== h.familyHead && (
                                   <div className="text-[10px] text-stone-600 truncate mt-0.5">

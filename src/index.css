@@ -1,4 +1,14 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* Leaflet Map Custom Marker Styles */
+.leaflet-container {
+  font-family: inherit;
+}
+.custom-map-pin {
+  background: transparent;
+  border: none;
+}
 
 @theme {
   --font-serif: "Shippori Mincho", "Noto Serif JP", "BIZ UDPMincho", "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", "MS Mincho", "MingLiU-ExtB", "SimSun-ExtB", "IPAmjMincho", serif;

@@ -1156,6 +1156,8 @@ export async function exportToSheets(
     '棚経巡回順序',
     '棚経伺い先住所',
     '棚経訪問特記',
+    '緯度',
+    '経度',
     'メモ',
     '作成日',
     '作成時間',
@@ -1211,6 +1213,8 @@ export async function exportToSheets(
       h.tanagyoOrder ?? '',
       h.tanagyoAddress || '',
       h.tanagyoNotes || '',
+      typeof h.latitude === 'number' && !isNaN(h.latitude) ? h.latitude : '',
+      typeof h.longitude === 'number' && !isNaN(h.longitude) ? h.longitude : '',
       h.notes || '',
       cDate,
       cTime,
@@ -1903,6 +1907,7 @@ export async function importFromSheets(
   options?: {
     targetTempleId?: string | 'ALL';
     defaultTempleId?: string;
+    priests?: Priest[];
   }
 ): Promise<SheetsImportResult> {
   // 1. Fetch spreadsheet metadata including gridProperties (rowCount, columnCount) to safely paginate large sheets
@@ -2563,6 +2568,8 @@ export async function importFromSheets(
     const tanagyoOrderIdx = findColIdx(householdHeaders, ['棚経巡回順序', '棚経順序', '巡回順序', '巡回順', 'tanagyoOrder']);
     const tanagyoAddrIdx = findColIdx(householdHeaders, ['棚経伺い先住所', '棚経訪問先住所', '棚経住所', '伺い先住所', 'tanagyoAddress']);
     const tanagyoNotesIdx = findColIdx(householdHeaders, ['棚経訪問特記', '棚経特記', '棚経備考', 'tanagyoNotes']);
+    const latIdx = findColIdx(householdHeaders, ['緯度', 'ピン緯度', 'latitude', 'lat']);
+    const lngIdx = findColIdx(householdHeaders, ['経度', 'ピン経度', 'longitude', 'lng']);
     const notesIdx = findColIdx(householdHeaders, ['メモ', '備考', '特記事項']);
     const createdIdx = findColIdx(householdHeaders, ['登録日時', '登録日', '作成日', '作成日時']);
     const hCDateIdx = findColIdx(householdHeaders, ['作成日', '作成年月日', '登録日', 'createdDate', 'createdAt']);
@@ -2630,6 +2637,11 @@ export async function importFromSheets(
       const tanagyoOrder = rawOrder !== undefined && rawOrder !== '' && !isNaN(Number(rawOrder)) ? Number(rawOrder) : undefined;
       const tanagyoAddress = String((tanagyoAddrIdx !== -1 ? row[tanagyoAddrIdx] : '') || '').trim();
       const tanagyoNotes = String((tanagyoNotesIdx !== -1 ? row[tanagyoNotesIdx] : '') || '').trim();
+
+      const rawLat = latIdx !== -1 ? row[latIdx] : undefined;
+      const rawLng = lngIdx !== -1 ? row[lngIdx] : undefined;
+      const latitude = rawLat !== undefined && rawLat !== '' && !isNaN(Number(rawLat)) ? Number(rawLat) : undefined;
+      const longitude = rawLng !== undefined && rawLng !== '' && !isNaN(Number(rawLng)) ? Number(rawLng) : undefined;
 
       const notes = String((notesIdx !== -1 ? row[notesIdx] : '') || '').trim();
       const rawCreated = createdIdx !== -1 ? row[createdIdx] : '';
@@ -2730,6 +2742,8 @@ export async function importFromSheets(
         tanagyoOrder: tanagyoOrder !== undefined ? tanagyoOrder : undefined,
         tanagyoAddress: tanagyoAddress || undefined,
         tanagyoNotes: tanagyoNotes || undefined,
+        latitude,
+        longitude,
         notes,
         qrToken: `QR-${householdId}`,
         createdAt,
@@ -3047,10 +3061,17 @@ export async function importFromSheets(
       if (!row || row.length === 0 || !row[0]) continue;
 
       const householdId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
-      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'temple-main';
+      const hhTempleId = householdId ? householdTempleMap.get(householdId) : undefined;
+      let templeId = hhTempleId || options?.defaultTempleId || 'temple-main';
 
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
-        templeId = String(row[templeIdColIdx]).trim();
+        const rawTempleId = String(row[templeIdColIdx]).trim();
+        // もし世帯が兼務寺院なのにシートのtempleIdが本寺（temple-main等）になっている場合は世帯の所属寺院を優先
+        if (hhTempleId && hhTempleId !== 'temple-main' && (rawTempleId === 'temple-main' || rawTempleId === options?.defaultTempleId)) {
+          templeId = hhTempleId;
+        } else {
+          templeId = rawTempleId;
+        }
       } else if (templeColIdx !== -1 && row[templeColIdx]) {
         const tVal = String(row[templeColIdx]).trim();
         for (const [tName, id] of templeNameToIdMap.entries()) {
@@ -3372,6 +3393,19 @@ export async function importFromSheets(
   });
 
   const finalHouseholds = sanitized.households;
+
+  const availablePriests = parsedPriests.length > 0 ? parsedPriests : (options?.priests || []);
+  if (availablePriests.length > 0) {
+    for (const h of finalHouseholds) {
+      if (h.tanagyoPriestName && !h.tanagyoPriestId) {
+        const matched = availablePriests.find((p) => p.name === h.tanagyoPriestName);
+        if (matched) h.tanagyoPriestId = matched.id;
+      } else if (h.tanagyoPriestId && !h.tanagyoPriestName) {
+        const matched = availablePriests.find((p) => p.id === h.tanagyoPriestId);
+        if (matched) h.tanagyoPriestName = matched.name;
+      }
+    }
+  }
   const finalPastRecords = sanitized.pastRecords;
   const finalTransactions = sanitized.transactions;
   const finalMemorialServices = sanitized.memorialServices;

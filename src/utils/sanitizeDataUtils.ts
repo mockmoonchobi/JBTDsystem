@@ -203,10 +203,32 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
       if (hId && householdMap.has(hId)) {
         tId = householdMap.get(hId)!.templeId;
       } else {
-        tId = mainTempleId;
+        tId = deduceTempleIdFromHousehold(hId);
       }
       tChanged = true;
       changed = true;
+    } else if (hId) {
+      // 世帯が兼務寺院（または世帯IDがK0等で兼務寺）なのに出納のtempleIdが本寺になっている不整合を是正
+      const hh = householdMap.get(hId);
+      const expectedTempleId = hh?.templeId || deduceTempleIdFromHousehold(hId);
+      if (expectedTempleId && expectedTempleId !== mainTempleId && expectedTempleId !== 'temple-main') {
+        if (!tId || tId === mainTempleId || tId === 'temple-main') {
+          tId = expectedTempleId;
+          tChanged = true;
+          changed = true;
+        }
+      }
+    }
+
+    if (!tChanged && t.relatedServiceId) {
+      const relService = input.memorialServices.find((s) => s.id === t.relatedServiceId);
+      if (relService?.templeId && relService.templeId !== mainTempleId && relService.templeId !== 'temple-main') {
+        if (!tId || tId === mainTempleId || tId === 'temple-main') {
+          tId = relService.templeId;
+          tChanged = true;
+          changed = true;
+        }
+      }
     }
 
     if (tChanged) {

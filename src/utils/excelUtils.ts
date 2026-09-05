@@ -237,6 +237,8 @@ export function exportToExcel(
     '棚経巡回順序',
     '棚経伺い先住所',
     '棚経訪問特記',
+    '緯度',
+    '経度',
     'メモ',
     '作成日',
     '作成時間',
@@ -279,6 +281,8 @@ export function exportToExcel(
       h.tanagyoOrder ?? '',
       h.tanagyoAddress || '',
       h.tanagyoNotes || '',
+      typeof h.latitude === 'number' && !isNaN(h.latitude) ? h.latitude : '',
+      typeof h.longitude === 'number' && !isNaN(h.longitude) ? h.longitude : '',
       h.notes || '',
       cDate,
       cTime,
@@ -775,6 +779,7 @@ function findColIdx(headers: string[], aliases: string[]): number {
 export interface ImportFromExcelOptions {
   targetTempleId?: string | 'ALL';
   defaultTempleId?: string;
+  priests?: Priest[];
 }
 
 export async function importFromExcel(
@@ -1287,6 +1292,8 @@ export async function importFromExcel(
     const tanagyoOrderIdx = findColIdx(householdHeaders, ['棚経巡回順序', '棚経順序', '巡回順序', '巡回順', 'tanagyoOrder']);
     const tanagyoAddrIdx = findColIdx(householdHeaders, ['棚経伺い先住所', '棚経訪問先住所', '棚経住所', '伺い先住所', 'tanagyoAddress']);
     const tanagyoNotesIdx = findColIdx(householdHeaders, ['棚経訪問特記', '棚経特記', '棚経備考', 'tanagyoNotes']);
+    const latIdx = findColIdx(householdHeaders, ['緯度', 'ピン緯度', 'latitude', 'lat']);
+    const lngIdx = findColIdx(householdHeaders, ['経度', 'ピン経度', 'longitude', 'lng']);
     const notesIdx = findColIdx(householdHeaders, ['メモ', '備考', '特記事項', '注記', '連絡事項']);
     const createdIdx = findColIdx(householdHeaders, ['登録日時', '登録日', '作成日時', '作成日', '日付', 'createdAt', 'createdDate']);
     const cDateIdx = findColIdx(householdHeaders, ['作成日', '作成年月日', 'createdDate']);
@@ -1358,6 +1365,11 @@ export async function importFromExcel(
       const tanagyoAddress = String((tanagyoAddrIdx !== -1 ? row[tanagyoAddrIdx] : '') || '').trim();
       const tanagyoNotes = String((tanagyoNotesIdx !== -1 ? row[tanagyoNotesIdx] : '') || '').trim();
 
+      const rawLat = latIdx !== -1 ? row[latIdx] : undefined;
+      const rawLng = lngIdx !== -1 ? row[lngIdx] : undefined;
+      const latitude = rawLat !== undefined && rawLat !== '' && !isNaN(Number(rawLat)) ? Number(rawLat) : undefined;
+      const longitude = rawLng !== undefined && rawLng !== '' && !isNaN(Number(rawLng)) ? Number(rawLng) : undefined;
+
       const notes = String((notesIdx !== -1 ? row[notesIdx] : '') || '').trim();
       const rawCreated = createdIdx !== -1 ? row[createdIdx] : '';
       const createdAt = normalizeDateInput(rawCreated) || new Date().toISOString().split('T')[0];
@@ -1405,6 +1417,8 @@ export async function importFromExcel(
         tanagyoOrder: tanagyoOrder !== undefined ? tanagyoOrder : undefined,
         tanagyoAddress: tanagyoAddress || undefined,
         tanagyoNotes: tanagyoNotes || undefined,
+        latitude,
+        longitude,
         notes,
         createdAt,
         createdDate,
@@ -1769,11 +1783,17 @@ export async function importFromExcel(
 
       const id = String((idIdx !== -1 ? row[idIdx] : row[0]) || `TX-${Date.now()}-${idx + 1}`).trim();
       const householdId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
+      const hhTempleId = householdId ? householdTempleMap.get(householdId) : undefined;
 
-      let templeId = forcedTempleId || options?.defaultTempleId || 'temple-main';
+      let templeId = forcedTempleId || hhTempleId || options?.defaultTempleId || 'temple-main';
       if (!forcedTempleId) {
         if (templeIdIdx !== -1 && row[templeIdIdx]) {
-          templeId = String(row[templeIdIdx]).trim();
+          const rawTempleId = String(row[templeIdIdx]).trim();
+          if (hhTempleId && hhTempleId !== 'temple-main' && (rawTempleId === 'temple-main' || rawTempleId === options?.defaultTempleId)) {
+            templeId = hhTempleId;
+          } else {
+            templeId = rawTempleId;
+          }
         } else if (templeNameIdx !== -1 && row[templeNameIdx]) {
           const tName = String(row[templeNameIdx]).trim();
           for (const [name, tid] of templeNameToIdMap.entries()) {
@@ -1782,8 +1802,8 @@ export async function importFromExcel(
               break;
             }
           }
-        } else if (householdId && householdTempleMap.has(householdId)) {
-          templeId = householdTempleMap.get(householdId)!;
+        } else if (hhTempleId) {
+          templeId = hhTempleId;
         }
       }
 
@@ -2039,6 +2059,19 @@ export async function importFromExcel(
   });
 
   const finalHouseholds = sanitized.households;
+
+  const availablePriests = parsedPriests.length > 0 ? parsedPriests : (options?.priests || []);
+  if (availablePriests.length > 0) {
+    for (const h of finalHouseholds) {
+      if (h.tanagyoPriestName && !h.tanagyoPriestId) {
+        const matched = availablePriests.find((p) => p.name === h.tanagyoPriestName);
+        if (matched) h.tanagyoPriestId = matched.id;
+      } else if (h.tanagyoPriestId && !h.tanagyoPriestName) {
+        const matched = availablePriests.find((p) => p.id === h.tanagyoPriestId);
+        if (matched) h.tanagyoPriestName = matched.name;
+      }
+    }
+  }
   const finalPastRecords = sanitized.pastRecords;
   const finalTransactions = sanitized.transactions;
   const finalMemorialServices = sanitized.memorialServices;

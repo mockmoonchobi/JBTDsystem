@@ -67,6 +67,13 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
   const [modalInitialDate, setModalInitialDate] = useState<string>(todayStr);
   const [deleteConfirmService, setDeleteConfirmService] = useState<MemorialService | null>(null);
 
+  // 削除確定実行ハンドラ（確認ダイアログ内の「削除する」ボタン1回で即座に実行）
+  const handleExecuteDeleteService = () => {
+    if (!deleteConfirmService) return;
+    onDeleteService(deleteConfirmService.id);
+    setDeleteConfirmService(null);
+  };
+
   // Helper to normalize any date string to YYYY-MM-DD
   const normalizeDateKey = (d?: string): string => {
     if (!d) return '';
@@ -421,41 +428,86 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
         initialDate={modalInitialDate}
       />
 
-      {/* Delete Confirmation Modal */}
+      {/* 予定・法要 削除確認ダイアログ */}
       {deleteConfirmService && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#D1CEC7] rounded-xs shadow-xl max-w-sm w-full p-4 space-y-3.5">
-            <div className="flex items-center gap-2 text-red-600 font-bold text-sm">
-              <AlertTriangle className="w-5 h-5" />
-              <span>予定の削除確認</span>
-            </div>
-            <p className="text-xs text-gray-600 leading-relaxed">
-              「<strong>{deleteConfirmService.memorialType}</strong>（{deleteConfirmService.chiefMourner?.replace(/(家|様)+$/g, '') || ''}）」の予定を削除してもよろしいですか？
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EBE5DA]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-[#FAF7F0] border-2 border-red-700 rounded-xs shadow-2xl max-w-sm w-full overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-red-700 text-white px-4 py-3 flex items-center justify-between shadow-xs">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-amber-300 stroke-[2.5]" />
+                <h3 className="font-serif font-black text-sm tracking-wide">予定・法要の削除確認</h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setDeleteConfirmService(null)}
-                className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-xs hover:bg-gray-200 cursor-pointer"
+                className="text-white/80 hover:text-white p-1 cursor-pointer"
+                title="閉じる"
               >
-                キャンセル
+                <X className="w-5 h-5" />
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (deleteConfirmService) {
-                    onDeleteService(deleteConfirmService.id);
-                    setDeleteConfirmService(null);
-                  }
-                }}
-                className="px-4 py-1.5 bg-red-600 text-white text-xs font-bold rounded-xs hover:bg-red-700 cursor-pointer"
-              >
-                削除する
-              </button>
+            </div>
+
+            <div className="p-4 space-y-3.5">
+              <p className="text-xs font-bold text-gray-800">
+                以下の予定・法要データを削除します。よろしいですか？
+              </p>
+
+              <div className="bg-white border border-[#D1CEC7] p-3 rounded-xs space-y-1.5 text-xs">
+                <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                  <span className="text-gray-500 font-bold">日時:</span>
+                  <span className="font-black text-gray-800">
+                    {deleteConfirmService.scheduledDate} {deleteConfirmService.scheduledTime || ''}
+                  </span>
+                </div>
+                {deleteConfirmService.chiefMourner && (
+                  <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                    <span className="text-gray-500 font-bold">施主・家名:</span>
+                    <span className="font-bold text-gray-800">{deleteConfirmService.chiefMourner} 様</span>
+                  </div>
+                )}
+                {(deleteConfirmService.dharmaName || deleteConfirmService.deceasedName) && (
+                  <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                    <span className="text-gray-500 font-bold">故人・法名:</span>
+                    <span className="font-bold text-gray-800">
+                      {deleteConfirmService.dharmaName || deleteConfirmService.deceasedName}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 font-bold">種別:</span>
+                  <span className="font-bold text-[#8C2D19] bg-amber-50 px-2 py-0.5 rounded-xs border border-amber-200">
+                    {deleteConfirmService.memorialType || deleteConfirmService.notes || '法要'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-2 bg-amber-50 border border-amber-300 rounded-xs text-[11px] text-amber-900 leading-relaxed">
+                ※この予定を削除すると、関連する塔婆作成タスク・ToDoも連動して自動削除されます。
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-[#D1CEC7]">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmService(null)}
+                  className="px-3.5 py-1.5 bg-white border border-[#D1CEC7] text-gray-700 hover:bg-gray-100 font-bold text-xs rounded-xs cursor-pointer shadow-xs"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteDeleteService}
+                  className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-xs cursor-pointer flex items-center gap-1.5 shadow-sm transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>削除する</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
+
+
     </div>
   );
 };

@@ -968,7 +968,7 @@ export const TimeSelectorInput: React.FC<TimeSelectorInputProps> = ({
                   終日
                 </button>
               )}
-              {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map((preset) => (
+              {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map((preset) => (
                 <button
                   key={preset}
                   type="button"

@@ -259,43 +259,67 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
 
         {/* Right: Data Link & PC View Switch Buttons (Enlarged) */}
         <div className="flex items-center gap-2 shrink-0">
-          {onOpenGoogleSheetsModal && (
-            <button
-              type="button"
-              onClick={onOpenGoogleSheetsModal}
-              className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-sm text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm border ${
+          {isStaffMode ? (
+            /* スタッフモード: 連携ボタン自体を無効化し「連携済」のみ表示 (Excelダウンロードや設定画面の閲覧を防止) */
+            <div
+              className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-sm text-xs sm:text-sm font-bold flex items-center gap-1.5 border shadow-xs select-none cursor-default ${
                 syncStatus === 'syncing'
                   ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-                  : syncStatus === 'synced'
-                  ? 'bg-emerald-950/80 border-emerald-500/80 text-emerald-200 hover:bg-emerald-900'
-                  : syncStatus === 'error'
-                  ? 'bg-rose-950/80 border-rose-500/80 text-rose-200'
-                  : 'bg-[#2A2A2A] hover:bg-[#383838] border-[#555555] text-[#F9F7F2]'
+                  : 'bg-blue-950/80 border-blue-500/80 text-blue-200'
               }`}
-              title="Google スプレッドシート / Drive データ連携設定"
+              title="データ連携済（スタッフ用アプリのため連携設定・Excelダウンロードは制限されています）"
             >
               {syncStatus === 'syncing' ? (
                 <>
                   <RefreshCw className="w-4.5 h-4.5 animate-spin text-amber-400 shrink-0" />
                   <span className="whitespace-nowrap">同期中</span>
                 </>
-              ) : syncStatus === 'synced' ? (
-                <>
-                  <Cloud className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
-                  <span className="whitespace-nowrap">連携済</span>
-                </>
-              ) : syncStatus === 'error' ? (
-                <>
-                  <CloudOff className="w-4.5 h-4.5 text-rose-400 shrink-0" />
-                  <span className="whitespace-nowrap">エラー</span>
-                </>
               ) : (
                 <>
-                  <Cloud className="w-4.5 h-4.5 text-[#D4AF37] shrink-0" />
-                  <span className="whitespace-nowrap">データ連携</span>
+                  <Cloud className="w-4.5 h-4.5 text-blue-400 shrink-0" />
+                  <span className="whitespace-nowrap">連携済</span>
                 </>
               )}
-            </button>
+            </div>
+          ) : (
+            onOpenGoogleSheetsModal && (
+              <button
+                type="button"
+                onClick={onOpenGoogleSheetsModal}
+                className={`px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-sm text-xs sm:text-sm font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm border ${
+                  syncStatus === 'syncing'
+                    ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                    : syncStatus === 'synced'
+                    ? 'bg-blue-950/80 border-blue-500/80 text-blue-200 hover:bg-blue-900'
+                    : syncStatus === 'error'
+                    ? 'bg-rose-950/80 border-rose-500/80 text-rose-200'
+                    : 'bg-[#2A2A2A] hover:bg-[#383838] border-[#555555] text-[#F9F7F2]'
+                }`}
+                title="Google スプレッドシート / Drive データ連携設定"
+              >
+                {syncStatus === 'syncing' ? (
+                  <>
+                    <RefreshCw className="w-4.5 h-4.5 animate-spin text-amber-400 shrink-0" />
+                    <span className="whitespace-nowrap">同期中</span>
+                  </>
+                ) : syncStatus === 'synced' ? (
+                  <>
+                    <Cloud className="w-4.5 h-4.5 text-blue-400 shrink-0" />
+                    <span className="whitespace-nowrap">連携済</span>
+                  </>
+                ) : syncStatus === 'error' ? (
+                  <>
+                    <CloudOff className="w-4.5 h-4.5 text-rose-400 shrink-0" />
+                    <span className="whitespace-nowrap">エラー</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-4.5 h-4.5 text-[#D4AF37] shrink-0" />
+                    <span className="whitespace-nowrap">データ連携</span>
+                  </>
+                )}
+              </button>
+            )
           )}
 
           {isStaffMode ? (
