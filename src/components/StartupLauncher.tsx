@@ -152,8 +152,58 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
         )}
 
         {errorMsg && (
-          <div className="bg-rose-950/80 border-b border-rose-500/60 p-3.5 text-center text-rose-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2">
-            <span>⚠️ {errorMsg}</span>
+          <div className="bg-rose-950/90 border-b border-rose-500/60 p-4 text-rose-100 text-xs sm:text-sm font-sans space-y-2.5">
+            <div className="flex items-center justify-center gap-2 text-rose-200 font-bold text-center">
+              <span className="text-base">⚠️</span>
+              <span>{errorMsg}</span>
+            </div>
+            {(errorMsg.includes('popup-blocked') || errorMsg.includes('ポップアップ')) && (
+              <div className="mt-2 pt-2.5 border-t border-rose-800/60 bg-black/40 rounded-sm p-3.5 text-left space-y-2 text-xs">
+                <p className="font-bold text-amber-300 flex items-center gap-1.5 text-xs sm:text-sm">
+                  <span>💡 ポップアップブロックの解決手順：</span>
+                </p>
+                <ul className="space-y-2 text-stone-200 pl-1 leading-relaxed">
+                  <li className="flex items-start gap-2">
+                    <span className="shrink-0 text-amber-400 font-bold">①</span>
+                    <div>
+                      <strong className="text-amber-200">Gmail・LINE等のアプリ内から開いている場合（最重要）：</strong>
+                      <div className="text-stone-300 mt-0.5">
+                        アプリ内ブラウザでは別ウィンドウが開けません。画面右下または右上のメニュー（共有ボタンや「︙」）から<strong>「Safariで開く」</strong>または<strong>「ブラウザで開く（Chrome等）」</strong>を選択して開き直してください。
+                      </div>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="shrink-0 text-amber-400 font-bold">②</span>
+                    <div>
+                      <strong className="text-amber-200">iPhone / iPad（Safariをご利用の場合）：</strong>
+                      <div className="text-stone-300 mt-0.5">
+                        iPhoneの「設定」アプリ ＞「Safari」＞<strong>「ポップアップブロック」を一時的にオフ</strong>にして再度お試しください。
+                      </div>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="shrink-0 text-amber-400 font-bold">③</span>
+                    <div>
+                      <strong className="text-amber-200">パソコン（Chrome / Edge等をご利用の場合）：</strong>
+                      <div className="text-stone-300 mt-0.5">
+                        アドレスバー右端に表示される「ポップアップがブロックされました（✕印）」をクリックし、<strong>「常に許可」</strong>を選択して画面を再読み込みしてください。
+                      </div>
+                    </div>
+                  </li>
+                </ul>
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleGoogleSheetsClick}
+                    disabled={isLoading}
+                    className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-stone-950 font-bold rounded-xs text-xs cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  >
+                    <Cloud className="w-3.5 h-3.5" />
+                    <span>設定変更後にもう一度連携を試す</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

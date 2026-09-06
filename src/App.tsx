@@ -1035,6 +1035,16 @@ export default function App() {
         // ユーザーによるキャンセルなのでエラーログは出力せず静かに終了
         return;
       }
+      if (
+        err?.code === 'auth/popup-blocked' ||
+        err?.message?.includes('popup-blocked')
+      ) {
+        const customErr: any = new Error(
+          'ブラウザのポップアップがブロックされました（auth/popup-blocked）。メールアプリやLINE内ではなく、SafariまたはChrome等の通常ブラウザで開き直すか、ブラウザ設定の「ポップアップブロック」を解除してください。'
+        );
+        customErr.code = 'auth/popup-blocked';
+        throw customErr;
+      }
       console.error('Google sign in / sync error from startup launcher:', err);
       throw new Error(`Googleシートとの連携に失敗しました: ${err?.message || err}`);
     } finally {

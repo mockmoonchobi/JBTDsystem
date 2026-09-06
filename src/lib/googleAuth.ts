@@ -152,6 +152,16 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       // ユーザーによるポップアップキャンセル時はエラーログを出さずに静かにnullを返却
       return null;
     }
+    if (
+      error?.code === 'auth/popup-blocked' ||
+      error?.message?.includes('popup-blocked')
+    ) {
+      const popupError: any = new Error(
+        'ブラウザのポップアップがブロックされました（auth/popup-blocked）。メールアプリやLINE内ではなくSafariまたはChrome等の通常ブラウザで開くか、ブラウザ設定の「ポップアップブロック」を解除してください。'
+      );
+      popupError.code = 'auth/popup-blocked';
+      throw popupError;
+    }
     console.error('Sign in error:', error);
     throw error;
   } finally {

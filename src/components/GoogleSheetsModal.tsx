@@ -229,6 +229,17 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         setLoading(false);
         return;
       }
+      if (
+        err?.code === 'auth/popup-blocked' ||
+        err?.message?.includes('popup-blocked')
+      ) {
+        setStatusMessage({
+          type: 'error',
+          text: 'ブラウザのポップアップがブロックされました。GmailやLINE等のアプリ内ではなくSafari/Chromeで開き直すか、ブラウザの「ポップアップブロック」設定を解除してください。'
+        });
+        setLoading(false);
+        return;
+      }
       console.error(err);
       if (err?.isAuthError || err?.message?.includes('401') || err?.message?.includes('認証')) {
         try {
@@ -387,7 +398,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       if (!token) throw new Error('認証トークンが見つかりません。再ログインしてください。');
 
       const staffLink = getStaffInviteUrl();
-      const emailMessage = `寺院管理システム（蓮華・スタッフ用）の共有通知です。\n以下のリンクを開くと、自動的にスタッフモードとしてデータ連携が立ち上がります：\n${staffLink}`;
+      const emailMessage = `寺院管理システム（蓮華・スタッフ用）の共有通知です。\n以下のリンクを開くと、自動的にスタッフモードとしてデータ連携が立ち上がります：\n${staffLink}\n\n※スマートフォン（GmailアプリやLINE等）で開く場合は、アプリ内の内蔵ブラウザではなく、SafariまたはChromeで開いてください（ポップアップブロック回避のため）。`;
 
       await shareSpreadsheetWithUser(
         token,
