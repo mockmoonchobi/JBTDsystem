@@ -14,6 +14,64 @@ interface HouseholdAddressBookPrintModalProps {
   selectedHouseholdIds?: string[];
 }
 
+/**
+ * 世帯および家族メンバーの集金項目を集約
+ */
+export function getHouseholdFeeSummary(
+  household: Household,
+  templeInfo?: TempleProfile
+): { name: string; amountStr: string }[] {
+  const items: { name: string; amountStr: string }[] = [];
+
+  // 塔婆関連の項目は住所録から除外する（塔婆の表示は削除）
+  const isTobaRelated = (name: string) => /塔婆|とうば|toba|施餓鬼/i.test(name);
+
+  // 集金1 (例: 護持会費)
+  const fee1Name = (templeInfo?.feeType1 || '').trim() || '護持会費';
+  const fee1Raw = household.fee1Amount !== undefined && household.fee1Amount !== null
+    ? household.fee1Amount
+    : household.fee1;
+  const fee1Num = fee1Raw !== undefined && fee1Raw !== null && fee1Raw !== '' ? Number(fee1Raw) : undefined;
+  if (!isTobaRelated(fee1Name) && fee1Num !== undefined && !isNaN(fee1Num) && fee1Num > 0) {
+    items.push({ name: fee1Name, amountStr: `¥${fee1Num.toLocaleString()}` });
+  }
+
+  // 集金2 (例: 墓地管理費)
+  const fee2Name = (templeInfo?.feeType2 || '').trim() || '墓地管理費';
+  const fee2Raw = household.fee2Amount !== undefined && household.fee2Amount !== null
+    ? household.fee2Amount
+    : household.fee2;
+  const fee2Num = fee2Raw !== undefined && fee2Raw !== null && fee2Raw !== '' ? Number(fee2Raw) : undefined;
+  if (!isTobaRelated(fee2Name) && fee2Num !== undefined && !isNaN(fee2Num) && fee2Num > 0) {
+    items.push({ name: fee2Name, amountStr: `¥${fee2Num.toLocaleString()}` });
+  }
+
+  // 集金3 (例: 志納金)
+  const fee3Name = (templeInfo?.feeType3 || '').trim() || '志納金';
+  const fee3Raw = household.fee3Amount !== undefined && household.fee3Amount !== null
+    ? household.fee3Amount
+    : household.fee3;
+  const fee3Num = fee3Raw !== undefined && fee3Raw !== null && fee3Raw !== '' ? Number(fee3Raw) : undefined;
+  if (!isTobaRelated(fee3Name) && fee3Num !== undefined && !isNaN(fee3Num) && fee3Num > 0) {
+    items.push({ name: fee3Name, amountStr: `¥${fee3Num.toLocaleString()}` });
+  }
+
+  // 家族メンバー個別集金設定
+  (household.familyMembers || []).forEach((fm) => {
+    if (!isTobaRelated(fee1Name) && fm.fee1Amount && !isNaN(Number(fm.fee1Amount)) && Number(fm.fee1Amount) > 0) {
+      items.push({ name: `${fee1Name}(${fm.name || '家族'})`, amountStr: `¥${Number(fm.fee1Amount).toLocaleString()}` });
+    }
+    if (!isTobaRelated(fee2Name) && fm.fee2Amount && !isNaN(Number(fm.fee2Amount)) && Number(fm.fee2Amount) > 0) {
+      items.push({ name: `${fee2Name}(${fm.name || '家族'})`, amountStr: `¥${Number(fm.fee2Amount).toLocaleString()}` });
+    }
+    if (!isTobaRelated(fee3Name) && fm.fee3Amount && !isNaN(Number(fm.fee3Amount)) && Number(fm.fee3Amount) > 0) {
+      items.push({ name: `${fee3Name}(${fm.name || '家族'})`, amountStr: `¥${Number(fm.fee3Amount).toLocaleString()}` });
+    }
+  });
+
+  return items;
+}
+
 export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintModalProps> = ({
   isOpen,
   onClose,
@@ -48,6 +106,7 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
   const [issueDateText, setIssueDateText] = useState<string>(defaultIssueDate);
   const [titleText, setTitleText] = useState<string>(`${templeName} 住所録`);
   const [includeCover, setIncludeCover] = useState<boolean>(true);
+  const [showFees, setShowFees] = useState<boolean>(true);
 
   // Map past records to household id for fast lookup
   const pastRecordsByHousehold = useMemo(() => {
@@ -59,14 +118,14 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
       map.set(pr.householdId, list);
     });
 
-    // Sort past records descending by deathDate (records without deathDate / gyaku-shu placed at the bottom)
+    // Sort past records ascending by deathDate: 古い精霊が上、下に行くほど新しい精霊（昇順）
     map.forEach((list) => {
       list.sort((a, b) => {
         const da = normalizeDateInput(a.deathDate || '');
         const db = normalizeDateInput(b.deathDate || '');
-        if (da && db) return db.localeCompare(da);
-        if (da && !db) return -1; // da (has date) comes first
-        if (!da && db) return 1;  // db (has date) comes first
+        if (da && db) return da.localeCompare(db); // 古い命日が上、新しい命日が下
+        if (da && !db) return -1; // 命日ありの精霊を優先（上）
+        if (!da && db) return 1;  // 逆修（命日未定）は最下部
         return (a.dharmaName || a.secularName || '').localeCompare(b.dharmaName || b.secularName || '');
       });
     });
@@ -182,7 +241,7 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
                 寺院住所録 印刷プレビュー
               </h2>
               <p className="text-[11px] text-stone-400">
-                1ページ目表紙 ＋ 2ページ目以降五十音順A4名簿（過去帳最新4件掲載）
+                1ページ目表紙 ＋ 2ページ目以降五十音順A4名簿（過去帳・集金項目掲載）
               </p>
             </div>
           </div>
@@ -245,6 +304,17 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
                 className="rounded border-stone-300 text-stone-900 focus:ring-stone-400"
               />
               <span className="font-bold text-stone-700">1ページ目に表紙を含める</span>
+            </label>
+
+            {/* Include Fees */}
+            <label className="flex items-center space-x-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showFees}
+                onChange={(e) => setShowFees(e.target.checked)}
+                className="rounded border-stone-300 text-stone-900 focus:ring-stone-400"
+              />
+              <span className="font-bold text-stone-700">集金項目を印字</span>
             </label>
           </div>
 
@@ -335,13 +405,15 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
                   <div className="flex-1 flex flex-col justify-between divide-y divide-stone-400 overflow-hidden">
                     {pageHouseholds.map((household) => {
                       const records = pastRecordsByHousehold.get(household.id) || [];
-                      const latest4Records = records.slice(0, 4);
+                      // 直近最大4件の精霊（昇順：下に行くほど新しい精霊）
+                      const displayRecords = records.length > 4 ? records.slice(-4) : records;
 
+                      const isTobaText = (t: string) => /塔婆|とうば|toba|施餓鬼/i.test(t);
                       // Red badges for status / note
                       const statusTags: string[] = [];
-                      if (household.householdType) statusTags.push(household.householdType);
-                      if (household.district) statusTags.push(household.district);
-                      if (household.status && household.status !== '通常') statusTags.push(household.status);
+                      if (household.householdType && !isTobaText(household.householdType)) statusTags.push(household.householdType);
+                      if (household.district && !isTobaText(household.district)) statusTags.push(household.district);
+                      if (household.status && household.status !== '通常' && !isTobaText(household.status)) statusTags.push(household.status);
 
                       return (
                         <div
@@ -350,7 +422,7 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
                           style={{ minHeight: `${230 / itemsPerPage}mm` }}
                         >
                           {/* LEFT COLUMN: Name, Sponsor, Badge, Notes */}
-                          <div className="w-[32%] shrink-0 flex flex-col justify-between pr-2 border-r border-stone-200">
+                          <div className="w-[28%] shrink-0 flex flex-col justify-between pr-2 border-r border-stone-200">
                             <div>
                               {/* Red Badges */}
                               <div className="flex flex-wrap gap-1 mb-0.5">
@@ -399,44 +471,68 @@ export const HouseholdAddressBookPrintModal: React.FC<HouseholdAddressBookPrintM
 
                           {/* RIGHT COLUMN: Address, Tel, Temple ID + Past Records Table */}
                           <div className="flex-1 flex flex-col justify-between">
-                            {/* Top info line: Address, Phone, ID */}
-                            <div className="flex items-start justify-between text-[11px] leading-tight pb-1">
-                              <div className="space-y-0.5">
-                                {household.postalCode && (
-                                  <span className="font-mono text-stone-700 mr-2">
-                                    〒{household.postalCode}
-                                  </span>
-                                )}
-                                <span className="font-bold text-stone-900">
-                                  {household.address || '（住所未登録）'}
-                                </span>
-                              </div>
+                            <div>
+                              {/* 集金項目行 (住所・電話番号の上に配置。設定がない場合は行自体を表示しない) */}
+                              {(() => {
+                                if (!showFees) return null;
+                                const feeItems = getHouseholdFeeSummary(household, templeInfo);
 
-                              <div className="flex items-center space-x-3 shrink-0 ml-2">
-                                <div className="space-x-2 text-[10px]">
+                                if (feeItems.length === 0) return null;
+
+                                return (
+                                  <div className="flex items-center justify-between gap-2 text-[8.5px] print:text-[8px] leading-tight pb-0.5 mb-0.5 border-b border-stone-200 text-stone-700 font-sans whitespace-nowrap overflow-hidden">
+                                    <div className="flex items-center gap-1.5 truncate">
+                                      <span className="font-bold text-stone-900 font-serif shrink-0">［集金］</span>
+                                      <div className="flex items-center gap-2 truncate">
+                                        {feeItems.map((fee, fIdx) => (
+                                          <span key={fIdx} className="text-stone-800 shrink-0">
+                                            <span className="text-stone-600">{fee.name}:</span>{' '}
+                                            <strong className="font-mono font-bold text-stone-950">{fee.amountStr}</strong>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Top info line: Address, Phone, ID (1行で収まるようにフォントサイズ調整) */}
+                              <div className="flex items-center justify-between text-[8px] print:text-[7.5px] leading-tight pb-0.5 gap-2 whitespace-nowrap overflow-hidden">
+                                <div className="flex items-center gap-1 truncate min-w-0 flex-1">
+                                  {household.postalCode && (
+                                    <span className="font-mono text-stone-600 shrink-0 text-[7.5px] print:text-[7px]">
+                                      〒{household.postalCode}
+                                    </span>
+                                  )}
+                                  <span className="font-bold text-stone-900 truncate">
+                                    {household.address || '（住所未登録）'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center space-x-1.5 shrink-0 text-[8px] print:text-[7.5px] text-stone-700">
                                   {household.phone && (
-                                    <span>
-                                      TEL <strong className="font-mono">{household.phone}</strong>
+                                    <span className="whitespace-nowrap">
+                                      TEL <strong className="font-mono text-stone-950">{household.phone}</strong>
                                     </span>
                                   )}
                                   {household.mobile && (
-                                    <span>
-                                      携帯 <strong className="font-mono">{household.mobile}</strong>
+                                    <span className="whitespace-nowrap">
+                                      携帯 <strong className="font-mono text-stone-950">{household.mobile}</strong>
                                     </span>
                                   )}
+                                  <span className="text-[7px] font-mono text-stone-400">
+                                    {household.id.slice(-6)}
+                                  </span>
                                 </div>
-                                <span className="text-[9px] font-mono text-stone-500">
-                                  {household.id.slice(-6)}
-                                </span>
                               </div>
                             </div>
 
-                            {/* Bottom: Past Records Table (Up to 4 latest records, subtle gray stripes) */}
+                            {/* Bottom: Past Records Table (Up to 4 latest records, subtle gray stripes, sorted chronologically: 下に行くほど新しい精霊) */}
                             <div className="bg-stone-100/80 rounded-xs border border-stone-200 overflow-hidden text-[9.5px]">
                               <table className="w-full border-collapse">
                                 <tbody>
                                   {Array.from({ length: 4 }).map((_, rIdx) => {
-                                    const rec = latest4Records[rIdx];
+                                    const rec = displayRecords[rIdx];
                                     if (!rec) {
                                       return (
                                         <tr

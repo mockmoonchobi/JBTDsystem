@@ -246,25 +246,6 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
               すべて ({households.length})
             </button>
 
-            {/* Segaki Toba Filter Chip Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                if (selectedSegakiFilter === 'all') setSelectedSegakiFilter('checked');
-                else if (selectedSegakiFilter === 'checked') setSelectedSegakiFilter('unchecked');
-                else setSelectedSegakiFilter('all');
-              }}
-              className={`px-3 py-1.5 rounded-xs font-bold shrink-0 cursor-pointer border text-xs sm:text-sm transition-colors ${
-                selectedSegakiFilter === 'checked'
-                  ? 'bg-orange-600 text-white border-orange-600'
-                  : selectedSegakiFilter === 'unchecked'
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-[#FAF8F5] text-gray-700 border-[#D1CEC7]'
-              }`}
-            >
-              塔婆: {selectedSegakiFilter === 'checked' ? '申込あり' : selectedSegakiFilter === 'unchecked' ? '未申込' : '全て'}
-            </button>
-
             {/* Tanagyo Filter Chip Toggle */}
             <button
               type="button"
@@ -365,11 +346,6 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
               【{selectedKanaRow}行{selectedKanaCol !== 'all' && selectedKanaCol !== 'ALL' ? `・${selectedKanaCol}` : ''}】
             </span>
           )}
-          {selectedSegakiFilter !== 'all' && (
-            <span className="px-2 py-0.5 bg-orange-600 text-white text-xs font-bold rounded-2xs">
-              塔婆:{selectedSegakiFilter === 'checked' ? '申込済' : '未申込'}
-            </span>
-          )}
           {selectedTanagyoFilter !== 'all' && (
             <span className="px-2 py-0.5 bg-teal-700 text-white text-xs font-bold rounded-2xs">
               棚経:{selectedTanagyoFilter === 'checked' ? '対象' : '対象外'}
@@ -381,7 +357,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
             </span>
           )}
         </div>
-        {(searchQuery || (selectedKanaRow !== 'all' && selectedKanaRow !== 'ALL') || (selectedKanaCol !== 'all' && selectedKanaCol !== 'ALL') || selectedTypeFilter !== 'all' || selectedStatusFilter !== 'all' || selectedDistrictFilter !== 'all' || selectedSegakiFilter !== 'all' || selectedTanagyoFilter !== 'all') && (
+        {(searchQuery || (selectedKanaRow !== 'all' && selectedKanaRow !== 'ALL') || (selectedKanaCol !== 'all' && selectedKanaCol !== 'ALL') || selectedTypeFilter !== 'all' || selectedStatusFilter !== 'all' || selectedDistrictFilter !== 'all' || selectedTanagyoFilter !== 'all') && (
           <button
             type="button"
             onClick={() => {
@@ -391,7 +367,6 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
               setSelectedTypeFilter('all');
               setSelectedStatusFilter('all');
               setSelectedDistrictFilter('all');
-              setSelectedSegakiFilter('all');
               setSelectedTanagyoFilter('all');
             }}
             className="text-[#8C2D19] hover:underline text-xs sm:text-sm font-bold cursor-pointer"
@@ -497,48 +472,41 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Phone & Address Quick Actions */}
-                  <div className="mt-2.5 pt-2.5 border-t border-[#F0ECE1] space-y-2 text-xs sm:text-sm">
-                    {/* Phone button */}
-                    {primaryPhone ? (
-                      <div className="flex items-center justify-between">
-                        <a
-                          href={`tel:${primaryPhone.replace(/[-\s]/g, '')}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex items-center gap-2 text-blue-700 hover:underline font-bold py-2 px-3 bg-blue-50 hover:bg-blue-100 rounded-xs border border-blue-200 text-xs sm:text-sm"
-                        >
-                          <Phone className="w-4.5 h-4.5 text-blue-600" />
-                          <span>{primaryPhone}</span>
-                          <span className="text-xs text-blue-600 font-normal">（発信）</span>
-                        </a>
-                        {h.mobile && h.phone && (
-                          <span className="text-xs sm:text-sm text-gray-500">
-                            他: {h.mobile}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs sm:text-sm text-gray-400 italic">電話番号未登録</div>
-                    )}
-
-                    {/* Address link with Google Maps */}
-                    {h.address && (
-                      <div className="flex items-start justify-between gap-1 pt-0.5">
+                  {/* Phone & Address Quick Actions - 1行で収まるようにフォントサイズ調整 */}
+                  <div className="mt-2 pt-2 border-t border-[#F0ECE1] flex items-center justify-between gap-2 text-xs text-stone-700 whitespace-nowrap overflow-hidden">
+                    <div className="flex items-center gap-1.5 truncate min-w-0 flex-1">
+                      {h.address ? (
                         <a
                           href={getGoogleMapsSearchUrl(h.address)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="flex items-start gap-1.5 text-[#333333] hover:text-[#8C2D19] py-0.5 group"
+                          className="flex items-center gap-1 text-[#333333] hover:text-[#8C2D19] truncate group"
+                          title={h.address}
                         >
-                          <MapPin className="w-4 h-4 text-[#8C2D19] shrink-0 mt-0.5" />
-                          <span className="group-hover:underline text-xs sm:text-sm leading-snug">
+                          <MapPin className="w-3.5 h-3.5 text-[#8C2D19] shrink-0" />
+                          <span className="group-hover:underline truncate text-[11px] sm:text-xs">
                             {h.address}
                           </span>
-                          <ExternalLink className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
                         </a>
-                      </div>
-                    )}
+                      ) : (
+                        <span className="text-gray-400 italic text-[11px]">住所未登録</span>
+                      )}
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1.5 text-[11px] sm:text-xs">
+                      {primaryPhone ? (
+                        <a
+                          href={`tel:${primaryPhone.replace(/[-\s]/g, '')}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1 text-blue-700 hover:underline font-bold py-1 px-2 bg-blue-50 hover:bg-blue-100 rounded-2xs border border-blue-200"
+                        >
+                          <Phone className="w-3 h-3 text-blue-600" />
+                          <span>{primaryPhone}</span>
+                        </a>
+                      ) : (
+                        <span className="text-gray-400 italic">TEL未登録</span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Spirits count chip */}

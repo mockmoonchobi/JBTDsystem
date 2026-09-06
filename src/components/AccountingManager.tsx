@@ -72,10 +72,25 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
 
   const paymentMethodOptions = masterOptions?.paymentMethods || [];
 
-  // Clean raw transactions (strip any legacy auto-generated carryover records)
+  // Clean raw transactions (strip any legacy auto-generated carryover records and normalize dates)
   const cleanTransactions = useMemo(() => {
-    return stripAutoCarryoverTransactions(transactions);
-  }, [transactions]);
+    const stripped = stripAutoCarryoverTransactions(transactions);
+    const dateOpts: NormalizeDateOptions = {
+      mode: 'accounting',
+      fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4,
+    };
+    return stripped.map((tx) => {
+      if (!tx.date) return tx;
+      const norm = normalizeDateInput(tx.date, dateOpts);
+      if (norm && norm !== tx.date) {
+        return {
+          ...tx,
+          date: norm,
+        };
+      }
+      return tx;
+    });
+  }, [transactions, templeInfo?.fiscalYearStartMonth]);
 
   // Clean up legacy auto-carryover records once if any exist in stored state
   useEffect(() => {
@@ -231,7 +246,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     const normalizedDate = normalizeDateInput(newTxForm.date || '', accountingDateOptions) || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
 
     const matchedHousehold = newTxForm.householdId ? households.find((h) => h.id === newTxForm.householdId) : null;
-    const resolvedTxTempleId = matchedHousehold?.templeId || templeInfo?.id || 'temple-main';
+    const resolvedTxTempleId = matchedHousehold?.templeId || templeInfo?.id || 'damt-main';
 
     const completeTx: Transaction = {
       id: `TX-${Date.now()}`,
@@ -349,11 +364,15 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     const sorted = [...filteredTransactions].sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'date') {
-        const dateA = a.date || '';
-        const dateB = b.date || '';
+        const dateA = normalizeDateInput(a.date, accountingDateOptions) || (a.date || '').replace(/-/g, '/');
+        const dateB = normalizeDateInput(b.date, accountingDateOptions) || (b.date || '').replace(/-/g, '/');
         cmp = dateA.localeCompare(dateB);
         if (cmp === 0) {
-          return (a.receiptNumber || a.id || '').localeCompare(b.receiptNumber || b.id || '');
+          const aIsCarry = isCarryoverTransaction(a);
+          const bIsCarry = isCarryoverTransaction(b);
+          if (aIsCarry && !bIsCarry) return -1;
+          if (!aIsCarry && bIsCarry) return 1;
+          return (a.receiptNumber || a.id || '').localeCompare(b.receiptNumber || b.id || '', undefined, { numeric: true });
         }
       } else if (sortKey === 'category') {
         const idxA = allMasterCats.indexOf(a.category);

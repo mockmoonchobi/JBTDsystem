@@ -25,6 +25,7 @@ import {
   Tag
 } from 'lucide-react';
 import { getTodayDateString } from '../utils/calendarUtils';
+import { normalizeDateInput } from '../utils/memorialCalculator';
 import { INITIAL_INCOME_CATEGORIES } from '../data/initialData';
 
 interface TanagyoBatchAccountingModalProps {
@@ -223,7 +224,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
   // 寺院名解決ヘルパー
   const getCleanTempleName = (tId?: string): string => {
     const mainTemple = temples.find((t) => t.isMain) || temples[0];
-    const mainTempleId = mainTemple?.id || templeInfo.id || 'temple-main';
+    const mainTempleId = mainTemple?.id || templeInfo.id || 'damt-main';
     const targetId = tId || mainTempleId;
     const found = temples.find((t) => t.id === targetId);
     return found?.name || templeInfo.name || '自寺';
@@ -370,7 +371,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
     return rows.filter((r) => {
       if (filterPriest !== 'ALL' && r.priestName !== filterPriest) return false;
       if (filterDate !== 'ALL' && r.date !== filterDate) return false;
-      if (filterTemple !== 'ALL' && (r.templeId || 'temple-main') !== filterTemple) return false;
+      if (filterTemple !== 'ALL' && (r.templeId || 'damt-main') !== filterTemple) return false;
       if (hideAlreadyRecorded && r.alreadyRecorded) return false;
       return true;
     });
@@ -432,28 +433,24 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
 
     const newTransactions: Transaction[] = selectedRows.map((r, index) => {
       // 日付の決定
-      let txDate = today;
+      let rawDate = today;
       if (dateMode === 'visitDate') {
         if (r.date && r.date !== '日程未定') {
-          // 例: '8/13' -> '2026-08-13' 形式に整形
-          if (r.date.includes('/')) {
-            const [m, d] = r.date.split('/');
-            const mm = m.padStart(2, '0');
-            const dd = d.padStart(2, '0');
-            txDate = `${currentYear}-${mm}-${dd}`;
-          } else if (r.date.includes('-')) {
-            txDate = r.date;
-          }
+          rawDate = r.date;
         }
       } else {
-        txDate = fixedDate || today;
+        rawDate = fixedDate || today;
       }
 
-      const receiptNo = `棚-${txDate.replace(/-/g, '').slice(2)}-${String(index + 1).padStart(3, '0')}`;
+      const txDate = normalizeDateInput(rawDate, {
+        mode: 'accounting',
+        fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4,
+      }) || rawDate.replace(/-/g, '/');
+      const receiptNo = `棚-${txDate.replace(/[-/]/g, '').slice(2)}-${String(index + 1).padStart(4, '0')}`;
 
       return {
         id: `tx-tanagyo-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 5)}`,
-        templeId: r.templeId || 'temple-main',
+        templeId: r.templeId || 'damt-main',
         date: txDate,
         householdId: r.householdId,
         householdHeadName: r.familyHead,

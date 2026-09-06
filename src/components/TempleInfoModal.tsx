@@ -29,7 +29,7 @@ import {
   BookOpen,
   Coins
 } from 'lucide-react';
-import { TempleInfo, TempleProfile, MasterOptions, Household, PastRecord, Transaction, MemorialService, TempleTodo, Priest } from '../types';
+import { TempleInfo, TempleProfile, MasterOptions, Household, PastRecord, Transaction, MemorialService, TempleTodo, Priest, FamilyMember } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, DEFAULT_ANNUAL_EVENTS } from '../data/initialData';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -48,6 +48,7 @@ interface TempleInfoModalProps {
   transactions?: Transaction[];
   memorialServices?: MemorialService[];
   templeTodos?: TempleTodo[];
+  familyMembers?: FamilyMember[];
   // Registered priests
   priests?: Priest[];
   onSavePriests?: (priests: Priest[]) => void;
@@ -79,13 +80,22 @@ const reconcilePriestsWithTemples = (
   temples: TempleProfile[],
   existingPriests: Priest[]
 ): Priest[] => {
-  const manualPriests = (existingPriests || []).filter((p) => !p.isAutoChief);
+  const validTempleIds = new Set((temples || []).map((t) => t.id || 'damt-main'));
+  validTempleIds.add('damt-main');
+  validTempleIds.add('temple-main');
+
+  const manualPriests = (existingPriests || []).filter((p) => {
+    if (p.isAutoChief) return false;
+    const tId = p.templeId || 'damt-main';
+    if (!validTempleIds.has(tId)) return false;
+    return true;
+  });
 
   const autoPriests: Priest[] = (temples || [])
     .filter((t) => t.chiefPriest && t.chiefPriest.trim() !== '')
     .map((t) => {
       const isMain = Boolean(t.isMain);
-      const templeId = t.id || 'temple-main';
+      const templeId = t.id || 'damt-main';
       const templeName = `${t.mountainName ? t.mountainName + ' ' : ''}${t.name || '（寺院名未設定）'}`;
       const prevAuto = (existingPriests || []).find((p) => p.isAutoChief && p.templeId === templeId);
 
@@ -120,6 +130,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   transactions = [],
   memorialServices = [],
   templeTodos = [],
+  familyMembers = [],
   priests: initialPriests = [],
   onSavePriests,
   masterOptions,
@@ -135,13 +146,13 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       return initialTemples;
     }
     if (templeInfo) {
-      return [{ ...templeInfo, id: templeInfo.id || 'temple-main', isMain: true, color: templeInfo.color || '#D4AF37' }];
+      return [{ ...templeInfo, id: templeInfo.id || 'damt-main', isMain: true, color: templeInfo.color || '#D4AF37' }];
     }
     return [];
   });
 
   const [selectedTempleId, setSelectedTempleId] = useState<string>(() => {
-    return initialActiveId || (initialTemples && initialTemples[0]?.id) || 'temple-main';
+    return initialActiveId || (initialTemples && initialTemples[0]?.id) || 'damt-main';
   });
 
   // Registered Priests state
@@ -175,11 +186,11 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     const map: Record<string, MasterOptions> = {};
     const baseList = initialTemples && initialTemples.length > 0 ? initialTemples : (templeInfo ? [templeInfo] : []);
     baseList.forEach((t) => {
-      const id = t.id || 'temple-main';
+      const id = t.id || 'damt-main';
       map[id] = templeMasterOptionsMap[id] || t.masterOptions || masterOptions || EMPTY_MASTER_OPTIONS;
     });
-    if (map['temple-main'] === undefined && masterOptions) {
-      map['temple-main'] = masterOptions;
+    if (map['damt-main'] === undefined && masterOptions) {
+      map['damt-main'] = masterOptions;
     }
     return map;
   });
@@ -198,10 +209,10 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       const currentTemples = initialTemples && initialTemples.length > 0 ? initialTemples : (templeInfo ? [templeInfo] : []);
       if (initialTemples && initialTemples.length > 0) {
         setTempleList(initialTemples);
-        setSelectedTempleId(initialActiveId && initialActiveId !== 'ALL' ? initialActiveId : initialTemples[0].id || 'temple-main');
+        setSelectedTempleId(initialActiveId && initialActiveId !== 'ALL' ? initialActiveId : initialTemples[0].id || 'damt-main');
       } else if (templeInfo) {
-        setTempleList([{ ...templeInfo, id: templeInfo.id || 'temple-main', isMain: true, color: templeInfo.color || '#D4AF37' }]);
-        setSelectedTempleId(templeInfo.id || 'temple-main');
+        setTempleList([{ ...templeInfo, id: templeInfo.id || 'damt-main', isMain: true, color: templeInfo.color || '#D4AF37' }]);
+        setSelectedTempleId(templeInfo.id || 'damt-main');
       }
 
       // Reconcile priests
@@ -211,7 +222,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       // Initialize Master State Map
       const map: Record<string, MasterOptions> = {};
       currentTemples.forEach((t) => {
-        const id = t.id || 'temple-main';
+        const id = t.id || 'damt-main';
         map[id] = templeMasterOptionsMap[id] || t.masterOptions || (id === initialActiveId ? masterOptions : (masterOptions || EMPTY_MASTER_OPTIONS));
       });
       if (initialActiveId && initialActiveId !== 'ALL' && masterOptions) {
@@ -232,7 +243,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
 
   const currentTempleIndex = templeList.findIndex((t) => t.id === selectedTempleId);
   const currentTemple: TempleProfile = (currentTempleIndex >= 0 ? templeList[currentTempleIndex] : templeList[0]) || {
-    id: 'temple-main',
+    id: 'damt-main',
     name: '',
     sect: '',
     mountainName: '',
@@ -263,10 +274,10 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       const t3 = (updates.tobaType3 !== undefined ? updates.tobaType3 : (currentTemple.tobaType3 || '')).trim();
       const newTobaTypes = [t1, t2, t3].filter(Boolean);
       setMasterStateMap((prev) => {
-        const curM = prev[currentTemple.id || 'temple-main'] || currentMasterOptions || EMPTY_MASTER_OPTIONS;
+        const curM = prev[currentTemple.id || 'damt-main'] || currentMasterOptions || EMPTY_MASTER_OPTIONS;
         return {
           ...prev,
-          [currentTemple.id || 'temple-main']: {
+          [currentTemple.id || 'damt-main']: {
             ...curM,
             tobaTypes: newTobaTypes.length > 0 ? newTobaTypes : ['施餓鬼塔婆'],
           },
@@ -295,10 +306,10 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       if (f3 && c3) newFeeMapping[f3] = c3;
 
       setMasterStateMap((prev) => {
-        const curM = prev[currentTemple.id || 'temple-main'] || currentMasterOptions || EMPTY_MASTER_OPTIONS;
+        const curM = prev[currentTemple.id || 'damt-main'] || currentMasterOptions || EMPTY_MASTER_OPTIONS;
         return {
           ...prev,
-          [currentTemple.id || 'temple-main']: {
+          [currentTemple.id || 'damt-main']: {
             ...curM,
             feeTypes: newFeeTypes,
             feeTypeMapping: newFeeMapping,
@@ -323,7 +334,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     if (nextSubIdx >= 10) {
       nextSubIdx = Math.min(templeList.filter((t) => !t.isMain).length, 9);
     }
-    const newId = `temple-sub-${nextSubIdx}`;
+    const newId = `damt-sub-${nextSubIdx}`;
     const mainTemple = templeList.find((t) => t.isMain) || templeList[0] || currentTemple;
     const newTemple: TempleProfile = {
       id: newId,
@@ -349,7 +360,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     };
 
     // 新規兼務寺院にはデフォルトで本寺のマスタ設定をコピーして割り当て
-    const mainMaster = masterStateMap[mainTemple.id || 'temple-main'] || masterOptions || EMPTY_MASTER_OPTIONS;
+    const mainMaster = masterStateMap[mainTemple.id || 'damt-main'] || masterOptions || EMPTY_MASTER_OPTIONS;
     setMasterStateMap((prev) => ({
       ...prev,
       [newId]: JSON.parse(JSON.stringify(mainMaster)),
@@ -375,12 +386,31 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     if (!templeToDelete) return;
     const targetId = templeToDelete.id;
     const targetName = templeToDelete.name;
-    const nextList = templeList.filter((x) => x.id !== targetId);
+    const isSub1 = targetId === 'damt-sub-1' || targetId === 'temple-sub-1';
+    const nextList = templeList.filter((x) => x.id !== targetId && (!isSub1 || x.id !== 'temple-sub-1'));
     setTempleList(nextList);
-    const nextActiveId = nextList[0]?.id || 'temple-main';
+    const nextActiveId = nextList[0]?.id || 'damt-main';
     if (selectedTempleId === targetId) {
       setSelectedTempleId(nextActiveId);
     }
+
+    // 削除対象兼務寺院の僧侶・住職をモーダル内の登録僧侶リストからも即座に完全除去
+    const nextPriests = priestList.filter((p) => {
+      if (p.templeId === targetId) return false;
+      if (isSub1 && p.templeId === 'temple-sub-1') return false;
+      if (p.id === `priest-chief-${targetId}`) return false;
+      if (isSub1 && p.id === 'priest-chief-temple-sub-1') return false;
+      if (targetName && p.templeName && p.templeName.includes(targetName)) return false;
+      return true;
+    });
+    setPriestList(nextPriests);
+
+    // 削除対象兼務寺院のローカルマスタマップも完全除去
+    const nextMasterMap = { ...masterStateMap };
+    delete nextMasterMap[targetId];
+    if (isSub1) delete nextMasterMap['temple-sub-1'];
+    setMasterStateMap(nextMasterMap);
+
     setTempleToDelete(null);
     setIsDeleteAgreed(false);
 
@@ -388,6 +418,10 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       onDeleteTemple(targetId);
     } else if (onSaveTemples) {
       onSaveTemples(nextList, nextActiveId);
+    }
+
+    if (onSavePriests) {
+      onSavePriests(nextPriests);
     }
 
     showNotice(`兼務寺院「${targetName}」および関連レコードを完全に削除しました`);
@@ -403,7 +437,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   };
 
   // ==================== MASTER OPTIONS HELPERS ====================
-  const currentMasterOptions: MasterOptions = masterStateMap[currentTemple.id || 'temple-main'] || masterOptions || EMPTY_MASTER_OPTIONS;
+  const currentMasterOptions: MasterOptions = masterStateMap[currentTemple.id || 'damt-main'] || masterOptions || EMPTY_MASTER_OPTIONS;
   const currentMasterItemList = currentMasterOptions[activeMasterCategory] ?? [];
 
   const showNotice = (text: string) => {
@@ -416,7 +450,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   const updateCurrentMasterOptions = (updatedOptions: MasterOptions) => {
     setMasterStateMap((prev) => ({
       ...prev,
-      [currentTemple.id || 'temple-main']: updatedOptions,
+      [currentTemple.id || 'damt-main']: updatedOptions,
     }));
   };
 
@@ -506,7 +540,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   // 本寺の区分・勘定科目マスタをすべての兼務寺院に一括コピー
   const handleCopyMainToAllSubTemples = () => {
     const mainTemple = templeList.find((t) => t.isMain) || templeList[0];
-    const mainId = mainTemple?.id || 'temple-main';
+    const mainId = mainTemple?.id || 'damt-main';
     const mainOptions = masterStateMap[mainId] || masterOptions || EMPTY_MASTER_OPTIONS;
 
     const subTemples = templeList.filter((t) => !t.isMain);
@@ -557,7 +591,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       name: '',
       furigana: '',
       role: '副住職',
-      templeId: selectedTempleId || 'temple-main',
+      templeId: selectedTempleId || 'damt-main',
       templeName: `${currentTemple.mountainName ? currentTemple.mountainName + ' ' : ''}${currentTemple.name || ''}`,
       phone: '',
       email: '',
@@ -684,7 +718,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     const timeStr = new Date().toLocaleTimeString('ja-JP');
     const newMasterMap: Record<string, MasterOptions> = {};
     const updatedTempleProfiles = templeList.map((t) => {
-      const tId = t.id || 'temple-main';
+      const tId = t.id || 'damt-main';
       const existingMaster = masterStateMap[tId] || t.masterOptions || EMPTY_MASTER_OPTIONS;
 
       const t1 = t.tobaType1 !== undefined ? t.tobaType1.trim() : '施餓鬼塔婆';
@@ -744,7 +778,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
 
     // 3. マスタ設定保存
     if (onSaveMasterOptions) {
-      const activeOptions = activeProfile?.masterOptions || newMasterMap[selectedTempleId] || newMasterMap['temple-main'] || currentMasterOptions;
+      const activeOptions = activeProfile?.masterOptions || newMasterMap[selectedTempleId] || newMasterMap['damt-main'] || newMasterMap['damt-main'] || currentMasterOptions;
       onSaveMasterOptions(activeOptions, selectedTempleId, newMasterMap);
     }
 
@@ -768,26 +802,79 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
 
   // Calculated impact for deletion
   const deletingTempleTargetId = templeToDelete?.id || '';
-  const deletingTempleHouseholds = households.filter((h) => (h.templeId || 'temple-main') === deletingTempleTargetId);
+  const isDeletingSub1 = deletingTempleTargetId === 'damt-sub-1' || deletingTempleTargetId === 'temple-sub-1';
+  const deletingTempleName = templeToDelete?.name || '';
+  const deletingTempleShortName = templeToDelete?.shortName || deletingTempleName;
+
+  const deletingTempleHouseholds = households.filter((h) => {
+    if ((h.templeId || 'damt-main') === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && (h.templeId === 'temple-sub-1' || h.id.startsWith('D1-'))) return true;
+    if (deletingTempleShortName && h.templeId === deletingTempleShortName) return true;
+    return false;
+  });
   const deletingTempleHhIdSet = new Set(deletingTempleHouseholds.map((h) => h.id));
-  const deletingTemplePastRecords = pastRecords.filter(
-    (r) => (r.templeId || 'temple-main') === deletingTempleTargetId || (r.householdId && deletingTempleHhIdSet.has(r.householdId))
-  );
-  const deletingTempleTransactions = transactions.filter(
-    (t) => (t.templeId || 'temple-main') === deletingTempleTargetId || (t.householdId && deletingTempleHhIdSet.has(t.householdId))
-  );
-  const deletingTempleMemorialServices = memorialServices.filter(
-    (s) => s.templeId === deletingTempleTargetId || (s.householdId && deletingTempleHhIdSet.has(s.householdId))
-  );
-  const deletingTempleTodos = templeTodos.filter(
-    (td) => td.templeId === deletingTempleTargetId || (td.householdId && deletingTempleHhIdSet.has(td.householdId))
-  );
+
+  const deletingTemplePastRecords = pastRecords.filter((r) => {
+    if ((r.templeId || 'damt-main') === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && (r.templeId === 'temple-sub-1' || (r.id >= 'KC-651' && r.id <= 'KC-680'))) return true;
+    if (r.householdId && deletingTempleHhIdSet.has(r.householdId)) return true;
+    return false;
+  });
+  const deletingTemplePastIdSet = new Set(deletingTemplePastRecords.map((r) => r.id));
+
+  const deletingTempleMemorialServices = memorialServices.filter((s) => {
+    if (s.templeId === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && s.templeId === 'temple-sub-1') return true;
+    if (s.householdId && deletingTempleHhIdSet.has(s.householdId)) return true;
+    if (s.deceasedId && deletingTemplePastIdSet.has(s.deceasedId)) return true;
+    if (deletingTempleShortName && s.venue && s.venue.includes(deletingTempleShortName)) return true;
+    if (s.additionalDeceased && s.additionalDeceased.some((ad) => ad.id && deletingTemplePastIdSet.has(ad.id))) return true;
+    return false;
+  });
+  const deletingTempleMemIdSet = new Set(deletingTempleMemorialServices.map((s) => s.id));
+
+  const deletingTempleTransactions = transactions.filter((t) => {
+    if ((t.templeId || 'damt-main') === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && t.templeId === 'temple-sub-1') return true;
+    if (t.householdId && deletingTempleHhIdSet.has(t.householdId)) return true;
+    if (t.relatedServiceId && deletingTempleMemIdSet.has(t.relatedServiceId)) return true;
+    return false;
+  });
+
+  const deletingTempleTodos = templeTodos.filter((td) => {
+    if (td.templeId === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && td.templeId === 'temple-sub-1') return true;
+    if (td.householdId && deletingTempleHhIdSet.has(td.householdId)) return true;
+    if (td.relatedServiceId && deletingTempleMemIdSet.has(td.relatedServiceId)) return true;
+    if (td.serviceId && deletingTempleMemIdSet.has(td.serviceId)) return true;
+    if (deletingTempleShortName && td.title && td.title.includes(deletingTempleShortName)) return true;
+    return false;
+  });
+
+  const deletingTempleFamilyMembers = familyMembers.filter((m) => {
+    if (deletingTempleHhIdSet.has(m.householdId)) return true;
+    if ((m as any).templeId === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && (m as any).templeId === 'temple-sub-1') return true;
+    return false;
+  });
+
+  const deletingTemplePriests = (priests && priests.length > 0 ? priests : priestList).filter((p) => {
+    if (p.templeId === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && p.templeId === 'temple-sub-1') return true;
+    if (p.id === `priest-chief-${deletingTempleTargetId}`) return true;
+    if (isDeletingSub1 && p.id === 'priest-chief-temple-sub-1') return true;
+    if (deletingTempleShortName && p.templeName && p.templeName.includes(deletingTempleShortName)) return true;
+    return false;
+  });
+
   const totalDeletingRecordsCount =
     deletingTempleHouseholds.length +
     deletingTemplePastRecords.length +
     deletingTempleTransactions.length +
     deletingTempleMemorialServices.length +
-    deletingTempleTodos.length;
+    deletingTempleTodos.length +
+    deletingTempleFamilyMembers.length +
+    deletingTemplePriests.length;
 
   const masterCategoryTabs: { id: MasterCategoryTab; label: string; desc: string; count: number }[] = [
     { id: 'householdTypes', label: '区分１ (種別)', desc: '正檀家・特別檀家・信徒など', count: (currentMasterOptions.householdTypes || []).length },
@@ -848,7 +935,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
               return (
                 <div
                   key={temple.id || temple.name}
-                  onClick={() => setSelectedTempleId(temple.id || 'temple-main')}
+                  onClick={() => setSelectedTempleId(temple.id || 'damt-main')}
                   className={`flex items-center space-x-2 px-3 py-1.5 border text-xs cursor-pointer transition-all ${
                     isSelected
                       ? 'bg-white border-[#1A1A1A] text-[#1A1A1A] font-bold shadow-sm ring-1 ring-[#1A1A1A]'
@@ -2170,6 +2257,18 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                   <span className="text-[#666666]">法事・法要予約データ:</span>
                   <strong className={deletingTempleMemorialServices.length > 0 ? 'text-rose-700 font-bold' : 'text-[#333333]'}>
                     {deletingTempleMemorialServices.length} 件
+                  </strong>
+                </div>
+                <div className="flex justify-between py-1 border-b border-[#EBE7DF]">
+                  <span className="text-[#666666]">家族構成員データ:</span>
+                  <strong className={deletingTempleFamilyMembers.length > 0 ? 'text-rose-700 font-bold' : 'text-[#333333]'}>
+                    {deletingTempleFamilyMembers.length} 件
+                  </strong>
+                </div>
+                <div className="flex justify-between py-1 border-b border-[#EBE7DF]">
+                  <span className="text-[#666666]">登録僧侶（住職・僧侶）:</span>
+                  <strong className={deletingTemplePriests.length > 0 ? 'text-rose-700 font-bold' : 'text-[#333333]'}>
+                    {deletingTemplePriests.length} 件
                   </strong>
                 </div>
                 <div className="flex justify-between py-1 col-span-2">

@@ -152,10 +152,10 @@ export function isCarryoverTransaction(tx: Transaction): boolean {
  * 1. Carryover transactions (前期繰越金) always appear FIRST at the top of that day.
  * 2. Regular transactions follow in stable order.
  */
-export function compareTransactionsChronological(a: Transaction, b: Transaction): number {
-  const dateA = a.date || '';
-  const dateB = b.date || '';
-  const dateCmp = dateA.localeCompare(dateB);
+export function compareTransactionsChronological(a: Transaction, b: Transaction, templeInfo?: TempleInfo): number {
+  const normA = normalizeDateInput(a.date, { mode: 'accounting', fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4 }) || (a.date || '').replace(/-/g, '/');
+  const normB = normalizeDateInput(b.date, { mode: 'accounting', fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4 }) || (b.date || '').replace(/-/g, '/');
+  const dateCmp = normA.localeCompare(normB);
   if (dateCmp !== 0) {
     return dateCmp;
   }
@@ -166,7 +166,7 @@ export function compareTransactionsChronological(a: Transaction, b: Transaction)
   if (aIsCarryover && !bIsCarryover) return -1;
   if (!aIsCarryover && bIsCarryover) return 1;
 
-  return (a.receiptNumber || a.id || '').localeCompare(b.receiptNumber || b.id || '');
+  return (a.receiptNumber || a.id || '').localeCompare(b.receiptNumber || b.id || '', undefined, { numeric: true });
 }
 
 /**

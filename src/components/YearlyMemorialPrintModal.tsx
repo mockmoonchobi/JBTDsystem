@@ -74,7 +74,7 @@ export const YearlyMemorialPrintModal: React.FC<YearlyMemorialPrintModalProps> =
     if (temples && temples.length > 0) return temples;
     return [
       {
-        id: 'temple-main',
+        id: 'damt-main',
         name: templeName || '本寺',
         isMain: true,
       } as TempleProfile,
@@ -126,7 +126,7 @@ export const YearlyMemorialPrintModal: React.FC<YearlyMemorialPrintModalProps> =
   const effectivePastRecords = useMemo(() => {
     const sourcePast = allPastRecords || pastRecords;
     const sourceHouseholds = allHouseholds || households;
-    const mainId = mainTemple?.id || 'temple-main';
+    const mainId = mainTemple?.id || 'damt-main';
 
     if (templeList.length <= 1) {
       return sourcePast;
@@ -146,8 +146,8 @@ export const YearlyMemorialPrintModal: React.FC<YearlyMemorialPrintModalProps> =
       }
       if (selectedSet.has(tId)) return true;
       if (
-        (tId === 'temple-main' || tId === mainId) &&
-        (selectedSet.has('temple-main') || selectedSet.has(mainId))
+        (tId === 'damt-main' || tId === 'damt-main' || tId === mainId) &&
+        (selectedSet.has('damt-main') || selectedSet.has('damt-main') || selectedSet.has(mainId))
       ) {
         return true;
       }
@@ -157,7 +157,7 @@ export const YearlyMemorialPrintModal: React.FC<YearlyMemorialPrintModalProps> =
 
   const effectiveHouseholds = useMemo(() => {
     const sourceHouseholds = allHouseholds || households;
-    const mainId = mainTemple?.id || 'temple-main';
+    const mainId = mainTemple?.id || 'damt-main';
 
     if (templeList.length <= 1) {
       return sourceHouseholds;
@@ -168,8 +168,8 @@ export const YearlyMemorialPrintModal: React.FC<YearlyMemorialPrintModalProps> =
       const tId = hh.templeId || mainId;
       if (selectedSet.has(tId)) return true;
       if (
-        (tId === 'temple-main' || tId === mainId) &&
-        (selectedSet.has('temple-main') || selectedSet.has(mainId))
+        (tId === 'damt-main' || tId === 'damt-main' || tId === mainId) &&
+        (selectedSet.has('damt-main') || selectedSet.has('damt-main') || selectedSet.has(mainId))
       ) {
         return true;
       }

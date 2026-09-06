@@ -88,7 +88,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
   allHouseholds,
   templeInfo,
   temples = [],
-  activeTempleId = 'temple-main',
+  activeTempleId = 'damt-main',
   memorialServices = [],
   initialTab = 'all',
   initialMilestoneSubMode = 'shipping',

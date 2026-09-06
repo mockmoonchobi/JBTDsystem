@@ -425,14 +425,59 @@ export function normalizeDateInput(input: any, options?: NormalizeDateOptions): 
     }
   }
 
-  // 7. Delimited format e.g. 2020/8/7, 852/11/1, 1865-5-1, 1702.12.14, 2020年8月7日, 852年11月1日
-  const partsMatch = str.match(/^(\d{1,4})[年\/\.\-]\s*(\d{1,2})[月\/\.\-]?\s*(\d{1,2})?日?$/);
+  // 7a. Delimited 3-part format e.g. 2020/8/7, 852/11/1, 1865-5-1, 1702.12.14, 2020年8月7日, 852年11月1日
+  const partsMatch = str.match(/^(\d{1,4})[年\/\.\-]\s*(\d{1,2})[月\/\.\-]\s*(\d{1,2})?日?$/);
   if (partsMatch) {
-    const y = parseInt(partsMatch[1], 10);
-    const m = partsMatch[2] ? parseInt(partsMatch[2], 10) : 1;
+    let y = parseInt(partsMatch[1], 10);
+    const m = parseInt(partsMatch[2], 10);
     const d = partsMatch[3] ? parseInt(partsMatch[3], 10) : 1;
+    // Handle 2-digit years (e.g. 26/8/13 -> 2026/08/13) if mode is not pastRecord
+    if (y < 100 && options?.mode !== 'pastRecord') {
+      y = y >= 40 ? 1900 + y : 2000 + y;
+    }
     if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       return `${String(y).padStart(4, '0')}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  // 7b. Delimited Month/Day format e.g. "8/13", "8月13日", "08/13", "8-13", "8.13" - NOT for pastRecord
+  const mdMatch = str.match(/^(\d{1,2})[月\/\.\-]\s*(\d{1,2})日?$/);
+  if (mdMatch && options?.mode !== 'pastRecord') {
+    const mm = parseInt(mdMatch[1], 10);
+    const dd = parseInt(mdMatch[2], 10);
+    if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+      const mode = options?.mode || 'calendar';
+      if (mode === 'accounting') {
+        const startMonth = options?.fiscalStartMonth ?? 4;
+        const now = new Date();
+        const currentFiscalYear = (now.getMonth() + 1 >= startMonth) ? now.getFullYear() : now.getFullYear() - 1;
+        const targetFiscalYear = options?.fiscalYear ?? currentFiscalYear;
+
+        let targetYear: number;
+        if (startMonth === 1) {
+          targetYear = targetFiscalYear;
+        } else {
+          // 4月期首等の場合: 4〜12月は targetFiscalYear(期首年), 1〜3月は targetFiscalYear + 1(期末年)
+          if (mm >= startMonth) {
+            targetYear = targetFiscalYear;
+          } else {
+            targetYear = targetFiscalYear + 1;
+          }
+        }
+        return `${String(targetYear).padStart(4, '0')}/${String(mm).padStart(2, '0')}/${String(dd).padStart(2, '0')}`;
+      } else {
+        // calendar / general
+        const now = new Date();
+        const currentYear = options?.currentYear ?? now.getFullYear();
+        const currentMonth = options?.currentMonth ?? (now.getMonth() + 1);
+
+        let targetYear = currentYear;
+        // 12月限りの特則: 12月に0108や0215など12月未満(1〜11月)が入力された場合は翌年
+        if (currentMonth === 12 && mm < 12) {
+          targetYear = currentYear + 1;
+        }
+        return `${String(targetYear).padStart(4, '0')}/${String(mm).padStart(2, '0')}/${String(dd).padStart(2, '0')}`;
+      }
     }
   }
 

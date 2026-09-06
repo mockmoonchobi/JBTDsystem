@@ -44,7 +44,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<Partial<Household>>({
     id: '',
-    templeId: 'temple-main',
+    templeId: 'damt-main',
     familyHead: '',
     furigana: '',
     postalCode: '',
@@ -74,8 +74,8 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
 
   // Active master options based on the currently selected household's temple
-  const currentHouseholdTempleId = formData.templeId || activeTempleId || 'temple-main';
-  const currentTemple = temples.find((t) => (t.id || 'temple-main') === currentHouseholdTempleId) || temples[0];
+  const currentHouseholdTempleId = formData.templeId || activeTempleId || 'damt-main';
+  const currentTemple = temples.find((t) => (t.id || 'damt-main') === currentHouseholdTempleId) || temples[0];
   const effectiveMasterOptions: MasterOptions = (templeMasterOptionsMap && templeMasterOptionsMap[currentHouseholdTempleId])
     || masterOptions
     || {
@@ -94,7 +94,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       setFormData(editingHousehold);
       setFamilyMembers(editingHousehold.familyMembers || []);
     } else {
-      const defaultTemple = activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
+      const defaultTemple = activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'damt-main');
       const autoId = generateNewHouseholdId(defaultTemple, existingHouseholds, temples);
       setFormData({
         id: autoId,
@@ -163,7 +163,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       return;
     }
 
-    const targetTempleId = formData.templeId || (activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'));
+    const targetTempleId = formData.templeId || (activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'damt-main'));
     const finalId = cleanAndNormalizeHouseholdId(formData.id || '', targetTempleId, temples) || generateNewHouseholdId(targetTempleId, existingHouseholds, temples);
 
     const completeHousehold: Household = {
@@ -251,7 +251,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
                     所属寺院:
                   </label>
                   <select
-                    value={formData.templeId || (activeTempleId !== 'ALL' ? activeTempleId : temples[0]?.id || 'temple-main')}
+                    value={formData.templeId || (activeTempleId !== 'ALL' ? activeTempleId : temples[0]?.id || 'damt-main')}
                     onChange={(e) => {
                       const newTId = e.target.value;
                       if (!editingHousehold) {

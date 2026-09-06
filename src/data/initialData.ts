@@ -26,7 +26,7 @@ export const DEFAULT_ANNUAL_EVENTS: TempleAnnualEvent[] = [
 ];
 
 export const EMPTY_TEMPLE_INFO: TempleInfo = {
-  id: 'temple-main',
+  id: 'damt-main',
   name: '',
   shortName: '',
   sect: '',
@@ -58,7 +58,7 @@ export const EMPTY_TEMPLES: TempleInfo[] = [
 ];
 
 export const INITIAL_TEMPLE_INFO: TempleInfo = {
-  id: 'temple-main',
+  id: 'damt-main',
   name: '圓福寺',
   shortName: '圓福寺',
   sect: '真言宗智山派',
@@ -93,7 +93,7 @@ export const INITIAL_TEMPLE_INFO: TempleInfo = {
 };
 
 export const INITIAL_SUB_TEMPLE_INFO: TempleInfo = {
-  id: 'temple-sub-1',
+  id: 'damt-sub-1',
   name: '宝蔵寺',
   shortName: '宝蔵寺',
   sect: '真言宗智山派',
@@ -187,7 +187,7 @@ export const EMPTY_MASTER_OPTIONS: MasterOptions = {
   paymentMethods: [],
 };
 
-export const INITIAL_HOUSEHOLDS: Household[] = [
+const RAW_INITIAL_HOUSEHOLDS: Household[] = [
   {
     id: 'DA-01001',
     familyHead: '佐藤 謙一',
@@ -2136,7 +2136,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02001',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '松本 宗助',
     furigana: 'まつもと そうすけ',
     postalCode: '141-0031',
@@ -2175,7 +2175,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02002',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '小林 義明',
     furigana: 'こばやし よしあき',
     postalCode: '141-0031',
@@ -2214,7 +2214,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02003',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '竹内 敬治',
     furigana: 'たけうち けいじ',
     postalCode: '141-0031',
@@ -2253,7 +2253,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02004',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '杉山 孝之',
     furigana: 'すぎやま たかゆき',
     postalCode: '141-0022',
@@ -2292,7 +2292,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02005',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '平野 正樹',
     furigana: 'ひらの まさき',
     postalCode: '142-0041',
@@ -2336,7 +2336,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02006',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '野村 文夫',
     furigana: 'のむら ふみお',
     postalCode: '142-0053',
@@ -2375,7 +2375,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02007',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '千葉 義男',
     furigana: 'ちば よしお',
     postalCode: '141-0032',
@@ -2414,7 +2414,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02008',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '大野 重雄',
     furigana: 'おおの しげお',
     postalCode: '141-0021',
@@ -2453,7 +2453,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02009',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '菊地 弘',
     furigana: 'きくち ひろし',
     postalCode: '142-0063',
@@ -2482,7 +2482,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
   {
     id: 'D1-02010',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     familyHead: '安藤 健司',
     furigana: 'あんどう けんじ',
     postalCode: '140-0014',
@@ -2525,7 +2525,7 @@ export const INITIAL_HOUSEHOLDS: Household[] = [
   },
 ];
 
-export const INITIAL_PAST_RECORDS: PastRecord[] = [
+const RAW_INITIAL_PAST_RECORDS: PastRecord[] = [
   {
     id: 'KC-501',
     householdId: 'DA-01001',
@@ -4428,7 +4428,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-651',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02001',
     householdHeadName: '松本 宗助',
     dharmaName: '廣徳院法真居士',
@@ -4442,7 +4442,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-652',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02001',
     householdHeadName: '松本 宗助',
     dharmaName: '天祥院道悦信士',
@@ -4456,7 +4456,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-653',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02001',
     householdHeadName: '松本 宗助',
     dharmaName: '慈徳院妙秀大姉',
@@ -4470,7 +4470,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-654',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02002',
     householdHeadName: '小林 義明',
     dharmaName: '清心院妙香大姉',
@@ -4484,7 +4484,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-655',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02002',
     householdHeadName: '小林 義明',
     dharmaName: '清光院信潤信士',
@@ -4498,7 +4498,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-656',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02002',
     householdHeadName: '小林 義明',
     dharmaName: '蓮華院宗道居士',
@@ -4513,7 +4513,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-657',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02003',
     householdHeadName: '竹内 敬治',
     dharmaName: '宝光院義全居士',
@@ -4527,7 +4527,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-658',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02003',
     householdHeadName: '竹内 敬治',
     dharmaName: '徳寿院妙道大姉',
@@ -4541,7 +4541,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-659',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02003',
     householdHeadName: '竹内 敬治',
     dharmaName: '清勝院顕真居士',
@@ -4555,7 +4555,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-660',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02004',
     householdHeadName: '杉山 孝之',
     dharmaName: '真光院徳全居士',
@@ -4569,7 +4569,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-661',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02004',
     householdHeadName: '杉山 孝之',
     dharmaName: '光華院妙貞大姉',
@@ -4583,7 +4583,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-662',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02004',
     householdHeadName: '杉山 孝之',
     dharmaName: '清蓮院妙清大姉',
@@ -4597,7 +4597,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-663',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02005',
     householdHeadName: '平野 正樹',
     dharmaName: '清祥院法山信士',
@@ -4611,7 +4611,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-664',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02005',
     householdHeadName: '平野 正樹',
     dharmaName: '芳徳院修学居士',
@@ -4625,7 +4625,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-665',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02005',
     householdHeadName: '平野 正樹',
     dharmaName: '慈光院妙慶大姉',
@@ -4639,7 +4639,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-666',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02006',
     householdHeadName: '野村 文夫',
     dharmaName: '妙秀院清心大姉',
@@ -4653,7 +4653,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-667',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02006',
     householdHeadName: '野村 文夫',
     dharmaName: '慈光院釈徳道居士',
@@ -4667,7 +4667,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-668',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02006',
     householdHeadName: '野村 文夫',
     dharmaName: '照峯院義道宗徳居士',
@@ -4681,7 +4681,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-669',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02007',
     householdHeadName: '千葉 義男',
     dharmaName: '宝樹院道安信士',
@@ -4695,7 +4695,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-670',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02007',
     householdHeadName: '千葉 義男',
     dharmaName: '宝池院妙栄信女',
@@ -4709,7 +4709,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-671',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02007',
     householdHeadName: '千葉 義男',
     dharmaName: '大徳院法潤義道居士',
@@ -4724,7 +4724,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-672',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02008',
     householdHeadName: '大野 重雄',
     dharmaName: '松風院徳道宗全居士',
@@ -4738,7 +4738,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-673',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02008',
     householdHeadName: '大野 重雄',
     dharmaName: '祥光院妙道信女',
@@ -4752,7 +4752,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-674',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02008',
     householdHeadName: '大野 重雄',
     dharmaName: '清照院妙華大姉',
@@ -4766,7 +4766,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-675',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02009',
     householdHeadName: '菊地 弘',
     dharmaName: '長徳院義山信士',
@@ -4780,7 +4780,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-676',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02009',
     householdHeadName: '菊地 弘',
     dharmaName: '瑞雲院徳翁信士',
@@ -4794,7 +4794,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-677',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02009',
     householdHeadName: '菊地 弘',
     dharmaName: '天徳院慈光妙寿大姉',
@@ -4808,7 +4808,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-678',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02010',
     householdHeadName: '安藤 健司',
     dharmaName: '宝光院妙蓮大姉',
@@ -4822,7 +4822,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-679',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02010',
     householdHeadName: '安藤 健司',
     dharmaName: '勝徳院法山信士',
@@ -4836,7 +4836,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
   {
     id: 'KC-680',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02010',
     householdHeadName: '安藤 健司',
     dharmaName: '玄徳院清道居士',
@@ -4850,7 +4850,7 @@ export const INITIAL_PAST_RECORDS: PastRecord[] = [
   },
 ];
 
-export const INITIAL_MEMORIAL_SERVICES: MemorialService[] = [
+const RAW_INITIAL_MEMORIAL_SERVICES: MemorialService[] = [
   {
     id: 'MS-2026-001',
     householdId: 'DA-01002',
@@ -4944,7 +4944,7 @@ export const INITIAL_MEMORIAL_SERVICES: MemorialService[] = [
   },
   {
     id: 'MS-2026-005',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02002',
     deceasedId: 'KC-654',
     deceasedName: '小林 房子',
@@ -4968,7 +4968,7 @@ export const INITIAL_MEMORIAL_SERVICES: MemorialService[] = [
   },
   {
     id: 'MS-2026-006',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     householdId: 'D1-02005',
     deceasedId: 'KC-663',
     deceasedName: '平野 宗次郎',
@@ -4991,7 +4991,7 @@ export const INITIAL_MEMORIAL_SERVICES: MemorialService[] = [
   },
 ];
 
-export const INITIAL_TEMPLE_TODOS: TempleTodo[] = [
+const RAW_INITIAL_TEMPLE_TODOS: TempleTodo[] = [
   {
     id: 'TODO-2026-01',
     title: '田中家（DA-01002）七回忌塔婆作成',
@@ -5036,7 +5036,7 @@ export const INITIAL_TEMPLE_TODOS: TempleTodo[] = [
     dueDate: '2026/09/05',
     completed: false,
     notes: '兼務寺院（宝蔵寺）の客殿にて秋季彼岸会及び決算打合せ / 担当：智山 真福',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     priority: 'medium',
     createdAt: '2026/04/01',
     ...INITIAL_DUMMY_AUDIT,
@@ -5067,7 +5067,7 @@ export const INITIAL_TEMPLE_TODOS: TempleTodo[] = [
   },
 ];
 
-export const INITIAL_TRANSACTIONS: Transaction[] = [
+const RAW_INITIAL_TRANSACTIONS: Transaction[] = [
   {
     id: 'TR-2026-01',
     date: '2026/04/01',
@@ -5140,7 +5140,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
   {
     id: 'TR-2026-06',
-    templeId: 'temple-sub-1',
+    templeId: 'damt-sub-1',
     date: '2026/05/20',
     type: '収入',
     category: '護持会費',
@@ -5155,13 +5155,38 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   },
 ];
 
+export const INITIAL_HOUSEHOLDS: Household[] = RAW_INITIAL_HOUSEHOLDS.map((h) => ({
+  ...h,
+  templeId: h.templeId === 'damt-sub-1' ? 'damt-sub-1' : 'damt-main',
+}));
+
+export const INITIAL_PAST_RECORDS: PastRecord[] = RAW_INITIAL_PAST_RECORDS.map((r) => ({
+  ...r,
+  templeId: r.templeId === 'damt-sub-1' ? 'damt-sub-1' : 'damt-main',
+}));
+
+export const INITIAL_MEMORIAL_SERVICES: MemorialService[] = RAW_INITIAL_MEMORIAL_SERVICES.map((s) => ({
+  ...s,
+  templeId: s.templeId === 'damt-sub-1' ? 'damt-sub-1' : 'damt-main',
+}));
+
+export const INITIAL_TEMPLE_TODOS: TempleTodo[] = RAW_INITIAL_TEMPLE_TODOS.map((t) => ({
+  ...t,
+  templeId: t.templeId === 'damt-sub-1' ? 'damt-sub-1' : 'damt-main',
+}));
+
+export const INITIAL_TRANSACTIONS: Transaction[] = RAW_INITIAL_TRANSACTIONS.map((t) => ({
+  ...t,
+  templeId: t.templeId === 'damt-sub-1' ? 'damt-sub-1' : 'damt-main',
+}));
+
 export const INITIAL_PRIESTS: Priest[] = [
   {
     id: 'PR-01',
     name: '智山 真福',
     furigana: 'ちさん しんぷく',
     role: '本寺住職',
-    templeId: 'temple-main',
+    templeId: 'damt-main',
     templeName: '圓福寺',
     phone: '03-34⚫️⚫️-8⚫️⚫️8',
     isMainChief: true,
@@ -5173,7 +5198,7 @@ export const INITIAL_PRIESTS: Priest[] = [
     name: '智山 福徳',
     furigana: 'ちさん ふくとく',
     role: '副住職',
-    templeId: 'temple-main',
+    templeId: 'damt-main',
     templeName: '圓福寺',
     phone: '090-⚫️⚫️⚫️⚫️-5432',
     notes: '法務・会計・青年会担当',

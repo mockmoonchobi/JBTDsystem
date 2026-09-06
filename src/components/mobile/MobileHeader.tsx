@@ -291,7 +291,9 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                     ? 'bg-amber-950/80 border-amber-500 text-amber-300'
                     : syncStatus === 'error'
                     ? 'bg-rose-950/80 border-rose-500/80 text-rose-200'
-                    : 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900'
+                    : syncStatus === 'synced'
+                    ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300 hover:bg-emerald-900'
+                    : 'bg-stone-800 border-stone-600 text-stone-300 hover:bg-stone-700'
                 }`}
                 title="Google スプレッドシート / Drive データ連携設定"
               >
@@ -305,11 +307,17 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                     <CloudOff className="w-4.5 h-4.5 text-rose-400 shrink-0" />
                     <span className="whitespace-nowrap">エラー</span>
                   </>
-                ) : (
+                ) : syncStatus === 'synced' ? (
                   <>
                     <Cloud className="w-4.5 h-4.5 text-emerald-400 shrink-0" />
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                    <span className="whitespace-nowrap">{syncStatus === 'synced' ? '連携済' : 'データ連携'}</span>
+                    <span className="whitespace-nowrap">連携済</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudOff className="w-4.5 h-4.5 text-stone-400 shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-stone-400 shrink-0" />
+                    <span className="whitespace-nowrap">未連携</span>
                   </>
                 )}
               </button>

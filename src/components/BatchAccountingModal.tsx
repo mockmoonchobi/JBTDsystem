@@ -117,7 +117,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   // Load saved state when modal opens
   useEffect(() => {
     if (isOpen) {
-      const targetTempleId = templeInfo?.id || 'temple-main';
+      const targetTempleId = templeInfo?.id || 'damt-main';
       const savedConfig = getSavedBatchAccountingConfig(targetTempleId);
       const savedData = initialBatchData || getSavedBatchAccountingData(targetTempleId);
       const configSource = savedConfig || (savedData ? {
@@ -189,7 +189,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       defaultAmount3,
       appliedPreset,
       entries,
-      templeId: templeInfo?.id || 'temple-main',
+      templeId: templeInfo?.id || 'damt-main',
       lastSavedAt: new Date().toISOString(),
     };
   }, [configDate, cat1, notes1, defaultAmount1, cat2, notes2, defaultAmount2, cat3, notes3, defaultAmount3, appliedPreset, entries, templeInfo]);
@@ -200,7 +200,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       const dataToSave = getCurrentBatchData();
       saveBatchAccountingData(dataToSave);
       saveBatchAccountingConfig({
-        id: `config-${dataToSave.templeId || 'temple-main'}`,
+        id: `config-${dataToSave.templeId || 'damt-main'}`,
         configDate: dataToSave.configDate,
         cat1: dataToSave.cat1,
         notes1: dataToSave.notes1,
@@ -514,7 +514,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       lastSavedAt: new Date().toISOString(),
     };
     saveBatchAccountingConfig({
-      id: `config-${updatedData.templeId || 'temple-main'}`,
+      id: `config-${updatedData.templeId || 'damt-main'}`,
       configDate: updatedData.configDate,
       cat1: updatedData.cat1,
       notes1: updatedData.notes1,
@@ -700,7 +700,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       const rand = Math.random().toString(36).slice(2, 7);
       return {
         id: `TX-${ts}-${rand}-${index + 1}`,
-        templeId: item.household.templeId || templeInfo.id || 'temple-main',
+        templeId: item.household.templeId || templeInfo.id || 'damt-main',
         date: normalizedDate,
         householdId: item.household.id,
         householdHeadName: item.household.familyHead,
@@ -708,7 +708,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         type: '収入',
         amount: item.amount,
         paymentMethod: '現金受付',
-        receiptNumber: `R-${normalizedDate.replace(/\//g, '').slice(2)}-${String(ts).slice(-4)}-${index + 1}`,
+        receiptNumber: `R-${normalizedDate.replace(/\//g, '').slice(2)}-${String(ts).slice(-4)}-${String(index + 1).padStart(4, '0')}`,
         notes: item.notes,
       };
     });
@@ -723,7 +723,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       lastSavedAt: new Date().toISOString(),
     };
     saveBatchAccountingConfig({
-      id: `config-${updatedData.templeId || 'temple-main'}`,
+      id: `config-${updatedData.templeId || 'damt-main'}`,
       configDate: updatedData.configDate,
       cat1: updatedData.cat1,
       notes1: updatedData.notes1,
@@ -878,7 +878,18 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                     setConfigDate(e.target.value);
                     setHasUnsavedChanges(true);
                   }}
-                  placeholder="令和8年8月21日"
+                  onBlur={() => {
+                    if (configDate.trim()) {
+                      const norm = normalizeDateInput(configDate, {
+                        mode: 'accounting',
+                        fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4,
+                      });
+                      if (norm) {
+                        setConfigDate(formatJapaneseEraDate(norm, false));
+                      }
+                    }
+                  }}
+                  placeholder="令和8年8月21日 または 8/21"
                   className="w-full bg-[#1A1A1A] border border-[#555] text-white px-2 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
                 />
               </div>
