@@ -949,6 +949,7 @@ export async function exportToSheets(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: BatchAccountingData;
+    familyMembers?: FamilyMember[];
     targetTablesOnly?: string[];
   }
 ): Promise<void> {
@@ -976,6 +977,16 @@ export async function exportToSheets(
     // Also match operation and deletion history aliases
     if (sheetName === '操作・削除履歴' &&
         (targetTablesFilter.has('操作・削除履歴') || targetTablesFilter.has('操作履歴') || targetTablesFilter.has('削除履歴') || targetTablesFilter.has('履歴') || targetTablesFilter.has('操作ログ'))) {
+      return true;
+    }
+    // Also match family members aliases
+    if (sheetName === '家族構成' &&
+        (targetTablesFilter.has('家族構成') || targetTablesFilter.has('家族構成員') || targetTablesFilter.has('家族') || targetTablesFilter.has('世帯員'))) {
+      return true;
+    }
+    // Also match priests list aliases
+    if (sheetName === '登録僧侶一覧' &&
+        (targetTablesFilter.has('登録僧侶一覧') || targetTablesFilter.has('登録僧侶') || targetTablesFilter.has('僧侶一覧') || targetTablesFilter.has('僧侶'))) {
       return true;
     }
     return false;
@@ -1920,6 +1931,7 @@ export async function exportSpecificTablesToSheets(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: BatchAccountingData;
+    familyMembers?: FamilyMember[];
   }
 ): Promise<void> {
   return exportToSheets(

@@ -41,9 +41,11 @@ import {
   ChevronUp,
   ChevronDown,
   CalendarDays,
-  Settings2
+  Settings2,
+  Mail
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { TanagyoEmailModal } from './TanagyoEmailModal';
 import {
   MemorialService,
   Household,
@@ -124,6 +126,7 @@ interface ReservationCalendarManagerProps {
   onDeleteSegakiOrder?: (id: string) => void;
   onNavigateToYearlyMilestones?: (targetDate?: string) => void;
   onNavigateToPrintWithNotice?: (householdId: string, noticeText: string) => void;
+  onUpdatePriest?: (priest: Priest) => void;
 }
 
 export interface AccountingItemRow {
@@ -1107,6 +1110,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   onUpdateHousehold,
   onBatchUpdateHouseholds,
   onNavigateToYearlyMilestones,
+  onUpdatePriest,
 }) => {
   // Available income categories from Master or Defaults
   const availableIncomeCategories = useMemo(() => {
@@ -1185,6 +1189,21 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       }[];
     }[];
   } | null>(null);
+
+  // メール送信モーダル用ステート
+  const [emailModalPriestData, setEmailModalPriestData] = useState<{
+    priestName: string;
+    priestRole?: string;
+    priestTemple?: string;
+    dates: {
+      date: string;
+      slots: {
+        timeSlot: string;
+        households: Household[];
+      }[];
+    }[];
+  } | null>(null);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
 
   // 枠間振替モーダル用ステート
   const [transferModalHousehold, setTransferModalHousehold] = useState<Household | null>(null);
@@ -4438,15 +4457,31 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                         </div>
                       </div>
 
-                      {/* Print Route Button for this priest */}
-                      <button
-                        type="button"
-                        onClick={() => setPrintModalPriestData(pGroup)}
-                        className="px-3.5 py-2 bg-[#D4AF37] hover:bg-[#C29F2B] text-[#1A1A1A] font-black text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                      >
-                        <Printer className="w-4 h-4" />
-                        <span>担当 {pGroup.priestName} の経路情報印刷</span>
-                      </button>
+                      {/* Actions for this priest: Mail & Print */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEmailModalPriestData(pGroup);
+                            setIsEmailModalOpen(true);
+                          }}
+                          className="px-3 py-2 bg-[#8C2D19] hover:bg-[#732414] text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          title="担当僧侶宛にスマホ版と同じデザインのHTML表をメールで送信"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>メール送信</span>
+                        </button>
+
+                        {/* Print Route Button for this priest */}
+                        <button
+                          type="button"
+                          onClick={() => setPrintModalPriestData(pGroup)}
+                          className="px-3.5 py-2 bg-[#D4AF37] hover:bg-[#C29F2B] text-[#1A1A1A] font-black text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          <Printer className="w-4 h-4" />
+                          <span>担当 {pGroup.priestName} の経路情報印刷</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Dates & Slots */}
@@ -5000,6 +5035,18 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    setEmailModalPriestData(printModalPriestData);
+                    setIsEmailModalOpen(true);
+                  }}
+                  className="px-3 py-1 bg-[#8C2D19] text-white font-bold text-xs hover:bg-[#732414] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  title="担当僧侶宛にスマホ版と同じデザインのHTML表をメール送信"
+                >
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>担当僧侶へメール送信 (HTML表)</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => window.print()}
                   className="px-3 py-1 bg-[#D4AF37] text-[#1A1A1A] font-black text-xs hover:bg-[#C29F2B] transition-colors flex items-center gap-1 cursor-pointer"
                 >
@@ -5036,6 +5083,11 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                 </div>
               </div>
 
+              {/* Guide notice */}
+              <div className="text-[11px] text-gray-600 flex items-center justify-between border-b border-gray-200 pb-1.5 no-print">
+                <span>※各行の【地図QR】をスマートフォンのカメラで読み取ると、1軒ごとのGoogleマップ（ナビゲーション）が即座に起動します。</span>
+              </div>
+
               {/* Dates and Slots Table */}
               <div className="space-y-6 print:space-y-4">
                 {printModalPriestData.dates.map((dObj) => (
@@ -5054,13 +5106,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                             {slot.timeSlot} （{slot.households.length} 軒）
                           </span>
                           <span className="text-[11px] text-gray-500 font-medium">
-                            ※1番目の施主宅から最後の施主宅まで順に巡回
+                            ※1番目の施主宅から順に巡回・各行のQRでナビ起動
                           </span>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row print:flex-row gap-3 items-start">
-                          {/* Households Table */}
-                          <div className="flex-1 overflow-x-auto w-full">
+                        <div className="w-full">
+                          {/* Households Table with Individual QR Codes */}
+                          <div className="overflow-x-auto w-full">
                             <table className="w-full text-left text-xs print:text-[11px] border-collapse border border-gray-400">
                               <thead>
                                 <tr className="bg-gray-100 text-gray-800 border-b border-gray-400">
@@ -5068,13 +5120,15 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                   <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">施主名</th>
                                   <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">電話番号</th>
                                   <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">訪問先住所</th>
-                                  <th className="p-1.5 print:p-1 font-bold text-center w-14">完了</th>
+                                  <th className="p-1.5 print:p-1 font-bold text-center w-16 border-r border-gray-400">地図QR</th>
+                                  <th className="p-1.5 print:p-1 font-bold text-center w-12">完了</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-300">
                                 {slot.households.map((h, hIdx) => {
-                                  const address = h.tanagyoAddress || h.address || '住所未登録';
+                                  const address = h.tanagyoAddress || h.address || '';
                                   const niibonStatus = getHouseholdNiibonStatus(pastRecords, h.id, templeInfo?.bonSeason || '8月盆');
+                                  const singleMapUrl = address ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}` : '';
                                   return (
                                     <tr key={h.id} className="hover:bg-gray-50">
                                       <td className="p-1.5 print:p-1 text-center font-bold border-r border-gray-300">
@@ -5099,7 +5153,36 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                         {h.phone || h.mobile || '-'}
                                       </td>
                                       <td className="p-1.5 print:p-1 text-gray-800 border-r border-gray-300">
-                                        {address}
+                                        <div>{address || '住所未登録'}</div>
+                                        {h.tanagyoNotes && (
+                                          <div className="text-[10px] text-amber-800 font-medium mt-0.5 print:text-gray-600">
+                                            ※{h.tanagyoNotes}
+                                          </div>
+                                        )}
+                                      </td>
+                                      {/* 地図QR: 1件ごとのGoogle MapsナビQRコード（スマホで瞬時に読み取り可能） */}
+                                      <td className="p-1 print:p-0.5 text-center border-r border-gray-300 w-16">
+                                        {singleMapUrl ? (
+                                          <div className="flex flex-col items-center justify-center">
+                                            <a
+                                              href={singleMapUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="inline-block p-0.5 bg-white border border-gray-300 rounded-xs hover:border-blue-500"
+                                              title="スマホで読み取るとGoogleマップでナビが開きます（クリックでも開けます）"
+                                            >
+                                              <QRCodeSVG
+                                                value={singleMapUrl}
+                                                size={46}
+                                                level="M"
+                                                includeMargin={false}
+                                              />
+                                            </a>
+                                            <span className="text-[8px] text-gray-400 mt-0.5 leading-none block no-print">地図開く</span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-gray-400">-</span>
+                                        )}
                                       </td>
                                       <td className="p-1.5 print:p-1 text-center">
                                         <div className="w-4 h-4 border border-gray-500 mx-auto rounded-xs"></div>
@@ -5110,31 +5193,6 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                               </tbody>
                             </table>
                           </div>
-
-                          {/* QR Code(s) for Google Map route */}
-                          {slot.households.length > 0 && slot.routeSegments && slot.routeSegments.length > 0 && (
-                            <div className="shrink-0 flex flex-wrap sm:flex-col print:flex-col gap-2 items-center justify-start">
-                              {slot.routeSegments.map((seg) => (
-                                <div
-                                  key={seg.segmentIndex}
-                                  className="w-32 print:w-28 flex flex-col items-center justify-center p-2 print:p-1.5 bg-gray-50 border border-gray-300 rounded-xs text-center space-y-1"
-                                >
-                                  <QRCodeSVG
-                                    value={seg.routeUrl}
-                                    size={80}
-                                    level="M"
-                                    includeMargin={false}
-                                  />
-                                  <div className="text-[10px] font-black text-gray-800 leading-tight">
-                                    {slot.routeSegments.length > 1 ? `区間${seg.segmentIndex + 1}: ${seg.label}` : `経路QR (${seg.label})`}
-                                  </div>
-                                  <div className="text-[9px] text-gray-500 truncate max-w-[105px]">
-                                    {seg.startFamilyHead}様〜{seg.endFamilyHead}様
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -5145,6 +5203,26 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
           </div>
         </div>,
         document.body
+      )}
+
+      {/* MODAL: 担当僧侶へ巡回計画メール送信モーダル */}
+      {isEmailModalOpen && emailModalPriestData && (
+        <TanagyoEmailModal
+          isOpen={isEmailModalOpen}
+          onClose={() => {
+            setIsEmailModalOpen(false);
+            setEmailModalPriestData(null);
+          }}
+          priestName={emailModalPriestData.priestName}
+          priestRole={emailModalPriestData.priestRole}
+          priestTemple={emailModalPriestData.priestTemple}
+          dates={emailModalPriestData.dates}
+          templeInfo={templeInfo}
+          temples={temples}
+          pastRecords={pastRecords}
+          priests={priests}
+          onUpdatePriest={onUpdatePriest}
+        />
       )}
 
       {/* MODAL: 枠間移動（振替）モーダル */}

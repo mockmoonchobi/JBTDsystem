@@ -386,7 +386,20 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     if (!templeToDelete) return;
     const targetId = templeToDelete.id;
     const targetName = templeToDelete.name;
+    const targetShortName = templeToDelete.shortName || targetName;
     const isSub1 = targetId === 'damt-sub-1' || targetId === 'temple-sub-1';
+    const isDamtMain = targetId === 'damt-main';
+
+    const matchesTarget = (tId?: string): boolean => {
+      if (!tId) return false;
+      const clean = tId.trim();
+      if (clean === targetId) return true;
+      if (isSub1 && (clean === 'temple-sub-1' || clean === 'damt-sub-1')) return true;
+      if (targetName && (clean === targetName || clean.includes(targetName))) return true;
+      if (targetShortName && (clean === targetShortName || clean.includes(targetShortName))) return true;
+      return false;
+    };
+
     const nextList = templeList.filter((x) => x.id !== targetId && (!isSub1 || x.id !== 'temple-sub-1'));
     setTempleList(nextList);
     const nextActiveId = nextList[0]?.id || 'damt-main';
@@ -396,11 +409,13 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
 
     // 削除対象兼務寺院の僧侶・住職をモーダル内の登録僧侶リストからも即座に完全除去
     const nextPriests = priestList.filter((p) => {
-      if (p.templeId === targetId) return false;
-      if (isSub1 && p.templeId === 'temple-sub-1') return false;
+      if (matchesTarget(p.templeId)) return false;
       if (p.id === `priest-chief-${targetId}`) return false;
-      if (isSub1 && p.id === 'priest-chief-temple-sub-1') return false;
-      if (targetName && p.templeName && p.templeName.includes(targetName)) return false;
+      if (isSub1 && (p.id === 'priest-chief-temple-sub-1' || p.id === 'priest-chief-damt-sub-1')) return false;
+      if (isDamtMain && p.id === 'priest-chief-damt-main') return false;
+      if (targetName && (p.templeName?.includes(targetName) || p.notes?.includes(targetName))) return false;
+      if (targetShortName && (p.templeName?.includes(targetShortName) || p.notes?.includes(targetShortName))) return false;
+      if (templeToDelete.chiefPriest && p.name === templeToDelete.chiefPriest && (p.isAutoChief || p.role?.includes('兼務'))) return false;
       return true;
     });
     setPriestList(nextPriests);
@@ -803,67 +818,96 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   // Calculated impact for deletion
   const deletingTempleTargetId = templeToDelete?.id || '';
   const isDeletingSub1 = deletingTempleTargetId === 'damt-sub-1' || deletingTempleTargetId === 'temple-sub-1';
+  const isDeletingDamtMain = deletingTempleTargetId === 'damt-main';
   const deletingTempleName = templeToDelete?.name || '';
   const deletingTempleShortName = templeToDelete?.shortName || deletingTempleName;
 
+  const matchesDeletingTarget = (tId?: string): boolean => {
+    if (!tId) return false;
+    const clean = tId.trim();
+    if (clean === deletingTempleTargetId) return true;
+    if (isDeletingSub1 && (clean === 'temple-sub-1' || clean === 'damt-sub-1')) return true;
+    if (deletingTempleName && (clean === deletingTempleName || clean.includes(deletingTempleName))) return true;
+    if (deletingTempleShortName && (clean === deletingTempleShortName || clean.includes(deletingTempleShortName))) return true;
+    return false;
+  };
+
   const deletingTempleHouseholds = households.filter((h) => {
-    if ((h.templeId || 'damt-main') === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && (h.templeId === 'temple-sub-1' || h.id.startsWith('D1-'))) return true;
-    if (deletingTempleShortName && h.templeId === deletingTempleShortName) return true;
+    if (matchesDeletingTarget(h.templeId)) return true;
+    if (isDeletingSub1 && (h.id.startsWith('D1-') || h.id.startsWith('K1-'))) return true;
+    if (isDeletingDamtMain && (h.id.startsWith('DA-') || h.id.startsWith('DK-'))) return true;
+    if (deletingTempleName && ((h as any).templeName?.includes(deletingTempleName) || h.notes?.includes(deletingTempleName))) return true;
+    if (deletingTempleShortName && ((h as any).templeName?.includes(deletingTempleShortName) || h.notes?.includes(deletingTempleShortName))) return true;
     return false;
   });
   const deletingTempleHhIdSet = new Set(deletingTempleHouseholds.map((h) => h.id));
+  const deletingFamMemberIdSet = new Set<string>();
+  deletingTempleHouseholds.forEach((h) => {
+    (h.familyMembers || []).forEach((fm) => {
+      if (fm.id) deletingFamMemberIdSet.add(fm.id);
+    });
+  });
 
   const deletingTemplePastRecords = pastRecords.filter((r) => {
-    if ((r.templeId || 'damt-main') === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && (r.templeId === 'temple-sub-1' || (r.id >= 'KC-651' && r.id <= 'KC-680'))) return true;
+    if (matchesDeletingTarget(r.templeId)) return true;
     if (r.householdId && deletingTempleHhIdSet.has(r.householdId)) return true;
+    if (isDeletingSub1 && (r.id >= 'KC-651' && r.id <= 'KC-680')) return true;
+    if (isDeletingDamtMain && (r.id.startsWith('KC-0') || r.id.startsWith('KC-1') || r.id.startsWith('KC-2'))) return true;
     return false;
   });
   const deletingTemplePastIdSet = new Set(deletingTemplePastRecords.map((r) => r.id));
 
+  const deletingTempleFamilyMembers = familyMembers.filter((m) => {
+    if (m.householdId && deletingTempleHhIdSet.has(m.householdId)) return true;
+    if (m.id && deletingFamMemberIdSet.has(m.id)) return true;
+    if (matchesDeletingTarget((m as any).templeId)) return true;
+    if (isDeletingSub1 && (m.householdId?.startsWith('D1-') || m.id?.startsWith('FM-D1-'))) return true;
+    if (isDeletingDamtMain && (m.householdId?.startsWith('DA-') || m.id?.startsWith('FM-DA-'))) return true;
+    return false;
+  });
+
   const deletingTempleMemorialServices = memorialServices.filter((s) => {
-    if (s.templeId === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && s.templeId === 'temple-sub-1') return true;
+    if (matchesDeletingTarget(s.templeId)) return true;
     if (s.householdId && deletingTempleHhIdSet.has(s.householdId)) return true;
     if (s.deceasedId && deletingTemplePastIdSet.has(s.deceasedId)) return true;
-    if (deletingTempleShortName && s.venue && s.venue.includes(deletingTempleShortName)) return true;
     if (s.additionalDeceased && s.additionalDeceased.some((ad) => ad.id && deletingTemplePastIdSet.has(ad.id))) return true;
+    if (isDeletingSub1 && (s.id === 'MS-2026-005' || s.id === 'MS-2026-006')) return true;
+    if (deletingTempleName && (s.venue?.includes(deletingTempleName) || (s as any).templeName?.includes(deletingTempleName) || s.notes?.includes(deletingTempleName))) return true;
+    if (deletingTempleShortName && (s.venue?.includes(deletingTempleShortName) || (s as any).templeName?.includes(deletingTempleShortName) || s.notes?.includes(deletingTempleShortName))) return true;
     return false;
   });
   const deletingTempleMemIdSet = new Set(deletingTempleMemorialServices.map((s) => s.id));
 
   const deletingTempleTransactions = transactions.filter((t) => {
-    if ((t.templeId || 'damt-main') === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && t.templeId === 'temple-sub-1') return true;
+    if (matchesDeletingTarget(t.templeId)) return true;
     if (t.householdId && deletingTempleHhIdSet.has(t.householdId)) return true;
     if (t.relatedServiceId && deletingTempleMemIdSet.has(t.relatedServiceId)) return true;
+    if (isDeletingSub1 && t.id === 'TR-2026-06') return true;
+    if (deletingTempleName && t.notes?.includes(deletingTempleName)) return true;
+    if (deletingTempleShortName && t.notes?.includes(deletingTempleShortName)) return true;
     return false;
   });
 
   const deletingTempleTodos = templeTodos.filter((td) => {
-    if (td.templeId === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && td.templeId === 'temple-sub-1') return true;
+    if (matchesDeletingTarget(td.templeId)) return true;
     if (td.householdId && deletingTempleHhIdSet.has(td.householdId)) return true;
-    if (td.relatedServiceId && deletingTempleMemIdSet.has(td.relatedServiceId)) return true;
     if (td.serviceId && deletingTempleMemIdSet.has(td.serviceId)) return true;
-    if (deletingTempleShortName && td.title && td.title.includes(deletingTempleShortName)) return true;
+    if (td.relatedServiceId && deletingTempleMemIdSet.has(td.relatedServiceId)) return true;
+    if ((td as any).pastRecordId && deletingTemplePastIdSet.has((td as any).pastRecordId)) return true;
+    if (isDeletingSub1 && td.id === 'TODO-2026-04') return true;
+    if (deletingTempleName && (td.title?.includes(deletingTempleName) || (td as any).description?.includes(deletingTempleName) || td.notes?.includes(deletingTempleName))) return true;
+    if (deletingTempleShortName && (td.title?.includes(deletingTempleShortName) || (td as any).description?.includes(deletingTempleShortName) || td.notes?.includes(deletingTempleShortName))) return true;
     return false;
   });
 
-  const deletingTempleFamilyMembers = familyMembers.filter((m) => {
-    if (deletingTempleHhIdSet.has(m.householdId)) return true;
-    if ((m as any).templeId === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && (m as any).templeId === 'temple-sub-1') return true;
-    return false;
-  });
-
-  const deletingTemplePriests = (priests && priests.length > 0 ? priests : priestList).filter((p) => {
-    if (p.templeId === deletingTempleTargetId) return true;
-    if (isDeletingSub1 && p.templeId === 'temple-sub-1') return true;
+  const deletingTemplePriests = priestList.filter((p) => {
+    if (matchesDeletingTarget(p.templeId)) return true;
     if (p.id === `priest-chief-${deletingTempleTargetId}`) return true;
-    if (isDeletingSub1 && p.id === 'priest-chief-temple-sub-1') return true;
-    if (deletingTempleShortName && p.templeName && p.templeName.includes(deletingTempleShortName)) return true;
+    if (isDeletingSub1 && (p.id === 'priest-chief-temple-sub-1' || p.id === 'priest-chief-damt-sub-1')) return true;
+    if (isDeletingDamtMain && p.id === 'priest-chief-damt-main') return true;
+    if (deletingTempleName && (p.templeName?.includes(deletingTempleName) || p.notes?.includes(deletingTempleName))) return true;
+    if (deletingTempleShortName && (p.templeName?.includes(deletingTempleShortName) || p.notes?.includes(deletingTempleShortName))) return true;
+    if (templeToDelete?.chiefPriest && p.name === templeToDelete.chiefPriest && (p.isAutoChief || p.role?.includes('兼務'))) return true;
     return false;
   });
 
