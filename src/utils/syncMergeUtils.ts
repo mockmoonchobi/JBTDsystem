@@ -595,71 +595,7 @@ export function mergeTemples(
     }
   });
 
-  let result = Array.from(map.values());
-
-  // チュートリアル寺院（damt-main）と Googleシート寺院が混ざった場合の処理：
-  // 「damt-main」の寺院IDのほうは本寺認定せずに兼務寺認定（isMain: false）にする
-  const hasRemoteTemples = remoteTemples.length > 0;
-  const hasOtherTempleThanDamtMain = result.some((t) => t.id !== 'damt-main');
-
-  if (hasRemoteTemples && hasOtherTempleThanDamtMain) {
-    // 1. damt-main を本寺認定から外し、兼務寺認定（isMain: false）にする
-    result = result.map((t) => {
-      if (t.id === 'damt-main') {
-        return {
-          ...t,
-          isMain: false,
-          color: t.color === '#D4AF37' ? '#3B82F6' : (t.color || '#3B82F6'),
-        };
-      }
-      return t;
-    });
-
-    // 2. 本寺（isMain: true）を Googleシート側（リモート側）から決定
-    let targetMainId = remoteTemples.find((rt) => rt.id !== 'damt-main' && rt.isMain)?.id;
-    if (!targetMainId) {
-      targetMainId = result.find((t) => t.id !== 'damt-main' && t.isMain)?.id;
-    }
-    if (!targetMainId) {
-      targetMainId = remoteTemples.find((rt) => rt.id !== 'damt-main')?.id;
-    }
-    if (!targetMainId) {
-      targetMainId = result.find((t) => t.id !== 'damt-main')?.id;
-    }
-
-    if (targetMainId) {
-      result = result.map((t) => ({
-        ...t,
-        isMain: t.id === targetMainId,
-      }));
-    }
-  }
-
-  // 確実に本寺がシステム全体で1つだけ存在するようにクリーンアップ
-  const mainTemples = result.filter((t) => t.isMain);
-  if (mainTemples.length > 1) {
-    // damt-main 以外でリモートに存在した本寺を優先
-    let primaryMainId = result.find((t) => t.id !== 'damt-main' && remoteTemples.some((rt) => rt.id === t.id && rt.isMain))?.id;
-    if (!primaryMainId) {
-      primaryMainId = result.find((t) => t.id !== 'damt-main' && t.isMain)?.id;
-    }
-    if (!primaryMainId) {
-      primaryMainId = result.find((t) => t.id !== 'damt-main')?.id || result[0]?.id;
-    }
-
-    result = result.map((t) => ({
-      ...t,
-      isMain: t.id === primaryMainId,
-    }));
-  } else if (mainTemples.length === 0 && result.length > 0) {
-    const primaryMain = result.find((t) => t.id !== 'damt-main') || result[0];
-    result = result.map((t) => ({
-      ...t,
-      isMain: t.id === primaryMain.id,
-    }));
-  }
-
-  return result;
+  return Array.from(map.values());
 }
 
 /**
@@ -717,20 +653,9 @@ export function mergeDatasetsWithAuditPriority(
 
   const localInfoTs = getRecordAuditTimestamp(localMainTemple);
   const remoteInfoTs = getRecordAuditTimestamp(remoteMainTemple);
-  const isLocalTutorialDamtMain = localMainTemple?.id === 'damt-main' && remoteMainTemple && remoteMainTemple.id !== 'damt-main';
-
   let mergedTempleInfo: TempleInfo;
   if (!remoteMainTemple || !remoteMainTemple.name) {
     mergedTempleInfo = localMainTemple || localState.templeInfo;
-  } else if (isLocalTutorialDamtMain) {
-    // ローカルがチュートリアル寺院（damt-main）でリモートにGoogleシート寺院がある場合、リモート本寺を優先採用
-    mergedTempleInfo = {
-      ...localMainTemple,
-      ...remoteMainTemple,
-      id: remoteMainTemple.id || mergedMainTemple?.id || 'temple-main',
-      name: remoteMainTemple.name,
-      isMain: true,
-    };
   } else if (localInfoTs >= remoteInfoTs) {
     mergedTempleInfo = {
       ...remoteMainTemple,

@@ -224,7 +224,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
   // 寺院名解決ヘルパー
   const getCleanTempleName = (tId?: string): string => {
     const mainTemple = temples.find((t) => t.isMain) || temples[0];
-    const mainTempleId = mainTemple?.id || templeInfo.id || 'damt-main';
+    const mainTempleId = mainTemple?.id || templeInfo.id || 'temple-main';
     const targetId = tId || mainTempleId;
     const found = temples.find((t) => t.id === targetId);
     return found?.name || templeInfo.name || '自寺';
@@ -371,7 +371,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
     return rows.filter((r) => {
       if (filterPriest !== 'ALL' && r.priestName !== filterPriest) return false;
       if (filterDate !== 'ALL' && r.date !== filterDate) return false;
-      if (filterTemple !== 'ALL' && (r.templeId || 'damt-main') !== filterTemple) return false;
+      if (filterTemple !== 'ALL' && (r.templeId || 'temple-main') !== filterTemple) return false;
       if (hideAlreadyRecorded && r.alreadyRecorded) return false;
       return true;
     });
@@ -450,7 +450,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
 
       return {
         id: `tx-tanagyo-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 5)}`,
-        templeId: r.templeId || 'damt-main',
+        templeId: r.templeId || 'temple-main',
         date: txDate,
         householdId: r.householdId,
         householdHeadName: r.familyHead,

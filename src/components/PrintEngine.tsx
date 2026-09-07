@@ -55,7 +55,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
   households,
   templeInfo,
   temples = [],
-  activeTempleId = 'damt-main',
+  activeTempleId = 'temple-main',
   initialSelectedHouseholdIds = [],
   initialCustomMessage = '',
   onSaveNoticeTemplates,

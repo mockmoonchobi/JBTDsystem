@@ -325,7 +325,7 @@ export const DailyMemorialList: React.FC<DailyMemorialListProps> = ({
                   const kijitsu = getKijitsuHeadLabel(item);
                   const eraYear = getEraYearText(rec.deathDate);
                   const householdHead = (hh ? getHouseholdSponsorName(hh) : '') || rec.householdHeadName || '';
-                  const recTemple = templeMap.get(rec.templeId || 'damt-main');
+                  const recTemple = templeMap.get(rec.templeId || 'temple-main');
 
                   return (
                     <tr key={`${rec.id}-${index}`} className="hover:bg-[#F9F7F2] transition-colors">

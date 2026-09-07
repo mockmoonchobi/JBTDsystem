@@ -230,7 +230,7 @@ export default function App() {
 
   // Multi-temple profiles & Active temple ID (Default: Empty)
   const [temples, setTemples] = useState<TempleProfile[]>(EMPTY_TEMPLES);
-  const [activeTempleId, setActiveTempleId] = useState<string>('damt-main');
+  const [activeTempleId, setActiveTempleId] = useState<string>('temple-main');
 
   // Application state (Default: Empty on fresh start / reload)
   const [templeInfo, setTempleInfo] = useState<TempleInfo>(EMPTY_TEMPLE_INFO);
@@ -295,229 +295,6 @@ export default function App() {
     if (hasChanges) {
       saveDeletedRecordsLog(migrated);
       setDeletedRecords(migrated);
-    }
-  }, []);
-
-  // 所属寺院・本寺区分の自動自己修復（damt-mainの兼務寺認定および本寺重複の解消）
-  useEffect(() => {
-    // 寺院プロファイル
-    const rawTemples = loadJsonState<TempleProfile[]>('temple_profiles', []);
-    if (rawTemples && rawTemples.length > 0) {
-      let changed = false;
-      let updatedTemples = [...rawTemples];
-
-      // チュートリアル寺院（damt-main）とGoogleシート等の他寺院が混ざっている場合、damt-main は兼務寺認定（isMain: false）
-      const hasOther = updatedTemples.some((t) => t.id !== 'damt-main');
-      if (hasOther) {
-        updatedTemples = updatedTemples.map((t) => {
-          if (t.id === 'damt-main' && t.isMain) {
-            changed = true;
-            return {
-              ...t,
-              isMain: false,
-              color: t.color === '#D4AF37' ? '#3B82F6' : (t.color || '#3B82F6'),
-            };
-          }
-          return t;
-        });
-      }
-
-      // 本寺が複数存在する場合は damt-main 以外で先頭の1つのみ本寺に統一
-      const mainList = updatedTemples.filter((t) => t.isMain);
-      if (mainList.length > 1) {
-        let firstMainFound = false;
-        updatedTemples = updatedTemples.map((t) => {
-          if (t.id === 'damt-main') return { ...t, isMain: false };
-          if (t.isMain) {
-            if (!firstMainFound) {
-              firstMainFound = true;
-              return t;
-            }
-            changed = true;
-            return { ...t, isMain: false };
-          }
-          return t;
-        });
-      } else if (mainList.length === 0 && updatedTemples.length > 0) {
-        const targetMain = updatedTemples.find((t) => t.id !== 'damt-main') || updatedTemples[0];
-        updatedTemples = updatedTemples.map((t) => {
-          if (t.id === targetMain.id) {
-            changed = true;
-            return { ...t, isMain: true };
-          }
-          return t;
-        });
-      }
-
-      if (changed) {
-        saveJsonState('temple_profiles', updatedTemples);
-        saveJsonState('temple_profiles_list', updatedTemples);
-        setTemples(updatedTemples);
-
-        const currentMain = updatedTemples.find((t) => t.isMain) || updatedTemples[0];
-        if (currentMain) {
-          setTempleInfo(currentMain);
-          saveJsonState('temple_info', currentMain);
-        }
-      }
-    }
-
-    // 世帯名簿（チュートリアルダミーデータIDのプレフィックス補正）
-    const rawH = loadJsonState<Household[]>('temple_households', []);
-    if (rawH && rawH.length > 0) {
-      let changed = false;
-      const updatedH = rawH.map((h) => {
-        let nextId = h.templeId;
-        if (!h.templeId && h.id.startsWith('D1-')) {
-          nextId = 'damt-sub-1';
-        } else if (!h.templeId && h.id.startsWith('DA-')) {
-          nextId = 'damt-main';
-        }
-        if (nextId !== h.templeId) {
-          changed = true;
-          return { ...h, templeId: nextId };
-        }
-        return h;
-      });
-      if (changed) {
-        saveJsonState('temple_households', updatedH);
-        setHouseholds(updatedH);
-      }
-    }
-
-    // 過去帳（チュートリアルダミーデータID補正）
-    const rawP = loadJsonState<PastRecord[]>('temple_past_records', []);
-    if (rawP && rawP.length > 0) {
-      let changed = false;
-      const updatedP = rawP.map((p) => {
-        let nextId = p.templeId;
-        if (!p.templeId && p.id >= 'KC-651' && p.id <= 'KC-680') {
-          nextId = 'damt-sub-1';
-        } else if (!p.templeId && p.id.startsWith('KC-')) {
-          nextId = 'damt-main';
-        }
-        if (nextId !== p.templeId) {
-          changed = true;
-          return { ...p, templeId: nextId };
-        }
-        return p;
-      });
-      if (changed) {
-        saveJsonState('temple_past_records', updatedP);
-        setPastRecords(updatedP);
-      }
-    }
-
-    // 年回法要（チュートリアルダミーデータID補正）
-    const rawM = loadJsonState<MemorialService[]>('temple_memorial_services', []);
-    if (rawM && rawM.length > 0) {
-      let changed = false;
-      const updatedM = rawM.map((m) => {
-        let nextId = m.templeId;
-        if (!m.templeId && (m.id === 'MS-2026-005' || m.id === 'MS-2026-006')) {
-          nextId = 'damt-sub-1';
-        } else if (!m.templeId && m.id.startsWith('MS-')) {
-          nextId = 'damt-main';
-        }
-        if (nextId !== m.templeId) {
-          changed = true;
-          return { ...m, templeId: nextId };
-        }
-        return m;
-      });
-      if (changed) {
-        saveJsonState('temple_memorial_services', updatedM);
-        setMemorialServices(updatedM);
-      }
-    }
-
-    // 会計出納（チュートリアルダミーデータID補正）
-    const rawT = loadJsonState<Transaction[]>('temple_transactions', []);
-    if (rawT && rawT.length > 0) {
-      let changed = false;
-      const updatedT = rawT.map((t) => {
-        let nextId = t.templeId;
-        if (!t.templeId && t.id === 'TR-2026-06') {
-          nextId = 'damt-sub-1';
-        } else if (!t.templeId && t.id.startsWith('TR-')) {
-          nextId = 'damt-main';
-        }
-        if (nextId !== t.templeId) {
-          changed = true;
-          return { ...t, templeId: nextId };
-        }
-        return t;
-      });
-      if (changed) {
-        saveJsonState('temple_transactions', updatedT);
-        setTransactions(updatedT);
-      }
-    }
-
-    // 寺院ToDo（チュートリアルダミーデータID補正）
-    const rawTd = loadJsonState<TempleTodo[]>('temple_todos', []);
-    if (rawTd && rawTd.length > 0) {
-      let changed = false;
-      const updatedTd = rawTd.map((td) => {
-        let nextId = td.templeId;
-        if (!td.templeId && td.id === 'TODO-2026-04') {
-          nextId = 'damt-sub-1';
-        } else if (!td.templeId && td.id.startsWith('TODO-')) {
-          nextId = 'damt-main';
-        }
-        if (nextId !== td.templeId) {
-          changed = true;
-          return { ...td, templeId: nextId };
-        }
-        return td;
-      });
-      if (changed) {
-        saveJsonState('temple_todos', updatedTd);
-        setTempleTodos(updatedTd);
-      }
-    }
-
-    // 僧侶一覧
-    const rawPr = loadJsonState<Priest[]>('temple_priests', []);
-    if (rawPr && rawPr.length > 0) {
-      let changed = false;
-      const updatedPr = rawPr.map((pr) => {
-        let nextId = pr.templeId;
-        if (pr.templeId === 'temple-main') {
-          nextId = 'damt-main';
-        } else if (pr.templeId === 'temple-sub-1') {
-          nextId = 'damt-sub-1';
-        }
-        if (nextId !== pr.templeId) {
-          changed = true;
-          return { ...pr, templeId: nextId };
-        }
-        return pr;
-      });
-      if (changed) {
-        saveJsonState('temple_priests', updatedPr);
-        setPriests(updatedPr);
-      }
-    }
-
-    // 寺院別マスタ設定マップ
-    const rawMap = loadJsonState<Record<string, MasterOptions>>('temple_master_options_map', {});
-    if (rawMap && (rawMap['temple-main'] || rawMap['temple-sub-1'])) {
-      const updatedMap: Record<string, MasterOptions> = { ...rawMap };
-      if (updatedMap['temple-main']) {
-        if (!updatedMap['damt-main']) {
-          updatedMap['damt-main'] = updatedMap['temple-main'];
-        }
-        delete updatedMap['temple-main'];
-      }
-      if (updatedMap['temple-sub-1']) {
-        if (!updatedMap['damt-sub-1']) {
-          updatedMap['damt-sub-1'] = updatedMap['temple-sub-1'];
-        }
-        delete updatedMap['temple-sub-1'];
-      }
-      saveJsonState('temple_master_options_map', updatedMap);
-      setTempleMasterOptionsMap(updatedMap);
     }
   }, []);
 
@@ -601,7 +378,7 @@ export default function App() {
     if (data) {
       saveBatchAccountingData(data);
       saveBatchAccountingConfig({
-        id: `config-${data.templeId || 'damt-main'}`,
+        id: `config-${data.templeId || 'temple-main'}`,
         configDate: data.configDate,
         cat1: data.cat1,
         notes1: data.notes1,
@@ -808,15 +585,15 @@ export default function App() {
 
     let hasMisalignedTx = false;
     const mainTemple = temples.find((t) => t.isMain);
-    const mainTempleId = mainTemple?.id || 'damt-main';
+    const mainTempleId = mainTemple?.id || 'temple-main';
     const hhMap = new Map(households.map((h) => [h.id, h]));
 
     for (const t of transactions) {
       if (t.householdId) {
         const hh = hhMap.get(t.householdId);
         const expectedTempleId = hh?.templeId || (/^K\d+-/i.test(t.householdId) ? temples.find((item) => !item.isMain)?.id : undefined);
-        if (expectedTempleId && expectedTempleId !== mainTempleId && expectedTempleId !== 'damt-main' && expectedTempleId !== 'temple-main') {
-          if (!t.templeId || t.templeId === mainTempleId || t.templeId === 'damt-main' || t.templeId === 'temple-main') {
+        if (expectedTempleId && expectedTempleId !== mainTempleId && expectedTempleId !== 'temple-main') {
+          if (!t.templeId || t.templeId === mainTempleId || t.templeId === 'temple-main') {
             hasMisalignedTx = true;
             break;
           }
@@ -853,13 +630,13 @@ export default function App() {
   // 檀家名簿: 合算表示は禁止（混乱防止のため個別寺院のみ）。ALLの場合は本寺にフォールバック
   const activeHouseholds = useMemo(() => {
     const mainTemple = temples.find((t) => t.isMain);
-    const mainTempleId = mainTemple?.id || 'damt-main';
+    const mainTempleId = mainTemple?.id || 'temple-main';
     const targetId = activeTempleId === 'ALL' ? mainTempleId : activeTempleId;
 
     return households.filter((h) => {
       const hTempleId = h.templeId || mainTempleId;
-      if (targetId === mainTempleId || targetId === 'damt-main' || targetId === 'temple-main') {
-        return hTempleId === mainTempleId || hTempleId === 'damt-main' || hTempleId === 'temple-main';
+      if (targetId === mainTempleId || targetId === 'temple-main') {
+        return hTempleId === mainTempleId || hTempleId === 'temple-main';
       }
       return hTempleId === targetId;
     });
@@ -889,13 +666,13 @@ export default function App() {
     if (isAccountingCombined) {
       return transactions;
     }
-    const mainTempleId = mainTempleProfile?.id || 'damt-main';
+    const mainTempleId = mainTempleProfile?.id || 'temple-main';
     const targetId = activeTempleId === 'ALL' ? mainTempleId : activeTempleId;
 
     return transactions.filter((t) => {
       const tTempleId = t.templeId || mainTempleId;
-      if (targetId === mainTempleId || targetId === 'damt-main' || targetId === 'temple-main') {
-        return tTempleId === mainTempleId || tTempleId === 'damt-main' || tTempleId === 'temple-main';
+      if (targetId === mainTempleId || targetId === 'temple-main') {
+        return tTempleId === mainTempleId || tTempleId === 'temple-main';
       }
       return tTempleId === targetId;
     });
@@ -911,8 +688,8 @@ export default function App() {
 
   const accountingMasterOptions = useMemo(() => {
     if (isAccountingCombined) {
-      const mainTempleId = mainTempleProfile?.id || 'damt-main';
-      return templeMasterOptionsMap[mainTempleId] || templeMasterOptionsMap['damt-main'] || templeMasterOptionsMap['temple-main'] || masterOptions;
+      const mainTempleId = mainTempleProfile?.id || 'temple-main';
+      return templeMasterOptionsMap[mainTempleId] || masterOptions;
     }
     return activeMasterOptions;
   }, [isAccountingCombined, mainTempleProfile, templeMasterOptionsMap, masterOptions, activeMasterOptions]);
@@ -928,7 +705,7 @@ export default function App() {
   const activePastRecords = useMemo(() => {
     if (activeTempleId === 'ALL') return pastRecords;
     const mainTemple = temples.find((t) => t.isMain);
-    const mainTempleId = mainTemple?.id || 'damt-main';
+    const mainTempleId = mainTemple?.id || 'temple-main';
 
     return pastRecords.filter((r) => {
       let targetId = r.templeId;
@@ -941,8 +718,8 @@ export default function App() {
       if (!targetId) {
         targetId = mainTempleId;
       }
-      if (activeTempleId === mainTempleId || activeTempleId === 'damt-main' || activeTempleId === 'temple-main') {
-        return targetId === mainTempleId || targetId === 'damt-main' || targetId === 'temple-main';
+      if (activeTempleId === mainTempleId || activeTempleId === 'temple-main') {
+        return targetId === mainTempleId || targetId === 'temple-main';
       }
       return targetId === activeTempleId;
     });
@@ -1029,7 +806,7 @@ export default function App() {
     setTransactions([]);
     setFamilyMembers([]);
     setPriests([]);
-    setActiveTempleId('damt-main');
+    setActiveTempleId('temple-main');
 
     // ストレージも初期化
     syncStateRef.current = {
@@ -1087,7 +864,7 @@ export default function App() {
     setTemples(INITIAL_TEMPLES);
     setTempleInfo(INITIAL_TEMPLE_INFO);
     setMasterOptions(INITIAL_MASTER_OPTIONS);
-    setTempleMasterOptionsMap({ 'damt-main': INITIAL_MASTER_OPTIONS, 'damt-sub-1': INITIAL_MASTER_OPTIONS });
+    setTempleMasterOptionsMap({ 'temple-main': INITIAL_MASTER_OPTIONS });
     setNoticeTemplates(getSavedNoticeTemplates());
     setHouseholds(INITIAL_HOUSEHOLDS);
     setPastRecords(formattedPast);
@@ -1096,7 +873,7 @@ export default function App() {
     setTransactions(cleanTx);
     setFamilyMembers(INITIAL_FAMILY_MEMBERS);
     setPriests(INITIAL_PRIESTS);
-    setActiveTempleId('damt-main');
+    setActiveTempleId('temple-main');
 
     setSyncStatus('disconnected');
     setLastSyncTime(null);
@@ -1107,7 +884,7 @@ export default function App() {
     saveJsonState('temple_profiles', INITIAL_TEMPLES);
     saveJsonState('temple_info', INITIAL_TEMPLE_INFO);
     saveJsonState('temple_master_options', INITIAL_MASTER_OPTIONS);
-    saveJsonState('temple_master_options_map', { 'damt-main': INITIAL_MASTER_OPTIONS, 'damt-sub-1': INITIAL_MASTER_OPTIONS });
+    saveJsonState('temple_master_options_map', { 'temple-main': INITIAL_MASTER_OPTIONS });
     saveJsonState('temple_households', INITIAL_HOUSEHOLDS);
     saveJsonState('temple_past_records', formattedPast);
     saveJsonState('temple_memorial_services', INITIAL_MEMORIAL_SERVICES);
@@ -1166,7 +943,7 @@ export default function App() {
         setPriests(importedPriests);
         setNoticeTemplates(importedNotices);
 
-        const defaultTempleId = importedTemples.find((t: any) => t.isMain)?.id || importedTemples[0]?.id || 'damt-main';
+        const defaultTempleId = importedTemples.find((t: any) => t.isMain)?.id || importedTemples[0]?.id || 'temple-main';
         setActiveTempleId(defaultTempleId);
 
         saveJsonState('temple_profiles', importedTemples);
@@ -1185,7 +962,7 @@ export default function App() {
         setIsStartupLauncherOpen(false);
         recordHistory(`PCバックアップファイル（${file.name}）から立ち上げ`);
       } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-        const defaultTemple = 'damt-main';
+        const defaultTemple = 'temple-main';
         const data = await importFromExcel(file, {
           targetTempleId: 'ALL',
           defaultTempleId: defaultTemple,
@@ -1267,16 +1044,6 @@ export default function App() {
         );
         customErr.code = 'auth/popup-blocked';
         throw customErr;
-      }
-      if (
-        err?.code === 'auth/network-request-failed' ||
-        err?.message?.includes('network-request-failed')
-      ) {
-        const netErr: any = new Error(
-          'ネットワーク通信エラーが発生しました。インターネット接続状況を確認の上、再度お試しください。'
-        );
-        netErr.code = 'auth/network-request-failed';
-        throw netErr;
       }
       console.error('Google sign in / sync error from startup launcher:', err);
       throw new Error(`Googleシートとの連携に失敗しました: ${err?.message || err}`);
@@ -2018,7 +1785,6 @@ export default function App() {
             targetTempleId: 'ALL',
             templeMasterOptionsMap: state.templeMasterOptionsMap,
             priests: state.priests,
-            familyMembers: state.familyMembers,
             deletedRecords: loadDeletedRecordsLog(),
             batchAccountingData: state.batchAccountingData !== undefined ? state.batchAccountingData : (getSavedBatchAccountingData() || undefined),
           }
@@ -2531,7 +2297,7 @@ export default function App() {
 
     recordHistory(`Excelデータ取り込み（${modeLabel}）`);
 
-    const defaultTemple = activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'damt-main');
+    const defaultTemple = activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
     const data = await importFromExcel(file, {
       targetTempleId: targetTempleId || 'ALL',
       defaultTempleId: defaultTemple,
@@ -2584,7 +2350,7 @@ export default function App() {
         finalTemples = data.temples;
         finalTempleInfo = data.templeInfo || data.temples[0];
       } else if (data.templeInfo) {
-        finalTemples = [{ ...data.templeInfo, id: data.templeInfo.id || 'damt-main', isMain: true }];
+        finalTemples = [{ ...data.templeInfo, id: data.templeInfo.id || 'temple-main', isMain: true }];
         finalTempleInfo = data.templeInfo;
       } else {
         finalTemples = EMPTY_TEMPLES;
@@ -2593,7 +2359,7 @@ export default function App() {
 
       setTemples(finalTemples);
       setTempleInfo(finalTempleInfo);
-      setActiveTempleId(finalTemples[0]?.id || 'damt-main');
+      setActiveTempleId(finalTemples[0]?.id || 'temple-main');
 
       // マスタ設定（区分・勘定科目すべて）の完全置き換え
       const newMaster = data.masterOptions || INITIAL_MASTER_OPTIONS;
@@ -2622,31 +2388,31 @@ export default function App() {
       const targetId = targetTempleId;
       if (importedHouseholds.length > 0) {
         setHouseholds((prev) => [
-          ...prev.filter((h) => (h.templeId || 'damt-main') !== targetId),
+          ...prev.filter((h) => (h.templeId || 'temple-main') !== targetId),
           ...importedHouseholds,
         ]);
       }
       if (importedPast.length > 0) {
         setPastRecords((prev) => [
-          ...prev.filter((r) => (r.templeId || 'damt-main') !== targetId),
+          ...prev.filter((r) => (r.templeId || 'temple-main') !== targetId),
           ...importedPast,
         ]);
       }
       if (importedTx.length > 0) {
         setTransactions((prev) => [
-          ...prev.filter((t) => (t.templeId || 'damt-main') !== targetId),
+          ...prev.filter((t) => (t.templeId || 'temple-main') !== targetId),
           ...importedTx,
         ]);
       }
       if (importedMem.length > 0) {
         setMemorialServices((prev) => [
-          ...prev.filter((m) => (m.templeId || 'damt-main') !== targetId),
+          ...prev.filter((m) => (m.templeId || 'temple-main') !== targetId),
           ...importedMem,
         ]);
       }
       if (importedTodos.length > 0) {
         setTempleTodos((prev) => [
-          ...prev.filter((td) => (td.templeId || 'damt-main') !== targetId),
+          ...prev.filter((td) => (td.templeId || 'temple-main') !== targetId),
           ...importedTodos,
         ]);
       }
@@ -2657,7 +2423,7 @@ export default function App() {
           saveJsonState('temple_master_options_map', next);
           return next;
         });
-        if (targetId === 'damt-main' || targetId === 'temple-main' || targetId === temples[0]?.id) {
+        if (targetId === 'temple-main' || targetId === temples[0]?.id) {
           setMasterOptions(data.masterOptions);
           saveJsonState('temple_master_options', data.masterOptions);
         }
@@ -2667,7 +2433,7 @@ export default function App() {
         const importedT = data.templeInfo || data.temples?.find((t) => t.id === targetId) || data.temples?.[0];
         if (importedT) {
           setTemples((prev) => prev.map((t) => {
-            if (t.id === targetId || ((targetId === 'damt-main' || targetId === 'temple-main') && t.isMain)) {
+            if (t.id === targetId || (targetId === 'temple-main' && t.isMain)) {
               return {
                 ...t,
                 ...importedT,
@@ -2678,11 +2444,11 @@ export default function App() {
             }
             return t;
           }));
-          if (targetId === 'damt-main' || targetId === 'temple-main' || targetId === temples[0]?.id) {
+          if (targetId === 'temple-main' || targetId === temples[0]?.id) {
             setTempleInfo((prev) => ({
               ...prev,
               ...importedT,
-              id: prev.id || 'damt-main',
+              id: prev.id || 'temple-main',
               isMain: true,
               annualEvents: importedT.annualEvents && importedT.annualEvents.length > 0 ? importedT.annualEvents : prev.annualEvents,
             }));
@@ -2772,7 +2538,7 @@ export default function App() {
     }
 
     // Always merge imported unique householdTypes, statuses, districts, categories, and paymentMethods into masterOptions and persist to storage
-    const targetTemple = data.targetTempleId || (activeTempleId === 'ALL' ? (temples[0]?.id || 'damt-main') : activeTempleId);
+    const targetTemple = data.targetTempleId || (activeTempleId === 'ALL' ? (temples[0]?.id || 'temple-main') : activeTempleId);
     const updatedMaster = data.masterOptions || mergeMasterOptionsWithData(
       activeMasterOptions,
       data.households || nextHouseholds,
@@ -2969,7 +2735,7 @@ export default function App() {
     recordHistory(`年回忌法要「${pastRecord.dharmaName} ${milestoneType}」を作成`);
 
     const household = households.find((h) => h.id === pastRecord.householdId);
-    const mainTempleId = temples.find((t) => t.isMain)?.id || 'damt-main';
+    const mainTempleId = temples.find((t) => t.isMain)?.id || 'temple-main';
     const targetTempleId = pastRecord.templeId || household?.templeId || (activeTempleId !== 'ALL' ? activeTempleId : mainTempleId);
 
     const rawService: MemorialService = {
@@ -3241,7 +3007,7 @@ export default function App() {
 
   // Handlers: Transactions CRUD
   const resolveTxTempleId = (tx: Partial<Transaction>): string => {
-    const mainTempleId = mainTempleProfile?.id || 'damt-main';
+    const mainTempleId = mainTempleProfile?.id || 'temple-main';
 
     // 1. 紐付く世帯がある場合、世帯の所属寺院を最優先
     if (tx.householdId) {
@@ -3273,7 +3039,7 @@ export default function App() {
     }
 
     // 3. 既に明示的に兼務寺院のtempleIdがセットされている場合
-    if (tx.templeId && tx.templeId !== mainTempleId && tx.templeId !== 'damt-main' && tx.templeId !== 'temple-main') {
+    if (tx.templeId && tx.templeId !== mainTempleId && tx.templeId !== 'temple-main') {
       return tx.templeId;
     }
 
@@ -3437,7 +3203,7 @@ export default function App() {
     saveJsonState('temple_info', stampedInfo);
     syncStateRef.current.templeInfo = stampedInfo;
     setTemples((prev) => {
-      const idx = prev.findIndex((t) => t.id === (info.id || 'damt-main'));
+      const idx = prev.findIndex((t) => t.id === (info.id || 'temple-main'));
       let next: TempleProfile[];
       if (idx >= 0) {
         next = [...prev];
@@ -3488,139 +3254,60 @@ export default function App() {
       ? `${deletedTemple.mountainName ? deletedTemple.mountainName + ' ' : ''}${deletedTemple.name}`
       : deletedTempleId;
 
-    const isSub1 = deletedTempleId === 'damt-sub-1' || deletedTempleId === 'temple-sub-1';
-    const isDamtMain = deletedTempleId === 'damt-main';
-
-    // 削除対象寺院に合致するか判定する包括的チェッカー
-    const matchesDeletedTemple = (tId?: string): boolean => {
-      if (!tId) return false;
-      const clean = tId.trim();
-      if (clean === deletedTempleId) return true;
-      if (isSub1 && (clean === 'temple-sub-1' || clean === 'damt-sub-1')) return true;
-      if (deletedTemple?.name && (clean === deletedTemple.name || clean.includes(deletedTemple.name))) return true;
-      if (deletedTemple?.shortName && (clean === deletedTemple.shortName || clean.includes(deletedTemple.shortName))) return true;
-      return false;
-    };
-
-    // 1. 世帯データの特定と削除
-    const deletedHouseholds = households.filter((h) => {
-      if (matchesDeletedTemple(h.templeId)) return true;
-      if (isSub1 && (h.id.startsWith('D1-') || h.id.startsWith('K1-'))) return true;
-      if (isDamtMain && (h.id.startsWith('DA-') || h.id.startsWith('DK-'))) return true;
-      if (deletedTemple?.name && ((h as any).templeName?.includes(deletedTemple.name) || h.notes?.includes(deletedTemple.name))) return true;
-      if (deletedTemple?.shortName && ((h as any).templeName?.includes(deletedTemple.shortName) || h.notes?.includes(deletedTemple.shortName))) return true;
-      return false;
-    });
+    // 1. 削除対象寺院に属する世帯ID一覧
+    const deletedHouseholds = households.filter((h) => (h.templeId || 'temple-main') === deletedTempleId);
     const deletedHhIdSet = new Set(deletedHouseholds.map((h) => h.id));
-    const deletedFamMemberIdSet = new Set<string>();
-    deletedHouseholds.forEach((h) => {
-      (h.familyMembers || []).forEach((fm) => {
-        if (fm.id) deletedFamMemberIdSet.add(fm.id);
-      });
-    });
 
-    const nextHouseholds = households.filter((h) => !deletedHhIdSet.has(h.id));
+    // 2. 世帯データの完全削除
+    const nextHouseholds = households.filter((h) => (h.templeId || 'temple-main') !== deletedTempleId);
     setHouseholds(nextHouseholds);
     saveJsonState('temple_households', nextHouseholds);
 
-    // 2. 過去帳データの完全特定と削除
-    const deletedPast = pastRecords.filter((r) => {
-      if (matchesDeletedTemple(r.templeId)) return true;
-      if (r.householdId && deletedHhIdSet.has(r.householdId)) return true;
-      if (isSub1 && (r.id >= 'KC-651' && r.id <= 'KC-680')) return true;
-      if (isDamtMain && (r.id.startsWith('KC-0') || r.id.startsWith('KC-1') || r.id.startsWith('KC-2'))) return true;
-      return false;
+    // 3. 過去帳データの完全削除（寺院ID一致または削除世帯紐づき）
+    const deletedPast = pastRecords.filter((r) => (r.templeId || 'temple-main') === deletedTempleId || (r.householdId && deletedHhIdSet.has(r.householdId)));
+    const nextPastRecords = pastRecords.filter((r) => {
+      if ((r.templeId || 'temple-main') === deletedTempleId) return false;
+      if (r.householdId && deletedHhIdSet.has(r.householdId)) return false;
+      return true;
     });
-    const deletedPastIdSet = new Set(deletedPast.map((p) => p.id));
-
-    const nextPastRecords = pastRecords.filter((r) => !deletedPastIdSet.has(r.id));
     setPastRecords(nextPastRecords);
     saveJsonState('temple_past_records', nextPastRecords);
 
-    // 3. 家族構成員データの完全特定と削除
-    const deletedFam = familyMembers.filter((m) => {
-      if (m.householdId && deletedHhIdSet.has(m.householdId)) return true;
-      if (m.id && deletedFamMemberIdSet.has(m.id)) return true;
-      if (matchesDeletedTemple((m as any).templeId)) return true;
-      if (isSub1 && (m.householdId?.startsWith('D1-') || m.id?.startsWith('FM-D1-'))) return true;
-      if (isDamtMain && (m.householdId?.startsWith('DA-') || m.id?.startsWith('FM-DA-'))) return true;
-      return false;
+    // 4. 会計出納データの完全削除
+    const deletedTx = transactions.filter((t) => (t.templeId || 'temple-main') === deletedTempleId || (t.householdId && deletedHhIdSet.has(t.householdId)));
+    const nextTransactions = transactions.filter((t) => {
+      if ((t.templeId || 'temple-main') === deletedTempleId) return false;
+      if (t.householdId && deletedHhIdSet.has(t.householdId)) return false;
+      return true;
     });
-    const deletedFamIdSet = new Set(deletedFam.map((f) => f.id));
-
-    const nextFamilyMembers = familyMembers.filter(
-      (m) => !deletedFamIdSet.has(m.id) && (!m.householdId || !deletedHhIdSet.has(m.householdId))
-    );
-    setFamilyMembers(nextFamilyMembers);
-    saveJsonState('temple_family_members', nextFamilyMembers);
-
-    // 4. 年回法要予約データの完全特定と削除
-    const deletedMem = memorialServices.filter((s) => {
-      if (matchesDeletedTemple(s.templeId)) return true;
-      if (s.householdId && deletedHhIdSet.has(s.householdId)) return true;
-      if (s.deceasedId && deletedPastIdSet.has(s.deceasedId)) return true;
-      if (s.additionalDeceased && s.additionalDeceased.some((ad) => ad.id && deletedPastIdSet.has(ad.id))) return true;
-      if (isSub1 && (s.id === 'MS-2026-005' || s.id === 'MS-2026-006')) return true;
-      if (deletedTemple?.name && (s.venue?.includes(deletedTemple.name) || (s as any).templeName?.includes(deletedTemple.name) || s.notes?.includes(deletedTemple.name))) return true;
-      if (deletedTemple?.shortName && (s.venue?.includes(deletedTemple.shortName) || (s as any).templeName?.includes(deletedTemple.shortName) || s.notes?.includes(deletedTemple.shortName))) return true;
-      return false;
-    });
-    const deletedMemIdSet = new Set(deletedMem.map((s) => s.id));
-
-    const nextMemorialServices = memorialServices.filter((s) => !deletedMemIdSet.has(s.id));
-    setMemorialServices(nextMemorialServices);
-    saveJsonState('temple_memorial_services', nextMemorialServices);
-
-    // 5. 会計出納データの完全特定と削除
-    const deletedTx = transactions.filter((t) => {
-      if (matchesDeletedTemple(t.templeId)) return true;
-      if (t.householdId && deletedHhIdSet.has(t.householdId)) return true;
-      if (t.relatedServiceId && deletedMemIdSet.has(t.relatedServiceId)) return true;
-      if (isSub1 && t.id === 'TR-2026-06') return true;
-      if (deletedTemple?.name && t.notes?.includes(deletedTemple.name)) return true;
-      if (deletedTemple?.shortName && t.notes?.includes(deletedTemple.shortName)) return true;
-      return false;
-    });
-    const deletedTxIdSet = new Set(deletedTx.map((t) => t.id));
-
-    const nextTransactions = transactions.filter((t) => !deletedTxIdSet.has(t.id));
     setTransactions(nextTransactions);
     saveJsonState('temple_transactions', nextTransactions);
 
-    // 6. 寺院ToDoデータの完全特定と削除
-    const deletedTodos = templeTodos.filter((td) => {
-      if (matchesDeletedTemple(td.templeId)) return true;
-      if (td.householdId && deletedHhIdSet.has(td.householdId)) return true;
-      if (td.serviceId && deletedMemIdSet.has(td.serviceId)) return true;
-      if (td.relatedServiceId && deletedMemIdSet.has(td.relatedServiceId)) return true;
-      if ((td as any).pastRecordId && deletedPastIdSet.has((td as any).pastRecordId)) return true;
-      if (isSub1 && td.id === 'TODO-2026-04') return true;
-      if (deletedTemple?.name && (td.title?.includes(deletedTemple.name) || (td as any).description?.includes(deletedTemple.name) || td.notes?.includes(deletedTemple.name))) return true;
-      if (deletedTemple?.shortName && (td.title?.includes(deletedTemple.shortName) || (td as any).description?.includes(deletedTemple.shortName) || td.notes?.includes(deletedTemple.shortName))) return true;
-      return false;
+    // 5. 法要予約データの完全削除
+    const deletedMem = memorialServices.filter((s) => s.templeId === deletedTempleId || (s.householdId && deletedHhIdSet.has(s.householdId)));
+    const nextMemorialServices = memorialServices.filter((s) => {
+      if (s.templeId === deletedTempleId) return false;
+      if (s.householdId && deletedHhIdSet.has(s.householdId)) return false;
+      return true;
     });
-    const deletedTodoIdSet = new Set(deletedTodos.map((td) => td.id));
+    setMemorialServices(nextMemorialServices);
+    saveJsonState('temple_memorial_services', nextMemorialServices);
 
-    const nextTodos = templeTodos.filter((td) => !deletedTodoIdSet.has(td.id));
+    // 6. 寺院ToDoデータの完全削除
+    const deletedTodos = templeTodos.filter((td) => td.templeId === deletedTempleId || (td.householdId && deletedHhIdSet.has(td.householdId)));
+    const nextTodos = templeTodos.filter((td) => {
+      if (td.templeId === deletedTempleId) return false;
+      if (td.householdId && deletedHhIdSet.has(td.householdId)) return false;
+      return true;
+    });
     setTempleTodos(nextTodos);
     saveJsonState('temple_todos', nextTodos);
 
-    // 7. 登録僧侶（住職・僧侶）の完全特定と削除
-    const deletedPriests = priests.filter((p) => {
-      if (matchesDeletedTemple(p.templeId)) return true;
-      if (p.id === `priest-chief-${deletedTempleId}`) return true;
-      if (isSub1 && (p.id === 'priest-chief-temple-sub-1' || p.id === 'priest-chief-damt-sub-1')) return true;
-      if (isDamtMain && p.id === 'priest-chief-damt-main') return true;
-      if (deletedTemple?.name && (p.templeName?.includes(deletedTemple.name) || p.notes?.includes(deletedTemple.name))) return true;
-      if (deletedTemple?.shortName && (p.templeName?.includes(deletedTemple.shortName) || p.notes?.includes(deletedTemple.shortName))) return true;
-      if (deletedTemple?.chiefPriest && p.name === deletedTemple.chiefPriest && (p.isAutoChief || p.role?.includes('兼務'))) return true;
-      return false;
-    });
-    const deletedPriestIdSet = new Set(deletedPriests.map((p) => p.id));
-
-    const nextPriests = priests.filter((p) => !deletedPriestIdSet.has(p.id));
-    setPriests(nextPriests);
-    saveJsonState('temple_priests', nextPriests);
+    // 7. 家族構成員データの完全削除
+    const deletedFam = familyMembers.filter((m) => deletedHhIdSet.has(m.householdId));
+    const nextFamilyMembers = familyMembers.filter((m) => !deletedHhIdSet.has(m.householdId));
+    setFamilyMembers(nextFamilyMembers);
+    saveJsonState('temple_family_members', nextFamilyMembers);
 
     // 削除履歴にバッチ記録（Googleシート同期時の復活防止）
     const batchItems = [
@@ -3630,7 +3317,6 @@ export default function App() {
       ...deletedMem.map((m) => ({ id: m.id, entityType: 'memorialService' as const, label: `法要「${m.notes || m.deceasedName}」`, templeId: deletedTempleId })),
       ...deletedTodos.map((td) => ({ id: td.id, entityType: 'templeTodo' as const, label: `ToDo「${td.title}」`, templeId: deletedTempleId })),
       ...deletedFam.map((f) => ({ id: f.id, entityType: 'familyMember' as const, label: `家族「${f.name}」`, templeId: deletedTempleId })),
-      ...deletedPriests.map((pr) => ({ id: pr.id, entityType: 'priest' as const, label: `僧侶「${pr.name}」`, templeId: deletedTempleId })),
     ];
     if (batchItems.length > 0) {
       recordDeletedRecordsBatch(batchItems);
@@ -3641,7 +3327,6 @@ export default function App() {
     setTempleMasterOptionsMap((prev) => {
       nextMap = { ...prev };
       delete nextMap[deletedTempleId];
-      if (isSub1) delete nextMap['temple-sub-1'];
       saveJsonState('temple_master_options_map', nextMap);
       return nextMap;
     });
@@ -3655,7 +3340,7 @@ export default function App() {
     setTemples(nextTemples);
     saveJsonState('temple_profiles_list', nextTemples);
 
-    const nextActiveId = nextTemples[0]?.id || 'damt-main';
+    const nextActiveId = nextTemples[0]?.id || 'temple-main';
     setActiveTempleId(nextActiveId);
     if (nextTemples[0]) {
       setTempleInfo(nextTemples[0]);
@@ -3671,8 +3356,6 @@ export default function App() {
       transactions: nextTransactions,
       memorialServices: nextMemorialServices,
       templeTodos: nextTodos,
-      familyMembers: nextFamilyMembers,
-      priests: nextPriests,
       templeMasterOptionsMap: nextMap,
     };
 
@@ -3683,12 +3366,10 @@ export default function App() {
       '寺院一覧（本寺・兼務）',
       '寺院情報',
       '檀家名簿',
-      '家族構成',
       '過去帳',
       '出納・会計',
       '年回法要予約',
       '寺院ToDo',
-      '登録僧侶一覧',
       'マスタ'
     ]);
   };
@@ -3704,7 +3385,7 @@ export default function App() {
       // 3. Reset states to empty/default
       const defaultTemple: TempleProfile = {
         ...EMPTY_TEMPLE_INFO,
-        id: 'damt-main',
+        id: 'temple-main',
         isMain: true,
         masterOptions: EMPTY_MASTER_OPTIONS,
       };
@@ -3724,7 +3405,7 @@ export default function App() {
         masterOptions: EMPTY_MASTER_OPTIONS,
         noticeTemplates: { higan: '', niibon: '' },
         templeTodos: [],
-        templeMasterOptionsMap: { 'damt-main': EMPTY_MASTER_OPTIONS },
+        templeMasterOptionsMap: { 'temple-main': EMPTY_MASTER_OPTIONS },
         priests: [],
         batchAccountingData: null,
         deletedRecords: [],
@@ -3732,7 +3413,7 @@ export default function App() {
 
       setTemples(defaultTemples);
       setTempleInfo(defaultTemple);
-      setActiveTempleId('damt-main');
+      setActiveTempleId('temple-main');
 
       setHouseholds([]);
       setPastRecords([]);
@@ -3742,7 +3423,7 @@ export default function App() {
       setFamilyMembers([]);
 
       setMasterOptions(EMPTY_MASTER_OPTIONS);
-      setTempleMasterOptionsMap({ 'damt-main': EMPTY_MASTER_OPTIONS });
+      setTempleMasterOptionsMap({ 'temple-main': EMPTY_MASTER_OPTIONS });
       setExcludedHouseholdIds([]);
       setSelectedIdsForPrint([]);
       setEditingHousehold(null);
@@ -3758,7 +3439,7 @@ export default function App() {
       saveJsonState('temple_todos', []);
       saveJsonState('temple_family_members', []);
       saveJsonState('temple_master_options', EMPTY_MASTER_OPTIONS);
-      saveJsonState('temple_master_options_map', { 'damt-main': EMPTY_MASTER_OPTIONS });
+      saveJsonState('temple_master_options_map', { 'temple-main': EMPTY_MASTER_OPTIONS });
       saveJsonState('temple_excluded_households', []);
       saveJsonState('temple_selected_print_ids', []);
       saveJsonState('temple_priests', []);
@@ -3792,7 +3473,7 @@ export default function App() {
       newTab === 'memorial';
 
     if (!isAllowedMerged && activeTempleId === 'ALL') {
-      const defaultTempleId = temples[0]?.id || 'damt-main';
+      const defaultTempleId = temples[0]?.id || 'temple-main';
       setActiveTempleId(defaultTempleId);
       safeStorage.setItem('active_temple_id', defaultTempleId);
     }
@@ -3810,7 +3491,7 @@ export default function App() {
       saveJsonState('temple_master_options_map', allMap);
       syncStateRef.current.templeMasterOptionsMap = allMap;
       const currentActive = targetTempleId || activeTempleId;
-      const targetOpt = allMap[currentActive] || allMap['damt-main'] || allMap['temple-main'] || allMap[temples[0]?.id || 'damt-main'] || options;
+      const targetOpt = allMap[currentActive] || allMap['temple-main'] || allMap[temples[0]?.id || 'temple-main'] || options;
       setMasterOptions(targetOpt);
       saveJsonState('temple_master_options', targetOpt);
       syncStateRef.current.masterOptions = targetOpt;
@@ -3821,7 +3502,7 @@ export default function App() {
         syncStateRef.current.templeMasterOptionsMap = next;
         return next;
       });
-      if (targetTempleId === activeTempleId || targetTempleId === 'damt-main' || targetTempleId === 'temple-main' || targetTempleId === temples[0]?.id) {
+      if (targetTempleId === activeTempleId || targetTempleId === 'temple-main' || targetTempleId === temples[0]?.id) {
         setMasterOptions(options);
         saveJsonState('temple_master_options', options);
         syncStateRef.current.masterOptions = options;
@@ -4228,7 +3909,6 @@ export default function App() {
         transactions={transactions}
         memorialServices={memorialServices}
         templeTodos={templeTodos}
-        familyMembers={familyMembers}
         priests={priests}
         onSavePriests={handleSavePriests}
         onSave={handleSaveTempleInfo}

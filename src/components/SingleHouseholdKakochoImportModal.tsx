@@ -584,7 +584,7 @@ export const SingleHouseholdKakochoImportModal: React.FC<SingleHouseholdKakochoI
 
       const record: PastRecord = {
         id: `past-${Date.now()}-${Math.random().toString(36).substring(2, 7)}-${idx}`,
-        templeId: targetHousehold.templeId || 'damt-main',
+        templeId: targetHousehold.templeId || 'temple-main',
         householdId: targetHousehold.id,
         householdHeadName: item.householdHeadName || targetHousehold.familyHead,
         dharmaName: item.dharmaName || '',

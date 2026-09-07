@@ -45,16 +45,15 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
 
   const temples = input.temples && input.temples.length > 0
     ? input.temples
-    : [{ id: 'damt-main', isMain: true, name: input.templeInfo?.name || '本寺' } as TempleProfile];
+    : [{ id: 'temple-main', isMain: true, name: input.templeInfo?.name || '本寺' } as TempleProfile];
 
   const mainTemple = temples.find((t) => t.isMain) || temples[0];
-  const mainTempleId = mainTemple?.id || 'damt-main';
+  const mainTempleId = mainTemple?.id || 'temple-main';
 
   const validTempleIds = new Set<string>();
   temples.forEach((t) => {
     if (t.id) validTempleIds.add(t.id);
   });
-  validTempleIds.add('damt-main');
   validTempleIds.add('temple-main');
 
   // Helper to test if a string looks like an ID of a record rather than a temple ID
@@ -212,8 +211,8 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
       // 世帯が兼務寺院（または世帯IDがK0等で兼務寺）なのに出納のtempleIdが本寺になっている不整合を是正
       const hh = householdMap.get(hId);
       const expectedTempleId = hh?.templeId || deduceTempleIdFromHousehold(hId);
-      if (expectedTempleId && expectedTempleId !== mainTempleId && expectedTempleId !== 'damt-main' && expectedTempleId !== 'temple-main') {
-        if (!tId || tId === mainTempleId || tId === 'damt-main' || tId === 'temple-main') {
+      if (expectedTempleId && expectedTempleId !== mainTempleId && expectedTempleId !== 'temple-main') {
+        if (!tId || tId === mainTempleId || tId === 'temple-main') {
           tId = expectedTempleId;
           tChanged = true;
           changed = true;
@@ -223,8 +222,8 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
 
     if (!tChanged && t.relatedServiceId) {
       const relService = input.memorialServices.find((s) => s.id === t.relatedServiceId);
-      if (relService?.templeId && relService.templeId !== mainTempleId && relService.templeId !== 'damt-main' && relService.templeId !== 'temple-main') {
-        if (!tId || tId === mainTempleId || tId === 'damt-main' || tId === 'temple-main') {
+      if (relService?.templeId && relService.templeId !== mainTempleId && relService.templeId !== 'temple-main') {
+        if (!tId || tId === mainTempleId || tId === 'temple-main') {
           tId = relService.templeId;
           tChanged = true;
           changed = true;

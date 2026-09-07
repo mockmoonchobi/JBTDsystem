@@ -161,11 +161,11 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
   // Filter existing households for manual search
   const filteredHouseholdsForSearch = useMemo(() => {
     if (!searchQuery.trim()) {
-      return existingHouseholds.filter(h => (h.templeId || 'damt-main') === targetTempleId).slice(0, 20);
+      return existingHouseholds.filter(h => (h.templeId || 'temple-main') === targetTempleId).slice(0, 20);
     }
     const q = searchQuery.toLowerCase().replace(/[\s　]/g, '');
     return existingHouseholds.filter((h) => {
-      const isTempleMatch = (h.templeId || 'damt-main') === targetTempleId;
+      const isTempleMatch = (h.templeId || 'temple-main') === targetTempleId;
       const head = (h.familyHead || '').toLowerCase().replace(/[\s　]/g, '');
       const id = (h.id || '').toLowerCase();
       const addr = (h.address || '').toLowerCase().replace(/[\s　]/g, '');

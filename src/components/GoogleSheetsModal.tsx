@@ -86,7 +86,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   onRestoreBackup,
   onResetDatabase,
   temples = [],
-  activeTempleId = 'damt-main',
+  activeTempleId = 'temple-main',
   isStaffMode = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>(() => isStaffMode ? 'sheets' : 'excel');
@@ -520,7 +520,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
   const allTemplesList: TempleProfile[] = temples.length > 0
     ? temples
-    : [{ id: 'damt-main', name: '圓福寺', mountainName: '慈光山', isMain: true, sect: '曹洞宗', chiefPriest: '', postalCode: '', address: '', phone: '', color: '#D4AF37' }];
+    : [{ id: 'temple-main', name: '圓福寺', mountainName: '慈光山', isMain: true, sect: '曹洞宗', chiefPriest: '', postalCode: '', address: '', phone: '', color: '#D4AF37' }];
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 font-sans animate-fade-in">
@@ -651,7 +651,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       >
                         <option value="ALL">【全寺院】一括</option>
                         {allTemplesList.map((t) => (
-                          <option key={t.id || 'damt-main'} value={t.id || 'damt-main'}>
+                          <option key={t.id || 'temple-main'} value={t.id || 'temple-main'}>
                             {t.name}（{t.isMain ? '本寺' : '兼務'}）
                           </option>
                         ))}
@@ -668,7 +668,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       <span>
                         {exportTargetTempleId === 'ALL'
                           ? '全寺院データを一括書き出し (.xlsx)'
-                          : `「${allTemplesList.find((t) => (t.id || 'damt-main') === exportTargetTempleId)?.name || '指定寺院'}」のデータのみ書き出し (.xlsx)`}
+                          : `「${allTemplesList.find((t) => (t.id || 'temple-main') === exportTargetTempleId)?.name || '指定寺院'}」のデータのみ書き出し (.xlsx)`}
                       </span>
                     </button>
                   )}
@@ -699,7 +699,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       >
                         <option value="ALL">【全寺院】ファイル内所属をそのまま復元</option>
                         {allTemplesList.map((t) => (
-                          <option key={t.id || 'damt-main'} value={t.id || 'damt-main'}>
+                          <option key={t.id || 'temple-main'} value={t.id || 'temple-main'}>
                             全データを「{t.name}」所属として取り込む
                           </option>
                         ))}
@@ -1323,7 +1323,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   <span className="col-span-2 font-bold text-[#1A1A1A]">
                     {importTargetTempleId === 'ALL'
                       ? '【全寺院】ファイル内所属をそのまま復元'
-                      : `「${allTemplesList.find((t) => (t.id || 'damt-main') === importTargetTempleId)?.name || '指定寺院'}」所属として取り込み`}
+                      : `「${allTemplesList.find((t) => (t.id || 'temple-main') === importTargetTempleId)?.name || '指定寺院'}」所属として取り込み`}
                   </span>
                 </div>
               </div>

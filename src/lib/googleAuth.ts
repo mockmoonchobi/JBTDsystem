@@ -162,17 +162,6 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
       popupError.code = 'auth/popup-blocked';
       throw popupError;
     }
-    if (
-      error?.code === 'auth/network-request-failed' ||
-      error?.message?.includes('network-request-failed')
-    ) {
-      const netError: any = new Error(
-        'ネットワーク通信エラーが発生しました（auth/network-request-failed）。端末のインターネット接続状況を確認するか、しばらく時間をおいてから再度お試しください。'
-      );
-      netError.code = 'auth/network-request-failed';
-      console.warn('Google sign-in network error:', netError.message);
-      throw netError;
-    }
     console.error('Sign in error:', error);
     throw error;
   } finally {

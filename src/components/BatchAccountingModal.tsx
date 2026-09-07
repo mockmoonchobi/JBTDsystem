@@ -117,7 +117,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   // Load saved state when modal opens
   useEffect(() => {
     if (isOpen) {
-      const targetTempleId = templeInfo?.id || 'damt-main';
+      const targetTempleId = templeInfo?.id || 'temple-main';
       const savedConfig = getSavedBatchAccountingConfig(targetTempleId);
       const savedData = initialBatchData || getSavedBatchAccountingData(targetTempleId);
       const configSource = savedConfig || (savedData ? {
@@ -189,7 +189,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       defaultAmount3,
       appliedPreset,
       entries,
-      templeId: templeInfo?.id || 'damt-main',
+      templeId: templeInfo?.id || 'temple-main',
       lastSavedAt: new Date().toISOString(),
     };
   }, [configDate, cat1, notes1, defaultAmount1, cat2, notes2, defaultAmount2, cat3, notes3, defaultAmount3, appliedPreset, entries, templeInfo]);
@@ -200,7 +200,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       const dataToSave = getCurrentBatchData();
       saveBatchAccountingData(dataToSave);
       saveBatchAccountingConfig({
-        id: `config-${dataToSave.templeId || 'damt-main'}`,
+        id: `config-${dataToSave.templeId || 'temple-main'}`,
         configDate: dataToSave.configDate,
         cat1: dataToSave.cat1,
         notes1: dataToSave.notes1,
@@ -514,7 +514,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       lastSavedAt: new Date().toISOString(),
     };
     saveBatchAccountingConfig({
-      id: `config-${updatedData.templeId || 'damt-main'}`,
+      id: `config-${updatedData.templeId || 'temple-main'}`,
       configDate: updatedData.configDate,
       cat1: updatedData.cat1,
       notes1: updatedData.notes1,
@@ -700,7 +700,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       const rand = Math.random().toString(36).slice(2, 7);
       return {
         id: `TX-${ts}-${rand}-${index + 1}`,
-        templeId: item.household.templeId || templeInfo.id || 'damt-main',
+        templeId: item.household.templeId || templeInfo.id || 'temple-main',
         date: normalizedDate,
         householdId: item.household.id,
         householdHeadName: item.household.familyHead,
@@ -723,7 +723,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       lastSavedAt: new Date().toISOString(),
     };
     saveBatchAccountingConfig({
-      id: `config-${updatedData.templeId || 'damt-main'}`,
+      id: `config-${updatedData.templeId || 'temple-main'}`,
       configDate: updatedData.configDate,
       cat1: updatedData.cat1,
       notes1: updatedData.notes1,

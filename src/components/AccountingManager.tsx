@@ -246,7 +246,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     const normalizedDate = normalizeDateInput(newTxForm.date || '', accountingDateOptions) || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
 
     const matchedHousehold = newTxForm.householdId ? households.find((h) => h.id === newTxForm.householdId) : null;
-    const resolvedTxTempleId = matchedHousehold?.templeId || templeInfo?.id || 'damt-main';
+    const resolvedTxTempleId = matchedHousehold?.templeId || templeInfo?.id || 'temple-main';
 
     const completeTx: Transaction = {
       id: `TX-${Date.now()}`,

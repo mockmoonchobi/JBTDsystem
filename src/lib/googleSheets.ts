@@ -949,7 +949,6 @@ export async function exportToSheets(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: BatchAccountingData;
-    familyMembers?: FamilyMember[];
     targetTablesOnly?: string[];
   }
 ): Promise<void> {
@@ -979,16 +978,6 @@ export async function exportToSheets(
         (targetTablesFilter.has('操作・削除履歴') || targetTablesFilter.has('操作履歴') || targetTablesFilter.has('削除履歴') || targetTablesFilter.has('履歴') || targetTablesFilter.has('操作ログ'))) {
       return true;
     }
-    // Also match family members aliases
-    if (sheetName === '家族構成' &&
-        (targetTablesFilter.has('家族構成') || targetTablesFilter.has('家族構成員') || targetTablesFilter.has('家族') || targetTablesFilter.has('世帯員'))) {
-      return true;
-    }
-    // Also match priests list aliases
-    if (sheetName === '登録僧侶一覧' &&
-        (targetTablesFilter.has('登録僧侶一覧') || targetTablesFilter.has('登録僧侶') || targetTablesFilter.has('僧侶一覧') || targetTablesFilter.has('僧侶'))) {
-      return true;
-    }
     return false;
   };
 
@@ -1000,10 +989,10 @@ export async function exportToSheets(
 
   const allTemples: TempleProfile[] = temples && temples.length > 0
     ? temples
-    : [{ ...templeInfo, id: templeInfo.id || 'damt-main', isMain: true }];
+    : [{ ...templeInfo, id: templeInfo.id || 'temple-main', isMain: true }];
 
   const currentSingleTemple = isIndividualExport
-    ? allTemples.find((t) => (t.id || 'damt-main') === targetTempleId) || allTemples[0]
+    ? allTemples.find((t) => (t.id || 'temple-main') === targetTempleId) || allTemples[0]
     : allTemples[0];
 
   const templeMap = new Map<string, TempleProfile>();
@@ -1012,7 +1001,7 @@ export async function exportToSheets(
   });
 
   const getTempleLabel = (templeId?: string): string => {
-    const id = templeId || allTemples[0]?.id || 'damt-main';
+    const id = templeId || allTemples[0]?.id || 'temple-main';
     const found = templeMap.get(id);
     if (!found) {
       const foundByName = allTemples.find((t) => 
@@ -1032,7 +1021,7 @@ export async function exportToSheets(
   const getTempleId = (templeId?: string): string => {
     if (!templeId) {
       const mainT = allTemples.find((t) => t.isMain);
-      return mainT?.id || allTemples[0]?.id || 'damt-main';
+      return mainT?.id || allTemples[0]?.id || 'temple-main';
     }
     const cleanId = String(templeId).trim();
     if (templeMap.has(cleanId)) return cleanId;
@@ -1050,27 +1039,27 @@ export async function exportToSheets(
 
   // Filter datasets if individual temple export is specified
   const filteredHouseholds = isIndividualExport
-    ? households.filter((h) => (h.templeId || 'damt-main') === targetTempleId)
+    ? households.filter((h) => (h.templeId || 'temple-main') === targetTempleId)
     : households;
 
   const filteredPastRecords = isIndividualExport
     ? pastRecords.filter((r) => {
         const hh = households.find((h) => h.id === r.householdId);
-        const effectiveId = r.templeId || hh?.templeId || 'damt-main';
+        const effectiveId = r.templeId || hh?.templeId || 'temple-main';
         return effectiveId === targetTempleId;
       })
     : pastRecords;
 
   const filteredMemorialServices = isIndividualExport
-    ? (memorialServices || []).filter((s) => (s.templeId || 'damt-main') === targetTempleId)
+    ? (memorialServices || []).filter((s) => (s.templeId || 'temple-main') === targetTempleId)
     : (memorialServices || []);
 
   const filteredTodos = isIndividualExport
-    ? (templeTodos || []).filter((t) => (t.templeId || 'damt-main') === targetTempleId)
+    ? (templeTodos || []).filter((t) => (t.templeId || 'temple-main') === targetTempleId)
     : (templeTodos || []);
 
   const filteredTransactions = isIndividualExport
-    ? transactions.filter((t) => (t.templeId || 'damt-main') === targetTempleId)
+    ? transactions.filter((t) => (t.templeId || 'temple-main') === targetTempleId)
     : transactions;
 
   // 1. Temple Profiles List (寺院一覧（本寺・兼務） / 寺院情報)
@@ -1113,7 +1102,7 @@ export async function exportToSheets(
 
   const exportTemplesList = isIndividualExport ? [currentSingleTemple] : allTemples;
   const templeRows = exportTemplesList.map((t) => [
-    t.id || 'damt-main',
+    t.id || 'temple-main',
     t.isMain ? '本寺（自寺）' : '兼務寺院（末寺）',
     t.name || '',
     t.mountainName || '',
@@ -1233,7 +1222,7 @@ export async function exportToSheets(
 
   const householdRows = filteredHouseholds.map((h) => {
     const [cDate, cTime, uDate, uTime] = getAuditRowValues(h);
-    const hhTemple = temples.find((t) => (t.id || 'damt-main') === (h.templeId || 'damt-main')) || templeInfo;
+    const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
     const tobaApp1 = getHouseholdSponsorTobaApplication(h, '塔婆申込１', hhTemple);
     const tobaApp2 = getHouseholdSponsorTobaApplication(h, '塔婆申込２', hhTemple);
     const tobaApp3 = getHouseholdSponsorTobaApplication(h, '塔婆申込３', hhTemple);
@@ -1316,7 +1305,7 @@ export async function exportToSheets(
 
   const familyRows: (string | number)[][] = [];
   filteredHouseholds.forEach((h) => {
-    const hhTemple = temples.find((t) => (t.id || 'damt-main') === (h.templeId || 'damt-main')) || templeInfo;
+    const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
     (h.familyMembers || []).forEach((fm, idx) => {
       const [cDate, cTime, uDate, uTime] = getAuditRowValues(fm);
       const fmApp1 = getFamilyMemberTobaApplication(fm, '塔婆申込１', hhTemple);
@@ -1674,7 +1663,7 @@ export async function exportToSheets(
     addChunkedUpdates(sheetName, [masterHeaders, ...makeMasterRows(templeMaster)]);
   } else {
     allTemples.forEach((t) => {
-      const tId = t.id || 'damt-main';
+      const tId = t.id || 'temple-main';
       const templeMaster = getTempleMasterOptions(tId, map, allTemples, currentMaster);
       const sheetName = `マスタ_${t.shortName || t.name}`;
       addChunkedUpdates(sheetName, [masterHeaders, ...makeMasterRows(templeMaster)]);
@@ -1701,11 +1690,11 @@ export async function exportToSheets(
   const priestsToExport: Priest[] = exportOptions?.priests && exportOptions.priests.length > 0
     ? exportOptions.priests
     : allTemples.map((t) => ({
-        id: `priest-chief-${t.id || 'damt-main'}`,
+        id: `priest-chief-${t.id || 'temple-main'}`,
         name: t.chiefPriest || '',
         furigana: '',
         role: t.isMain ? '本寺住職' : '兼務寺住職',
-        templeId: t.id || 'damt-main',
+        templeId: t.id || 'temple-main',
         templeName: `${t.mountainName ? t.mountainName + ' ' : ''}${t.name}`,
         phone: t.phone || '',
         notes: t.isMain ? '本寺代表役員住職' : '兼務寺住職',
@@ -1931,7 +1920,6 @@ export async function exportSpecificTablesToSheets(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: BatchAccountingData;
-    familyMembers?: FamilyMember[];
   }
 ): Promise<void> {
   return exportToSheets(
@@ -2283,7 +2271,7 @@ export async function importFromSheets(
       const createdAt = creIdx !== -1 && row[creIdx] ? String(row[creIdx]).trim() : undefined;
 
       parsedTemples.push({
-        id: tId || (isMain ? 'damt-main' : `temple-sub-${i + 1}`),
+        id: tId || (isMain ? 'temple-main' : `temple-sub-${i + 1}`),
         isMain,
         name: String((nameIdx !== -1 ? row[nameIdx] : row[2]) || (isMain ? INITIAL_TEMPLE_INFO.name : `兼務寺院${i + 1}`)).trim(),
         mountainName: String((mountainIdx !== -1 ? row[mountainIdx] : row[3]) || '').trim(),
@@ -2359,7 +2347,7 @@ export async function importFromSheets(
       const uTime = map.get('修正時間') || map.get('更新時間');
 
       templeInfo = {
-        id: 'damt-main',
+        id: 'temple-main',
         isMain: true,
         name: map.get('寺院名') || map.get('寺院名（本寺）') || INITIAL_TEMPLE_INFO.name,
         sect: map.get('宗派') || INITIAL_TEMPLE_INFO.sect,
@@ -2403,7 +2391,7 @@ export async function importFromSheets(
       templeInfo = parsedTemples[0];
     }
   } else if (templeInfo) {
-    temples = [{ ...templeInfo, id: 'damt-main', isMain: true }];
+    temples = [{ ...templeInfo, id: 'temple-main', isMain: true }];
   }
 
   const templeNameToIdMap = new Map<string, string>();
@@ -2441,7 +2429,7 @@ export async function importFromSheets(
       const month = !isNaN(monthNum) && monthNum >= 1 && monthNum <= 12 ? monthNum : 1;
       if (!name) return;
 
-      let templeId = options?.defaultTempleId || 'damt-main';
+      let templeId = options?.defaultTempleId || 'temple-main';
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
         templeId = String(row[templeIdColIdx]).trim();
       } else if (templeColIdx !== -1 && row[templeColIdx]) {
@@ -2483,7 +2471,7 @@ export async function importFromSheets(
         });
       }
       if (templeInfo) {
-        const mainEvs = templeEventsMap.get('damt-main') || templeEventsMap.get('damt-main') || templeEventsMap.get(templeInfo.id || '') || Array.from(templeEventsMap.values())[0];
+        const mainEvs = templeEventsMap.get('temple-main') || templeEventsMap.get(templeInfo.id || '') || Array.from(templeEventsMap.values())[0];
         if (mainEvs && mainEvs.length > 0) {
           templeInfo = { ...templeInfo, annualEvents: mainEvs };
         }
@@ -2667,7 +2655,7 @@ export async function importFromSheets(
     const hUDateIdx = findColIdx(householdHeaders, ['修正日', '更新日', '修正年月日', '更新年月日', 'updatedDate', 'updatedAt']);
     const hUTimeIdx = findColIdx(householdHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
 
-    const defaultTemple = options?.defaultTempleId || (temples && temples[0]?.id) || 'damt-main';
+    const defaultTemple = options?.defaultTempleId || (temples && temples[0]?.id) || 'temple-main';
 
     for (let i = 0; i < householdValues.length; i++) {
       const row = householdValues[i];
@@ -2747,7 +2735,7 @@ export async function importFromSheets(
 
       householdTempleMap.set(householdId, templeId);
 
-      const hhTemple = (temples && temples.find((t) => (t.id || 'damt-main') === (templeId || 'damt-main'))) || templeInfo;
+      const hhTemple = (temples && temples.find((t) => (t.id || 'temple-main') === (templeId || 'temple-main'))) || templeInfo;
 
       // Synchronize toba flags between household and designated sponsor family member if present
       const sponsorMember = familyMembers.find((m) => m.isChiefMourner || m.isSponsor);
@@ -2880,7 +2868,7 @@ export async function importFromSheets(
       if (!dharmaName && !secularName && (!row[0] || row[0] === '')) continue;
 
       const householdId = String((hIdColIdx !== -1 ? row[hIdColIdx] : '') || '').trim();
-      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'damt-main';
+      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'temple-main';
 
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
         templeId = String(row[templeIdColIdx]).trim();
@@ -2979,7 +2967,7 @@ export async function importFromSheets(
       if (!row || row.length === 0 || !row[0]) continue;
 
       const householdId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
-      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'damt-main';
+      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'temple-main';
 
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
         templeId = String(row[templeIdColIdx]).trim();
@@ -3071,7 +3059,7 @@ export async function importFromSheets(
       const householdId = String((hIdColIdx !== -1 ? row[hIdColIdx] : '') || '').trim();
       const serviceId = String((serviceIdColIdx !== -1 ? row[serviceIdColIdx] : '') || '').trim();
 
-      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'damt-main';
+      let templeId = (householdId && householdTempleMap.get(householdId)) || options?.defaultTempleId || 'temple-main';
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
         templeId = String(row[templeIdColIdx]).trim();
       } else if (templeColIdx !== -1 && row[templeColIdx]) {
@@ -3152,12 +3140,12 @@ export async function importFromSheets(
 
       const householdId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
       const hhTempleId = householdId ? householdTempleMap.get(householdId) : undefined;
-      let templeId = hhTempleId || options?.defaultTempleId || 'damt-main';
+      let templeId = hhTempleId || options?.defaultTempleId || 'temple-main';
 
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
         const rawTempleId = String(row[templeIdColIdx]).trim();
         // もし世帯が兼務寺院なのにシートのtempleIdが本寺（temple-main等）になっている場合は世帯の所属寺院を優先
-        if (hhTempleId && hhTempleId !== 'damt-main' && hhTempleId !== 'damt-main' && (rawTempleId === 'damt-main' || rawTempleId === 'damt-main' || rawTempleId === options?.defaultTempleId)) {
+        if (hhTempleId && hhTempleId !== 'temple-main' && (rawTempleId === 'temple-main' || rawTempleId === options?.defaultTempleId)) {
           templeId = hhTempleId;
         } else {
           templeId = rawTempleId;
@@ -3257,7 +3245,7 @@ export async function importFromSheets(
       const { headers: tHeaders, rows: tRows } = getSheetDataByName(sheetName);
       const parsed = parseMasterFromRows(tHeaders, tRows);
       if (parsed) {
-        let matchedId = 'damt-main';
+        let matchedId = 'temple-main';
         for (const [name, id] of templeNameToIdMap.entries()) {
           if (tName.includes(name) || name.includes(tName)) {
             matchedId = id;
@@ -3271,7 +3259,7 @@ export async function importFromSheets(
 
   if (!masterOptions) {
     const mainKey = Object.keys(templeMasterOptionsMap)[0];
-    masterOptions = templeMasterOptionsMap['damt-main'] || templeMasterOptionsMap['damt-main'] || (mainKey ? templeMasterOptionsMap[mainKey] : undefined);
+    masterOptions = templeMasterOptionsMap['temple-main'] || (mainKey ? templeMasterOptionsMap[mainKey] : undefined);
   }
 
   // 10. Parse Notice Templates (案内文テンプレート)
@@ -3389,7 +3377,7 @@ export async function importFromSheets(
         name,
         furigana,
         role,
-        templeId: rawTempleId || (temples && temples[0]?.id ? temples[0].id : 'damt-main'),
+        templeId: rawTempleId || (temples && temples[0]?.id ? temples[0].id : 'temple-main'),
         templeName: templeName || temples?.find((t) => t.id === rawTempleId)?.name || '',
         phone,
         email,
