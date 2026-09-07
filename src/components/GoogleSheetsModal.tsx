@@ -58,6 +58,7 @@ interface GoogleSheetsModalProps {
   onPullFromSheets?: () => Promise<void>;
   onSyncWithGoogleDrive?: (token: string, explicitSheetId?: string, isCleanImport?: boolean) => Promise<{ success: boolean; count: number }>;
   onCleanWriteToSheets?: (token: string, explicitSheetId?: string) => Promise<{ success: boolean; count: number; sheetInfo?: { id: string; url: string } }>;
+  onResetAndCleanImport?: (token: string, sheetId: string) => Promise<{ success: boolean; count: number }>;
   onDisconnect?: () => void | Promise<void>;
   onExportExcel?: (targetTempleId?: string | 'ALL') => void;
   onImportExcel?: (file: File, targetTempleId?: string | 'ALL') => Promise<{ success: boolean; message: string } | void> | void;
@@ -79,6 +80,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   onPullFromSheets,
   onSyncWithGoogleDrive,
   onCleanWriteToSheets,
+  onResetAndCleanImport,
   onDisconnect,
   onExportExcel,
   onImportExcel,
@@ -302,16 +304,62 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   // 端末データを初期化して読込 (端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込み)
   const handleExecuteResetAndLogin = async () => {
     setShowResetAndLoginModal(false);
-    setStatusMessage({ type: 'loading', text: '端末データを初期化中...' });
+    setLoading(true);
+    setStatusMessage({ type: 'loading', text: 'Googleアカウント認証・連携準備中...' });
     try {
-      if (onResetDatabase) {
-        await onResetDatabase();
+      let token = await getAccessToken();
+      let currentUser = getCurrentUser();
+      if (!token || !currentUser) {
+        const res = await googleSignIn();
+        if (!res) {
+          setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+          setLoading(false);
+          return;
+        }
+        token = res.accessToken;
+        currentUser = res.user;
+        setUser(res.user);
       }
-      // 初期化後にGoogleアカウント認証・初期化読込を開始
-      await handleLogin(true /* isCleanImport */);
+
+      setStatusMessage({ type: 'loading', text: 'Googleスプレッドシートを確認中...' });
+      const sheet = await findOrCreateSpreadsheet(token, false, {
+        preferredSheetId: spreadsheetInfo?.id,
+        onProgress: (text) => setStatusMessage({ type: 'loading', text }),
+      });
+      setSpreadsheetInfo(sheet);
+      saveJsonState('temple_google_sheet_info', sheet);
+      loadPermissions(sheet.id);
+
+      setStatusMessage({ type: 'loading', text: '端末キャッシュ・操作履歴を消去し、Googleシートから読込中...' });
+      if (onResetAndCleanImport) {
+        const res = await onResetAndCleanImport(token, sheet.id);
+        setStatusMessage({
+          type: 'success',
+          text: `端末データ初期化・読込完了: 端末キャッシュ・操作履歴を消去し、Googleシートからデータ（${res?.count ?? 0}件）を取り込みました。`,
+        });
+      } else if (onSyncWithGoogleDrive) {
+        if (onResetDatabase) {
+          await onResetDatabase();
+        }
+        const res = await onSyncWithGoogleDrive(token, sheet.id, true /* isCleanImport */);
+        setStatusMessage({
+          type: 'success',
+          text: `端末データ初期化・読込完了: Googleシートからデータ（${res?.count ?? 0}件）を取り込みました。`,
+        });
+      }
     } catch (err: any) {
-      console.error(err);
-      setStatusMessage({ type: 'error', text: `読込エラー: ${err.message || '初期化読込に失敗しました。'}` });
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.includes('closed-by-user') ||
+        err?.message?.includes('キャンセル')
+      ) {
+        setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+        return;
+      }
+      console.error('Reset and clean import error:', err);
+      setStatusMessage({ type: 'error', text: `読込エラー: ${err?.message || '初期化読込に失敗しました。'}` });
+    } finally {
       setLoading(false);
     }
   };
@@ -1434,7 +1482,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   <span>端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込みます。</span>
                 </p>
                 <p className="text-[11px] leading-relaxed text-[#333333]">
-                  この端末に保存されているデータ（初期ダミーデータ、檀家名簿、過去帳等）を<strong>一旦すべて消去して空の状態</strong>にした上で、Googleアカウントにログインし、Googleシート「寺院管理・檀家過去帳データ」を取り込みます。
+                  この端末に保存されているデータ（端末キャッシュ、操作履歴、檀家名簿、過去帳等）を<strong>すべて消去</strong>した上で、Googleシートのデータを読み込みます。Googleシート側に端末側のデータは書き込まれません。
                 </p>
               </div>
 
@@ -1480,12 +1528,13 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="bg-sky-50 border border-sky-200 p-3.5 space-y-2 rounded-xs text-sky-950">
-                <p className="font-bold flex items-center gap-1.5 text-sky-900 text-xs">
-                  <AlertTriangle className="w-4 h-4 text-sky-600 shrink-0" />
-                  <span>Googleドライブ上の既存ファイルを消去し、新たにファイルを作成して端末データを書き込みます。</span>
+              {/* 警告表示 */}
+              <div className="bg-amber-50 border-2 border-amber-500 p-3.5 space-y-2 rounded-xs text-amber-950 shadow-xs">
+                <p className="font-bold flex items-start gap-1.5 text-amber-900 text-xs leading-snug">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>書込中に不具合があった場合は大切なデータが失われますので、この操作を行う時はGoogleシートのバックアップを推奨します</span>
                 </p>
-                <p className="text-[11px] leading-relaxed text-[#333333]">
+                <p className="text-[11px] leading-relaxed text-[#444444]">
                   Googleドライブ上の既存の「寺院管理・檀家過去帳データ」ファイルを<strong>完全に消去</strong>した上で、新たに「寺院管理・檀家過去帳データ」スプレッドシートを新規作成し、現在この端末にある最新データ（檀家名簿・過去帳・法事予約・出納帳・マスタ設定等）を全件書き込みます。
                 </p>
               </div>
@@ -1513,7 +1562,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 className="w-full sm:w-auto px-5 py-2 bg-sky-700 hover:bg-sky-800 text-white text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer border border-sky-900 text-center"
               >
                 <UploadCloud className="w-4 h-4" />
-                <span>Googleシートを初期化して書込</span>
+                <span>書込</span>
               </button>
             </div>
           </div>

@@ -156,6 +156,14 @@ export function useAppHistory({ getCurrentSnapshot, restoreSnapshot, onUndoReque
   const undoDescription = undoStack.length > 0 ? undoStack[undoStack.length - 1].description : undefined;
   const redoDescription = redoStack.length > 0 ? redoStack[redoStack.length - 1].description : undefined;
 
+  /**
+   * Completely clears the undo and redo history stacks
+   */
+  const clearHistory = useCallback(() => {
+    setUndoStack([]);
+    setRedoStack([]);
+  }, []);
+
   return {
     canUndo,
     canRedo,
@@ -164,5 +172,6 @@ export function useAppHistory({ getCurrentSnapshot, restoreSnapshot, onUndoReque
     undo,
     redo,
     recordHistory,
+    clearHistory,
   };
 }

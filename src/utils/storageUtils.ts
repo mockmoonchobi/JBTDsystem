@@ -352,3 +352,78 @@ export function loadJsonState<T>(key: string, defaultValue: T): T {
     return defaultValue;
   }
 }
+
+/**
+ * Clears the in-memory state cache
+ */
+export function clearMemoryStateCache(): void {
+  memoryStateCache.clear();
+}
+
+export const ALL_TEMPLE_STORAGE_KEYS = [
+  'temple_households',
+  'temple_past_records',
+  'temple_transactions',
+  'temple_memorial_services',
+  'temple_todos',
+  'temple_family_members',
+  'temple_priests',
+  'temple_info',
+  'temple_profiles',
+  'temple_profiles_list',
+  'temple_master_options',
+  'temple_master_options_map',
+  'temple_notice_templates',
+  'temple_batch_accounting_data',
+  'temple_batch_accounting_config',
+  'temple_batch_accounting_entries',
+  'temple_excluded_households',
+  'temple_selected_print_ids',
+  'temple_deleted_records_log',
+  'temple_safety_snapshot',
+  'temple_backup_before_sync',
+  'temple_google_sheet_last_sync',
+  'active_temple_id',
+  'household_sort_key',
+  'household_sort_order',
+];
+
+/**
+ * Completely clears all local application datasets, snapshots, and caches from
+ * localStorage, IndexedDB, and in-memory cache without clearing Firebase auth tokens.
+ */
+export async function clearAllTerminalCache(options?: { preserveKeys?: string[] }): Promise<void> {
+  const preserve = new Set(options?.preserveKeys || []);
+
+  // 1. Clear in-memory cache
+  memoryStateCache.clear();
+
+  // 2. Clear IndexedDB completely
+  try {
+    await idbClear();
+  } catch (e) {
+    console.warn('[clearAllTerminalCache] IDB clear warning:', e);
+  }
+
+  // 3. Clear localStorage items for all app keys
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      ALL_TEMPLE_STORAGE_KEYS.forEach((key) => {
+        if (!preserve.has(key)) {
+          window.localStorage.removeItem(key);
+        }
+      });
+      // Also clean up any dynamic keys prefixed with 'temple_' or 'batch_'
+      for (let i = window.localStorage.length - 1; i >= 0; i--) {
+        const k = window.localStorage.key(i);
+        if (k && !preserve.has(k)) {
+          if (k.startsWith('temple_') || k.startsWith('batch_')) {
+            window.localStorage.removeItem(k);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[clearAllTerminalCache] localStorage clear warning:', e);
+  }
+}

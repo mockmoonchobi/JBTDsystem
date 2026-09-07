@@ -53,7 +53,9 @@ import {
   idbGet,
   idbSet,
   idbRemove,
-  idbClear
+  idbClear,
+  clearAllTerminalCache,
+  clearMemoryStateCache
 } from './utils/storageUtils';
 
 import {
@@ -528,7 +530,7 @@ export default function App() {
   const handleRequestUndoRef = useRef<() => void>(() => {});
   const handleRequestRedoRef = useRef<() => void>(() => {});
 
-  const { canUndo, canRedo, undoDescription, redoDescription, undo, redo, recordHistory } = useAppHistory({
+  const { canUndo, canRedo, undoDescription, redoDescription, undo, redo, recordHistory, clearHistory } = useAppHistory({
     getCurrentSnapshot,
     restoreSnapshot,
     onUndoRequest: () => handleRequestUndoRef.current(),
@@ -994,7 +996,10 @@ export default function App() {
     }
   };
 
-  // ④ Googleシートとデータ連携（Googleシートと連携）
+  // ④ Googleシートとデータ連携（起動時連携）
+  // ユーザー指示: アプリ起動時にGoogleシートとデータ連携で立ち上げる時は、
+  // 端末側のキャッシュは操作履歴も含めてすべて消去して、Googleシートのデータを読み込む。
+  // Googleシートに端末側のデータを書き込まない。
   const handleStartWithGoogleSheets = async () => {
     setIsStartupLoading(true);
     setStartupLoadingMsg('Googleアカウントでログイン中...');
@@ -1004,7 +1009,7 @@ export default function App() {
         return;
       }
 
-      setStartupLoadingMsg('Googleスプレッドシートを確認・連携中...');
+      setStartupLoadingMsg('Googleスプレッドシートを確認・接続中...');
       const savedInfo = safeStorage.getItem('temple_google_sheet_info');
       let preferredSheetId: string | undefined = staffInviteSheetId || undefined;
       if (!preferredSheetId && savedInfo) {
@@ -1017,14 +1022,76 @@ export default function App() {
         preferredSheetId,
         onProgress: (msg) => setStartupLoadingMsg(msg),
       });
+
+      // 端末側のキャッシュ・操作履歴をすべて消去
+      setStartupLoadingMsg('端末のキャッシュ・操作履歴を消去中...');
+      isImportingRef.current = true;
+      isSyncInProgressRef.current = true;
+
+      // 1. 操作履歴（Undo/Redoスタック）を完全消去
+      clearHistory();
+
+      // 2. 操作・削除履歴（Audit/Deletion Logs）を完全消去
+      clearDeletedRecordsLog();
+      setDeletedRecords([]);
+
+      // 3. 一括会計キャッシュを消去
+      clearBatchAccountingData();
+      clearBatchAccountingEntries();
+      setBatchAccountingData(null);
+
+      // 4. 端末ストレージ（IndexedDB & localStorage の全アプリデータ）を完全消去
+      await clearAllTerminalCache({
+        preserveKeys: ['temple_google_sheet_info']
+      });
+
+      // 5. 接続先スプレッドシート情報を保存
       saveJsonState('temple_google_sheet_info', sheet);
 
-      setStartupLoadingMsg('Googleシートとデータを同期中...');
-      await syncWithGoogleDrive(res.accessToken, sheet.id);
+      // 6. ReactメモリStateを完全に空にリセット
+      setHouseholds([]);
+      setFamilyMembers([]);
+      setPastRecords([]);
+      setMemorialServices([]);
+      setTempleTodos([]);
+      setTransactions([]);
+      setPriests([]);
+      setNoticeTemplates({ higan: '', niibon: '' });
+      setSelectedIdsForPrint([]);
+      setExcludedHouseholdIds([]);
+      setTempleInfo(EMPTY_TEMPLE_INFO);
+      setTemples(EMPTY_TEMPLES);
+      setMasterOptions(EMPTY_MASTER_OPTIONS);
+      setTempleMasterOptionsMap({});
+
+      // 7. syncStateRef を完全に空にリセット
+      syncStateRef.current = {
+        templeInfo: EMPTY_TEMPLE_INFO,
+        temples: EMPTY_TEMPLES,
+        households: [],
+        pastRecords: [],
+        memorialServices: [],
+        transactions: [],
+        familyMembers: [],
+        masterOptions: EMPTY_MASTER_OPTIONS,
+        noticeTemplates: { higan: '', niibon: '' },
+        templeTodos: [],
+        templeMasterOptionsMap: {},
+        priests: [],
+        batchAccountingData: null,
+        deletedRecords: [],
+      };
+
+      setStartupLoadingMsg('Googleシートからデータを読み込み中...');
+      // isCleanImport: true を渡してGoogleシートからデータを読込（端末データ書き込みなし）
+      await syncWithGoogleDrive(res.accessToken, sheet.id, true /* isCleanImport */);
+
+      // 操作履歴（Undo/Redoスタック）を空にして新規同期状態を維持
+      clearHistory();
 
       setIsStartupLauncherOpen(false);
+      isStartupLauncherOpenRef.current = false;
       setIsInitialLoaded(true);
-      recordHistory(`Googleシート連携（${res.user.email}）で起動`);
     } catch (err: any) {
       if (
         err?.code === 'auth/popup-closed-by-user' ||
@@ -1049,6 +1116,7 @@ export default function App() {
       throw new Error(`Googleシートとの連携に失敗しました: ${err?.message || err}`);
     } finally {
       setIsStartupLoading(false);
+      isSyncInProgressRef.current = false;
     }
   };
 
@@ -1230,6 +1298,7 @@ export default function App() {
           templeMasterOptionsMap: {},
           noticeTemplates: { higan: '', niibon: '' },
           priests: [],
+          deletedRecords: [],
         }
       : {
           templeInfo: syncStateRef.current.templeInfo || templeInfo,
@@ -1345,12 +1414,26 @@ export default function App() {
       }
     }
 
-    // 13. Operation / Deletion Logs (Bidirectional Merge with Remote Sheet)
+    // 13. Operation / Deletion Logs (Direct from remote if clean, or bidirectional merge)
     if (remoteData.deletedRecords && remoteData.deletedRecords.length > 0) {
-      const mergedLogs = mergeDeletedRecordsLogs(loadDeletedRecordsLog(), remoteData.deletedRecords);
+      const mergedLogs = isClean
+        ? remoteData.deletedRecords
+        : mergeDeletedRecordsLogs(loadDeletedRecordsLog(), remoteData.deletedRecords);
       saveDeletedRecordsLog(mergedLogs);
       setDeletedRecords(mergedLogs);
       syncStateRef.current.deletedRecords = mergedLogs;
+    } else if (isClean) {
+      clearDeletedRecordsLog();
+      setDeletedRecords([]);
+      syncStateRef.current.deletedRecords = [];
+    }
+
+    if (isClean) {
+      const mainTemple = (mergeResult.temples && mergeResult.temples.find((t) => t.isMain)) || mergeResult.temples?.[0];
+      if (mainTemple?.id) {
+        setActiveTempleId(mainTemple.id);
+        safeStorage.setItem('active_temple_id', mainTemple.id);
+      }
     }
 
     // Set a safety timeout to release importing flag so subsequent user edits sync properly
@@ -1485,14 +1568,29 @@ export default function App() {
 
         const remoteCount = remoteData.totalRecordsCount;
 
-        // ★ 明示的な初期化読込指定（共有スプレッドシートへの強制リセット切替など）の場合のみ:
-        // 端末上のデータを初期化してからデータを読込
+        // ★ 明示的な初期化読込指定（共有スプレッドシートへの強制リセット切替・起動時連携など）の場合のみ:
+        // 端末上のデータを初期化してからデータを読込（Googleシート側への書き込みは一切行わない）
         if (isCleanImport) {
           isImportingRef.current = true;
           applyRemoteSheetsDataRef.current(remoteData, true /* isClean */);
           const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
           setLastSyncTime(nowTime);
           safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
+          lastSyncedSignatureRef.current = computePayloadSignature({
+            templeInfo: syncStateRef.current.templeInfo,
+            households: syncStateRef.current.households,
+            pastRecords: syncStateRef.current.pastRecords,
+            memorialServices: syncStateRef.current.memorialServices,
+            transactions: syncStateRef.current.transactions,
+            masterOptions: syncStateRef.current.masterOptions,
+            noticeTemplates: syncStateRef.current.noticeTemplates,
+            templeTodos: syncStateRef.current.templeTodos,
+            temples: syncStateRef.current.temples,
+            templeMasterOptionsMap: syncStateRef.current.templeMasterOptionsMap,
+            priests: syncStateRef.current.priests,
+            batchAccountingData: syncStateRef.current.batchAccountingData,
+            deletedRecords: syncStateRef.current.deletedRecords,
+          });
           setSyncStatus('synced');
           setSyncErrorMessage(null);
           return { success: true, count: remoteCount };
@@ -1751,6 +1849,82 @@ export default function App() {
       }, 1000);
     }
   }, []);
+
+  // 端末データを初期化して読込 (端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込み)
+  // アプリ起動時のデータ連携と同様、端末側のキャッシュ・操作履歴・削除履歴を完全消去し、
+  // Googleシートからデータを読み込む。Googleシート側には端末側のデータを書き込まない。
+  const handleResetAndCleanImportFromSheets = useCallback(async (token: string, sheetId: string) => {
+    isImportingRef.current = true;
+    isSyncInProgressRef.current = true;
+    setSyncStatus('syncing');
+
+    try {
+      // 1. 操作履歴（Undo/Redoスタック）を完全消去
+      clearHistory();
+
+      // 2. 操作・削除履歴（Audit/Deletion Logs）を完全消去
+      clearDeletedRecordsLog();
+      setDeletedRecords([]);
+
+      // 3. 一括会計キャッシュを消去
+      clearBatchAccountingData();
+      clearBatchAccountingEntries();
+      setBatchAccountingData(null);
+
+      // 4. 端末ストレージ（IndexedDB & localStorage の全アプリデータ）を完全消去
+      await clearAllTerminalCache({
+        preserveKeys: ['temple_google_sheet_info']
+      });
+
+      // 5. 接続先スプレッドシート情報を保存
+      const sheet = { id: sheetId, url: `https://docs.google.com/spreadsheets/d/${sheetId}`, isExisting: true };
+      saveJsonState('temple_google_sheet_info', sheet);
+
+      // 6. ReactメモリStateを完全に空にリセット
+      setHouseholds([]);
+      setFamilyMembers([]);
+      setPastRecords([]);
+      setMemorialServices([]);
+      setTempleTodos([]);
+      setTransactions([]);
+      setPriests([]);
+      setNoticeTemplates({ higan: '', niibon: '' });
+      setSelectedIdsForPrint([]);
+      setExcludedHouseholdIds([]);
+      setTempleInfo(EMPTY_TEMPLE_INFO);
+      setTemples(EMPTY_TEMPLES);
+      setMasterOptions(EMPTY_MASTER_OPTIONS);
+      setTempleMasterOptionsMap({});
+
+      // 7. syncStateRef を完全に空にリセット
+      syncStateRef.current = {
+        templeInfo: EMPTY_TEMPLE_INFO,
+        temples: EMPTY_TEMPLES,
+        households: [],
+        pastRecords: [],
+        memorialServices: [],
+        transactions: [],
+        familyMembers: [],
+        masterOptions: EMPTY_MASTER_OPTIONS,
+        noticeTemplates: { higan: '', niibon: '' },
+        templeTodos: [],
+        templeMasterOptionsMap: {},
+        priests: [],
+        batchAccountingData: null,
+        deletedRecords: [],
+      };
+
+      // 8. Googleシートからデータを読み込み（isCleanImport: true でGoogleシート側への書き込みは一切行わない）
+      const result = await syncWithGoogleDrive(token, sheet.id, true /* isCleanImport */);
+
+      // 操作履歴（Undo/Redoスタック）を空にして新規同期状態を維持
+      clearHistory();
+
+      return result;
+    } finally {
+      isSyncInProgressRef.current = false;
+    }
+  }, [clearHistory, syncWithGoogleDrive]);
 
   // Clean write specific tables to Google Sheets (clears target sheet rows and overwrites with current local terminal records)
   const cleanWriteSpecificTablesToGoogleSheets = useCallback(async (targetTables: string[]) => {
@@ -3382,7 +3556,19 @@ export default function App() {
       // 2. Clear localStorage
       safeStorage.clear();
 
-      // 3. Reset states to empty/default
+      // 3. Clear Undo/Redo history
+      clearHistory();
+
+      // 4. Clear deleted records log
+      clearDeletedRecordsLog();
+      setDeletedRecords([]);
+
+      // 5. Clear batch accounting cache
+      clearBatchAccountingData();
+      clearBatchAccountingEntries();
+      setBatchAccountingData(null);
+
+      // 6. Reset states to empty/default
       const defaultTemple: TempleProfile = {
         ...EMPTY_TEMPLE_INFO,
         id: 'temple-main',
@@ -3617,10 +3803,13 @@ export default function App() {
           onPullFromSheets={handlePullFromSheets}
           onSyncWithGoogleDrive={syncWithGoogleDrive}
           onCleanWriteToSheets={cleanWriteToGoogleSheets}
+          onResetAndCleanImport={handleResetAndCleanImportFromSheets}
+          onDisconnect={handleDisconnectGoogle}
           onExportExcel={isStaffMode ? undefined : handleExportExcel}
           onImportExcel={isStaffMode ? undefined : handleImportExcel}
           onOpenImportModal={isStaffMode ? undefined : () => handleOpenImportModal('household')}
           onRestoreBackup={isStaffMode ? undefined : handleRestoreFromBackup}
+          onResetDatabase={handleResetDatabase}
           temples={temples}
           activeTempleId={activeTempleId}
           isStaffMode={isStaffMode}
@@ -3925,6 +4114,7 @@ export default function App() {
         onPullFromSheets={handlePullFromSheets}
         onSyncWithGoogleDrive={syncWithGoogleDrive}
         onCleanWriteToSheets={cleanWriteToGoogleSheets}
+        onResetAndCleanImport={handleResetAndCleanImportFromSheets}
         onDisconnect={handleDisconnectGoogle}
         onExportExcel={handleExportExcel}
         onImportExcel={handleImportExcel}

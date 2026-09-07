@@ -620,7 +620,7 @@ export function mergeDatasetsWithAuditPriority(
   remoteData: SheetsImportResult
 ): MergedDatasetResult {
   // 0. Merge local and remote deleted records logs (Tombstones) to build an authoritative deletion map
-  const localDeleted = localState.deletedRecords || loadDeletedRecordsLog();
+  const localDeleted = Array.isArray(localState.deletedRecords) ? localState.deletedRecords : loadDeletedRecordsLog();
   const remoteDeleted = remoteData.deletedRecords || [];
   const mergedDeletedRecords = mergeDeletedRecordsLogs(localDeleted, remoteDeleted);
   const deletedMap = buildDeletedTimestampMap(mergedDeletedRecords);
