@@ -53,7 +53,6 @@ interface MobileAppProps {
   lastSyncTime?: string | null;
   onTriggerManualSync?: () => void;
   isStaffMode?: boolean;
-  onUpdatePriest?: (priest: Priest) => void;
 }
 
 export const MobileApp: React.FC<MobileAppProps> = ({
@@ -86,7 +85,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   lastSyncTime,
   onTriggerManualSync,
   isStaffMode = false,
-  onUpdatePriest,
 }) => {
   const [activeTab, setActiveTab] = useState<MobileTab>('households');
   const [scheduleSubTab, setScheduleSubTab] = useState<'calendar' | 'todos' | 'tanagyo'>('calendar');
@@ -307,7 +305,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 priests={priests}
                 pastRecords={effectiveAllPastRecords}
                 isStaffMode={isStaffMode}
-                onUpdatePriest={onUpdatePriest}
               />
             )}
           </div>

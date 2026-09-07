@@ -17,12 +17,10 @@ import {
   Info,
   Check,
   ChevronDown,
-  X,
-  Mail
+  X
 } from 'lucide-react';
 import { getTanagyoRouteUrl } from '../../utils/calendarUtils';
 import { getHouseholdNiibonStatus } from '../../utils/memorialCalculator';
-import { TanagyoEmailModal } from '../TanagyoEmailModal';
 
 interface MobileTanagyoViewProps {
   households: Household[];
@@ -31,7 +29,6 @@ interface MobileTanagyoViewProps {
   priests?: Priest[];
   pastRecords?: PastRecord[];
   isStaffMode?: boolean;
-  onUpdatePriest?: (priest: Priest) => void;
 }
 
 interface DateSlotGroup {
@@ -57,22 +54,7 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
   priests = [],
   pastRecords = [],
   isStaffMode = false,
-  onUpdatePriest,
 }) => {
-  // メール送信モーダル用ステート
-  const [emailModalPriestData, setEmailModalPriestData] = useState<{
-    priestName: string;
-    priestRole?: string;
-    dates: {
-      date: string;
-      slots: {
-        timeSlot: string;
-        households: Household[];
-      }[];
-    }[];
-  } | null>(null);
-  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
-
   // 1. 棚経対象の檀信徒を抽出
   const tanagyoHouseholds = useMemo(() => {
     return households.filter((h) => !!h.tanagyoMonthlyVisit);
@@ -436,67 +418,19 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
             <div key={pGroup.priestName} className="space-y-4">
               {/* 全員表示時のみ、僧侶ごとのセクション見出しを表示 */}
               {selectedPriestFilter === 'ALL' && (
-                <div className="bg-[#1F1F1F] text-white px-3.5 py-2 rounded-xs flex items-center justify-between border-l-4 border-amber-500 shadow-xs gap-2">
-                  <div className="flex items-center gap-2 font-bold text-sm min-w-0">
-                    <User className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="text-[#F5F2EB] truncate">{pGroup.priestName} 師 の巡回計画</span>
+                <div className="bg-[#1F1F1F] text-white px-3.5 py-2 rounded-xs flex items-center justify-between border-l-4 border-amber-500 shadow-xs">
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <User className="w-4 h-4 text-amber-400" />
+                    <span className="text-[#F5F2EB]">{pGroup.priestName} 師 の巡回計画</span>
                     {pGroup.priestRole && (
-                      <span className="text-[10px] text-gray-400 font-normal shrink-0">
+                      <span className="text-[10px] text-gray-400 font-normal">
                         ({pGroup.priestRole})
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-bold text-amber-400">
-                      計 {pGroup.totalCount} 軒
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEmailModalPriestData({
-                          priestName: pGroup.priestName,
-                          priestRole: pGroup.priestRole,
-                          dates: pGroup.dateGroups.map((d) => ({
-                            date: d.date,
-                            slots: d.slots,
-                          })),
-                        });
-                        setIsEmailModalOpen(true);
-                      }}
-                      className="px-2 py-1 bg-[#8C2D19] hover:bg-[#732414] text-white text-[11px] font-bold rounded-xs flex items-center gap-1 cursor-pointer active:opacity-80"
-                      title="この僧侶へ巡回予定メールを送信"
-                    >
-                      <Mail className="w-3 h-3" />
-                      <span>メール</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* 単一僧侶選択時のメール送信ボタンバー */}
-              {selectedPriestFilter !== 'ALL' && (
-                <div className="bg-[#1F1F1F] text-white px-3 py-2 rounded-xs flex items-center justify-between shadow-xs border border-[#3A3A3A]">
-                  <div className="text-xs font-bold text-gray-300">
-                    担当: <span className="text-[#D4AF37]">{pGroup.priestName} 師</span> （全{pGroup.totalCount}軒）
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmailModalPriestData({
-                        priestName: pGroup.priestName,
-                        priestRole: pGroup.priestRole,
-                        dates: pGroup.dateGroups.map((d) => ({
-                          date: d.date,
-                          slots: d.slots,
-                        })),
-                      });
-                      setIsEmailModalOpen(true);
-                    }}
-                    className="px-2.5 py-1 bg-[#8C2D19] hover:bg-[#732414] text-white text-xs font-bold rounded-xs flex items-center gap-1.5 cursor-pointer active:opacity-80 shadow-xs"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>メール送信 (HTML表)</span>
-                  </button>
+                  <span className="text-xs font-bold text-amber-400">
+                    計 {pGroup.totalCount} 軒
+                  </span>
                 </div>
               )}
 
@@ -687,25 +621,6 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
           ))
         )}
       </div>
-
-      {/* 担当僧侶へ巡回計画メール送信モーダル */}
-      {isEmailModalOpen && emailModalPriestData && (
-        <TanagyoEmailModal
-          isOpen={isEmailModalOpen}
-          onClose={() => {
-            setIsEmailModalOpen(false);
-            setEmailModalPriestData(null);
-          }}
-          priestName={emailModalPriestData.priestName}
-          priestRole={emailModalPriestData.priestRole}
-          dates={emailModalPriestData.dates}
-          templeInfo={templeInfo}
-          temples={temples}
-          pastRecords={pastRecords}
-          priests={priests}
-          onUpdatePriest={onUpdatePriest}
-        />
-      )}
     </div>
   );
 };

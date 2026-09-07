@@ -632,11 +632,6 @@ export default function App() {
     cleanWriteSpecificTablesToGoogleSheets(['登録僧侶一覧']);
   };
 
-  const handleUpdatePriest = (updatedPriest: Priest) => {
-    const nextPriests = priests.map((p) => (p.id === updatedPriest.id ? updatedPriest : p));
-    handleSavePriests(nextPriests);
-  };
-
   // Cross-tab states for Print Engine & List Sorting / Excluding
   const [selectedIdsForPrint, setSelectedIdsForPrint] = useState<string[]>([]);
   const [customPrintMessage, setCustomPrintMessage] = useState<string>('');
@@ -3928,7 +3923,6 @@ export default function App() {
           lastSyncTime={lastSyncTime}
           onTriggerManualSync={handleManualSync}
           isStaffMode={isStaffMode}
-          onUpdatePriest={handleUpdatePriest}
         />
 
         {/* Google Sheets Sync Modal available in mobile mode */}
@@ -4134,7 +4128,6 @@ export default function App() {
             onUpdateHousehold={handleSaveHousehold}
             onBatchUpdateHouseholds={handleBatchUpdateHouseholds}
             onNavigateToYearlyMilestones={handleNavigateToYearlyMilestones}
-            onUpdatePriest={handleUpdatePriest}
             onNavigateToPrintWithNotice={(householdId, noticeText) => {
               setSelectedIdsForPrint([householdId]);
               setCustomPrintMessage(noticeText);
