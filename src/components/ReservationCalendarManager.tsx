@@ -41,9 +41,11 @@ import {
   ChevronUp,
   ChevronDown,
   CalendarDays,
-  Settings2
+  Settings2,
+  Mail
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { TanagyoEmailModal } from './TanagyoEmailModal';
 import {
   MemorialService,
   Household,
@@ -1173,6 +1175,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   // 印刷プレビューモーダル用ステート
   const [printModalPriestData, setPrintModalPriestData] = useState<{
     priestName: string;
+    priestId?: string;
     priestRole?: string;
     priestTemple?: string;
     dates: {
@@ -1185,6 +1188,61 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       }[];
     }[];
   } | null>(null);
+
+  // 担当僧侶メール送信モーダル用ステート
+  const [emailModalPriestData, setEmailModalPriestData] = useState<{
+    priest: {
+      id?: string;
+      name: string;
+      role?: string;
+      email?: string;
+    };
+    dateGroups: {
+      date: string;
+      totalInDate: number;
+      slots: {
+        timeSlot: string;
+        households: Household[];
+      }[];
+    }[];
+    totalCount: number;
+  } | null>(null);
+
+  // 担当僧侶の巡回計画メール送信モーダルを開くヘルパー
+  const handleOpenEmailModalForPriest = (pData: {
+    priestName: string;
+    priestId?: string;
+    priestRole?: string;
+    dates: {
+      date: string;
+      slots: {
+        timeSlot: string;
+        households: Household[];
+      }[];
+    }[];
+  }) => {
+    const matched = priests.find((p) => p.name === pData.priestName || (pData.priestId && p.id === pData.priestId));
+    const dateGroups = pData.dates.map((d) => ({
+      date: d.date,
+      totalInDate: d.slots.reduce((sum, s) => sum + s.households.length, 0),
+      slots: d.slots.map((s) => ({
+        timeSlot: s.timeSlot,
+        households: s.households,
+      })),
+    }));
+    const totalCount = dateGroups.reduce((sum, d) => sum + d.totalInDate, 0);
+
+    setEmailModalPriestData({
+      priest: {
+        id: matched?.id || pData.priestId,
+        name: pData.priestName,
+        role: matched?.role || pData.priestRole,
+        email: matched?.email || '',
+      },
+      dateGroups,
+      totalCount,
+    });
+  };
 
   // 枠間振替モーダル用ステート
   const [transferModalHousehold, setTransferModalHousehold] = useState<Household | null>(null);
@@ -4438,15 +4496,27 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                         </div>
                       </div>
 
-                      {/* Print Route Button for this priest */}
-                      <button
-                        type="button"
-                        onClick={() => setPrintModalPriestData(pGroup)}
-                        className="px-3.5 py-2 bg-[#D4AF37] hover:bg-[#C29F2B] text-[#1A1A1A] font-black text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-                      >
-                        <Printer className="w-4 h-4" />
-                        <span>担当 {pGroup.priestName} の経路情報印刷</span>
-                      </button>
+                      {/* Print & Email Buttons for this priest */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEmailModalForPriest(pGroup)}
+                          className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/20 transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          title="スマホ版と同じ形式の巡回計画HTML表を担当僧侶へメール送信"
+                        >
+                          <Mail className="w-4 h-4 text-[#D4AF37]" />
+                          <span>巡回計画をメール送信</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPrintModalPriestData(pGroup)}
+                          className="px-3.5 py-2 bg-[#D4AF37] hover:bg-[#C29F2B] text-[#1A1A1A] font-black text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          <Printer className="w-4 h-4" />
+                          <span>担当 {pGroup.priestName} の経路情報印刷</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Dates & Slots */}
@@ -5000,6 +5070,19 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
               <div className="flex items-center space-x-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    if (printModalPriestData) {
+                      handleOpenEmailModalForPriest(printModalPriestData);
+                    }
+                  }}
+                  className="px-3 py-1 bg-white hover:bg-gray-100 text-gray-900 font-black text-xs transition-colors flex items-center gap-1 cursor-pointer border border-gray-300"
+                  title="スマホ版と同じHTML形式の巡回計画表をメール送信"
+                >
+                  <Mail className="w-3.5 h-3.5 text-blue-600" />
+                  <span>担当僧侶にメール送信</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => window.print()}
                   className="px-3 py-1 bg-[#D4AF37] text-[#1A1A1A] font-black text-xs hover:bg-[#C29F2B] transition-colors flex items-center gap-1 cursor-pointer"
                 >
@@ -5054,87 +5137,81 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                             {slot.timeSlot} （{slot.households.length} 軒）
                           </span>
                           <span className="text-[11px] text-gray-500 font-medium">
-                            ※1番目の施主宅から最後の施主宅まで順に巡回
+                            ※各住所のQRコードをスマホで読み取るとGoogleマップで直行ナビできます
                           </span>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row print:flex-row gap-3 items-start">
-                          {/* Households Table */}
-                          <div className="flex-1 overflow-x-auto w-full">
-                            <table className="w-full text-left text-xs print:text-[11px] border-collapse border border-gray-400">
-                              <thead>
-                                <tr className="bg-gray-100 text-gray-800 border-b border-gray-400">
-                                  <th className="p-1.5 print:p-1 text-center w-10 border-r border-gray-400">順</th>
-                                  <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">施主名</th>
-                                  <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">電話番号</th>
-                                  <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">訪問先住所</th>
-                                  <th className="p-1.5 print:p-1 font-bold text-center w-14">完了</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-300">
-                                {slot.households.map((h, hIdx) => {
-                                  const address = h.tanagyoAddress || h.address || '住所未登録';
-                                  const niibonStatus = getHouseholdNiibonStatus(pastRecords, h.id, templeInfo?.bonSeason || '8月盆');
-                                  return (
-                                    <tr key={h.id} className="hover:bg-gray-50">
-                                      <td className="p-1.5 print:p-1 text-center font-bold border-r border-gray-300">
-                                        {hIdx + 1}
-                                      </td>
-                                      <td className="p-1.5 print:p-1 font-bold border-r border-gray-300 whitespace-nowrap">
-                                        <div className="flex items-center gap-1">
-                                          <span>{h.familyHead} 様</span>
-                                          {niibonStatus.isCurrentYearNiibon && (
-                                            <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 rounded-xs print:border-gray-500">
-                                              {niibonStatus.currentYearLabel}
-                                            </span>
-                                          )}
-                                          {niibonStatus.isNextYearNiibon && (
-                                            <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-sky-50 text-sky-900 border border-sky-300 rounded-xs print:border-gray-500">
-                                              {niibonStatus.nextYearLabel}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </td>
-                                      <td className="p-1.5 print:p-1 text-gray-700 border-r border-gray-300 whitespace-nowrap">
-                                        {h.phone || h.mobile || '-'}
-                                      </td>
-                                      <td className="p-1.5 print:p-1 text-gray-800 border-r border-gray-300">
-                                        {address}
-                                      </td>
-                                      <td className="p-1.5 print:p-1 text-center">
-                                        <div className="w-4 h-4 border border-gray-500 mx-auto rounded-xs"></div>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
+                        {/* Households Table with Individual Address QR Codes */}
+                        <div className="overflow-x-auto w-full">
+                          <table className="w-full text-left text-xs print:text-[11px] border-collapse border border-gray-400">
+                            <thead>
+                              <tr className="bg-gray-100 text-gray-800 border-b border-gray-400">
+                                <th className="p-1.5 print:p-1 text-center w-10 border-r border-gray-400">順</th>
+                                <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">施主名</th>
+                                <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">電話番号</th>
+                                <th className="p-1.5 print:p-1 font-bold border-r border-gray-400">訪問先住所</th>
+                                <th className="p-1.5 print:p-1 font-bold text-center w-16 border-r border-gray-400">地図QR</th>
+                                <th className="p-1.5 print:p-1 font-bold text-center w-12">完了</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-300">
+                              {slot.households.map((h, hIdx) => {
+                                const address = h.tanagyoAddress || h.address || '住所未登録';
+                                const niibonStatus = getHouseholdNiibonStatus(pastRecords, h.id, templeInfo?.bonSeason || '8月盆');
+                                const hasValidAddress = Boolean(address && address !== '住所未登録');
+                                const singleMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
-                          {/* QR Code(s) for Google Map route */}
-                          {slot.households.length > 0 && slot.routeSegments && slot.routeSegments.length > 0 && (
-                            <div className="shrink-0 flex flex-wrap sm:flex-col print:flex-col gap-2 items-center justify-start">
-                              {slot.routeSegments.map((seg) => (
-                                <div
-                                  key={seg.segmentIndex}
-                                  className="w-32 print:w-28 flex flex-col items-center justify-center p-2 print:p-1.5 bg-gray-50 border border-gray-300 rounded-xs text-center space-y-1"
-                                >
-                                  <QRCodeSVG
-                                    value={seg.routeUrl}
-                                    size={80}
-                                    level="M"
-                                    includeMargin={false}
-                                  />
-                                  <div className="text-[10px] font-black text-gray-800 leading-tight">
-                                    {slot.routeSegments.length > 1 ? `区間${seg.segmentIndex + 1}: ${seg.label}` : `経路QR (${seg.label})`}
-                                  </div>
-                                  <div className="text-[9px] text-gray-500 truncate max-w-[105px]">
-                                    {seg.startFamilyHead}様〜{seg.endFamilyHead}様
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                                return (
+                                  <tr key={h.id} className="hover:bg-gray-50">
+                                    <td className="p-1.5 print:p-1 text-center font-bold border-r border-gray-300">
+                                      {hIdx + 1}
+                                    </td>
+                                    <td className="p-1.5 print:p-1 font-bold border-r border-gray-300 whitespace-nowrap">
+                                      <div className="flex items-center gap-1">
+                                        <span>{h.familyHead} 様</span>
+                                        {niibonStatus.isCurrentYearNiibon && (
+                                          <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 rounded-xs print:border-gray-500">
+                                            {niibonStatus.currentYearLabel}
+                                          </span>
+                                        )}
+                                        {niibonStatus.isNextYearNiibon && (
+                                          <span className="inline-flex items-center px-1.5 py-0.2 text-[10px] font-bold bg-sky-50 text-sky-900 border border-sky-300 rounded-xs print:border-gray-500">
+                                            {niibonStatus.nextYearLabel}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                    <td className="p-1.5 print:p-1 text-gray-700 border-r border-gray-300 whitespace-nowrap">
+                                      {h.phone || h.mobile || '-'}
+                                    </td>
+                                    <td className="p-1.5 print:p-1 text-gray-800 border-r border-gray-300">
+                                      {address}
+                                    </td>
+                                    <td className="p-1 print:p-0.5 text-center border-r border-gray-300">
+                                      {hasValidAddress ? (
+                                        <div className="flex flex-col items-center justify-center py-0.5">
+                                          <QRCodeSVG
+                                            value={singleMapUrl}
+                                            size={42}
+                                            level="M"
+                                            includeMargin={false}
+                                          />
+                                          <span className="text-[7.5px] text-gray-500 font-bold leading-none mt-0.5 print:text-[7px]">
+                                            地図QR
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-gray-400 text-[10px]">-</span>
+                                      )}
+                                    </td>
+                                    <td className="p-1.5 print:p-1 text-center">
+                                      <div className="w-4 h-4 border border-gray-500 mx-auto rounded-xs"></div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
                     ))}
@@ -6052,6 +6129,36 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL: 担当僧侶へ棚経巡回計画メール送信モーダル */}
+      {emailModalPriestData && (
+        <TanagyoEmailModal
+          isOpen={Boolean(emailModalPriestData)}
+          onClose={() => setEmailModalPriestData(null)}
+          priest={emailModalPriestData.priest}
+          dateGroups={emailModalPriestData.dateGroups}
+          totalCount={emailModalPriestData.totalCount}
+          templeInfo={templeInfo}
+          temples={temples}
+          pastRecords={pastRecords}
+          onUpdatePriestEmail={(priestId, email) => {
+            try {
+              const saved = safeStorage.getItem('temple_priests');
+              if (saved) {
+                const list = JSON.parse(saved);
+                if (Array.isArray(list)) {
+                  const updated = list.map((p: any) =>
+                    p.id === priestId ? { ...p, email } : p
+                  );
+                  safeStorage.setItem('temple_priests', JSON.stringify(updated));
+                }
+              }
+            } catch (err) {
+              console.error('Failed to update priest email in storage:', err);
+            }
+          }}
+        />
       )}
     </div>
   );

@@ -57,6 +57,7 @@ import {
   clearAllTerminalCache,
   clearMemoryStateCache
 } from './utils/storageUtils';
+import { isTutorialDataRemaining } from './utils/tutorialDetector';
 
 import {
   Household,
@@ -1596,6 +1597,14 @@ export default function App() {
           return { success: true, count: remoteCount };
         }
 
+        // ★ チュートリアルデータ混入の防止チェック（通常同期・自動同期で混入させない）
+        if (!isCleanImport && isTutorialDataRemaining(state.temples, state.templeInfo, state.households)) {
+          console.warn('Tutorial data detected on terminal. Sync blocked to prevent mixing with Google Sheets.');
+          setSyncStatus('error');
+          setSyncErrorMessage('端末内にチュートリアルデータが残っています。Googleシートへの混入を防ぐため同期を停止しました。「端末データを初期化して読込」を実行してください。');
+          return { success: false, count: 0 };
+        }
+
         // ★ データ保護と照会同期ロジック:
         // 1. リモートスプレッドシートにデータが1件以上存在する場合 -> 日時照会マージして即時反映＆Googleシート更新
         if (remoteCount > 0) {
@@ -2213,6 +2222,12 @@ export default function App() {
 
   // Manual Instant Sync Trigger (Bidirectional merge with audit priority & Push to Sheets)
   const handleManualSync = async () => {
+    // チュートリアルデータが残置している場合は直接同期を行わずモーダルを開く
+    if (isTutorialDataRemaining(temples, templeInfo, households)) {
+      setIsGoogleSheetsModalOpen(true);
+      return;
+    }
+
     const token = await getAccessToken();
     const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
     if (!token || !savedSheetInfo) {
@@ -3811,6 +3826,8 @@ export default function App() {
           onRestoreBackup={isStaffMode ? undefined : handleRestoreFromBackup}
           onResetDatabase={handleResetDatabase}
           temples={temples}
+          templeInfo={templeInfo}
+          households={households}
           activeTempleId={activeTempleId}
           isStaffMode={isStaffMode}
         />
@@ -4122,6 +4139,8 @@ export default function App() {
         onRestoreBackup={handleRestoreFromBackup}
         onResetDatabase={handleResetDatabase}
         temples={temples}
+        templeInfo={templeInfo}
+        households={households}
         activeTempleId={activeTempleId}
         isStaffMode={isStaffMode}
       />

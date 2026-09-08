@@ -17,8 +17,10 @@ import {
   Info,
   Check,
   ChevronDown,
-  X
+  X,
+  Mail
 } from 'lucide-react';
+import { TanagyoEmailModal } from '../TanagyoEmailModal';
 import { getTanagyoRouteUrl } from '../../utils/calendarUtils';
 import { getHouseholdNiibonStatus } from '../../utils/memorialCalculator';
 
@@ -150,6 +152,27 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
     const found = assignedPriests.find((p) => p.name === selectedPriestFilter);
     return found ? `${found.name} 師` : `${selectedPriestFilter} 師`;
   }, [selectedPriestFilter, assignedPriests, totalAssignedCount]);
+
+  // メール送信モーダルステート
+  const [emailModalData, setEmailModalData] = useState<{
+    priest: { id?: string; name: string; role?: string; email?: string };
+    dateGroups: DateSlotGroup[];
+    totalCount: number;
+  } | null>(null);
+
+  const handleOpenEmailModal = (pGroup: PriestGroup) => {
+    const matched = priests.find((p) => p.name === pGroup.priestName);
+    setEmailModalData({
+      priest: {
+        id: matched?.id,
+        name: pGroup.priestName,
+        role: pGroup.priestRole || matched?.role,
+        email: matched?.email || '',
+      },
+      dateGroups: pGroup.dateGroups,
+      totalCount: pGroup.totalCount,
+    });
+  };
 
   // 3. 巡回計画データのグループ構築（僧侶別・日程別・時間帯別）
   const priestGroups: PriestGroup[] = useMemo(() => {
@@ -416,8 +439,8 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
         ) : (
           priestGroups.map((pGroup) => (
             <div key={pGroup.priestName} className="space-y-4">
-              {/* 全員表示時のみ、僧侶ごとのセクション見出しを表示 */}
-              {selectedPriestFilter === 'ALL' && (
+              {/* 全員表示時の僧侶ごとのセクション見出し */}
+              {selectedPriestFilter === 'ALL' ? (
                 <div className="bg-[#1F1F1F] text-white px-3.5 py-2 rounded-xs flex items-center justify-between border-l-4 border-amber-500 shadow-xs">
                   <div className="flex items-center gap-2 font-bold text-sm">
                     <User className="w-4 h-4 text-amber-400" />
@@ -428,9 +451,34 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
                       </span>
                     )}
                   </div>
-                  <span className="text-xs font-bold text-amber-400">
-                    計 {pGroup.totalCount} 軒
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEmailModal(pGroup)}
+                      className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xs text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      title="この担当僧侶へ巡回計画表をメール送信"
+                    >
+                      <Mail className="w-3.5 h-3.5 text-amber-400" />
+                      <span>メール送信</span>
+                    </button>
+                    <span className="text-xs font-bold text-amber-400">
+                      計 {pGroup.totalCount} 軒
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white border border-[#D1CEC7] p-2.5 rounded-xs flex items-center justify-between shadow-2xs">
+                  <div className="text-xs text-gray-700">
+                    担当: <strong className="text-black font-black">{pGroup.priestName} 師</strong>（巡回予定: {pGroup.totalCount} 軒）
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEmailModal(pGroup)}
+                    className="px-2.5 py-1 bg-[#D4AF37] hover:bg-[#C29F2B] text-[#1A1A1A] font-black text-xs rounded-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>巡回計画をメール送信</span>
+                  </button>
                 </div>
               )}
 
@@ -621,6 +669,20 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
           ))
         )}
       </div>
+
+      {/* メール送信モーダル */}
+      {emailModalData && (
+        <TanagyoEmailModal
+          isOpen={Boolean(emailModalData)}
+          onClose={() => setEmailModalData(null)}
+          priest={emailModalData.priest}
+          dateGroups={emailModalData.dateGroups}
+          totalCount={emailModalData.totalCount}
+          templeInfo={templeInfo}
+          temples={temples}
+          pastRecords={pastRecords}
+        />
+      )}
     </div>
   );
 };

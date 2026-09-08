@@ -45,8 +45,9 @@ import {
   validateAndConnectSpreadsheet,
   SheetPermission 
 } from '../lib/googleSheets';
-import { TempleProfile } from '../types';
+import { TempleProfile, TempleInfo, Household } from '../types';
 import { safeStorage, loadJsonState, saveJsonState } from '../utils/storageUtils';
+import { isTutorialDataRemaining } from '../utils/tutorialDetector';
 
 interface GoogleSheetsModalProps {
   isOpen: boolean;
@@ -66,6 +67,8 @@ interface GoogleSheetsModalProps {
   onRestoreBackup?: () => Promise<{ success: boolean; message: string }>;
   onResetDatabase?: () => void | Promise<void>;
   temples?: TempleProfile[];
+  templeInfo?: TempleInfo;
+  households?: Household[];
   activeTempleId?: string;
   isStaffMode?: boolean;
 }
@@ -88,6 +91,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   onRestoreBackup,
   onResetDatabase,
   temples = [],
+  templeInfo,
+  households = [],
   activeTempleId = 'temple-main',
   isStaffMode = false,
 }) => {
@@ -125,6 +130,30 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [isResetDbAgreed, setIsResetDbAgreed] = useState<boolean>(false);
   const [showResetAndLoginModal, setShowResetAndLoginModal] = useState<boolean>(false);
   const [showCleanWriteModal, setShowCleanWriteModal] = useState<boolean>(false);
+  const [showTutorialWarningModal, setShowTutorialWarningModal] = useState<boolean>(false);
+
+  // チュートリアルデータ残置判定（寺院情報の一致、またはDA/D1かつ電話番号に●●●●混入）
+  const checkTutorialRemaining = () => {
+    return isTutorialDataRemaining(temples, templeInfo, households);
+  };
+
+  // 「Googleシートと連携」押下時のガード
+  const handleInitiateLogin = () => {
+    if (checkTutorialRemaining()) {
+      setShowTutorialWarningModal(true);
+      return;
+    }
+    handleLogin(false);
+  };
+
+  // 「Googleシートを初期化して書込」押下時のガード
+  const handleInitiateCleanWrite = () => {
+    if (checkTutorialRemaining()) {
+      setShowTutorialWarningModal(true);
+      return;
+    }
+    setShowCleanWriteModal(true);
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -178,6 +207,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   // Handle Google Login & Setup Auto-Sync
   const handleLogin = async (isCleanImport: boolean = false) => {
     const clean = typeof isCleanImport === 'boolean' ? isCleanImport : false;
+    if (!clean && checkTutorialRemaining()) {
+      setShowTutorialWarningModal(true);
+      return;
+    }
     setLoading(true);
     setStatusMessage({ type: 'loading', text: 'Googleアカウント認証中...' });
     try {
@@ -367,6 +400,10 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   // Googleシートを初期化して書込 (GoogleDrive上の既存ファイルを完全消去し、新規ファイルを作成して端末データを書込)
   const handleExecuteCleanWriteToSheets = async () => {
     setShowCleanWriteModal(false);
+    if (checkTutorialRemaining()) {
+      setShowTutorialWarningModal(true);
+      return;
+    }
     setLoading(true);
     setStatusMessage({ type: 'loading', text: 'Googleアカウント認証・連携準備中...' });
     try {
@@ -915,7 +952,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         </div>
                         <button
                           type="button"
-                          onClick={() => handleLogin(false)}
+                          onClick={handleInitiateLogin}
                           disabled={loading}
                           className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-[#1A1A1A] hover:bg-[#333333] disabled:opacity-50 text-[#D4AF37] font-bold text-xs flex items-center justify-center space-x-2 transition-colors border border-[#D4AF37]/50 cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
                           title="現在の端末データを保持してGoogleアカウントと自動同期を開始します"
@@ -965,9 +1002,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setShowCleanWriteModal(true);
-                          }}
+                          onClick={handleInitiateCleanWrite}
                           disabled={loading}
                           className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-sky-50 hover:bg-sky-100 disabled:opacity-50 text-sky-800 border border-sky-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
                           title="Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込みます"
@@ -1044,7 +1079,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                                 </div>
                                 <button
                                   type="button"
-                                  onClick={() => setShowCleanWriteModal(true)}
+                                  onClick={handleInitiateCleanWrite}
                                   className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-bold text-[10px] shrink-0 cursor-pointer"
                                 >
                                   実行
@@ -1563,6 +1598,54 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               >
                 <UploadCloud className="w-4 h-4" />
                 <span>書込</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tutorial Data Conflict Warning Modal (チュートリアルデータ混入警告) */}
+      {showTutorialWarningModal && (
+        <div className="fixed inset-0 z-70 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 font-sans animate-fade-in">
+          <div className="bg-white border-2 border-amber-600 p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl rounded-xs">
+            <div className="flex items-center space-x-2.5 text-amber-900 font-bold text-base border-b border-amber-200 pb-2.5">
+              <div className="p-1.5 bg-amber-100 rounded-xs text-amber-700">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <span className="font-serif">チュートリアルデータ混入警告</span>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="bg-amber-50 border-2 border-amber-400 p-4 space-y-2 rounded-xs text-amber-950 shadow-xs">
+                <p className="font-bold text-amber-950 text-sm leading-relaxed">
+                  Googleシートにチュートリアルデータが混入する可能性があります。端末データを初期化してGoogleシートを読み込みますか
+                </p>
+                <p className="text-[11px] leading-relaxed text-[#555555] pt-1 border-t border-amber-200/80">
+                  端末内にサンプルの寺院情報、またはチュートリアル用の檀家レコード（DA/D1）が残っていることが検出されました。<br />
+                  「OK」を押すと、端末側のデータを初期化した上でGoogleシートの正規データを安全に取り込みます。
+                </p>
+              </div>
+            </div>
+
+            {/* Confirmation Actions */}
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2 pt-3 border-t border-[#E5E0D8]">
+              <button
+                type="button"
+                onClick={() => setShowTutorialWarningModal(false)}
+                className="w-full sm:w-auto px-4 py-2 bg-[#F2EFE9] border border-[#D1CEC7] text-xs font-bold text-[#555555] hover:bg-[#E5E0D8] transition-colors cursor-pointer text-center"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTutorialWarningModal(false);
+                  handleExecuteResetAndLogin();
+                }}
+                className="w-full sm:w-auto px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer border border-amber-800 text-center"
+              >
+                <Check className="w-4 h-4" />
+                <span>OK</span>
               </button>
             </div>
           </div>
