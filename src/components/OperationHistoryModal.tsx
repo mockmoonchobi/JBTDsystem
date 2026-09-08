@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { DeletedRecordEntry } from '../types';
 import { getCurrentUser } from '../lib/googleAuth';
+import { safeStorage } from '../utils/storageUtils';
 
 interface OperationHistoryModalProps {
   isOpen: boolean;
@@ -59,29 +60,13 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
     return { total: deletedRecords.length, creates, updates, deletes };
   }, [deletedRecords]);
 
-  // Googleシート保有アカウント（管理者）または未設定・旧「寺院関係者」を「管理者」と統一表記
-  // ※スタッフ端末（deviceInfoに「スタッフ」を含む場合）は、同一Googleアカウントでテストしていても「スタッフ」として識別
+  // 操作者のGoogleアカウント名を表示（旧「管理者」や未設定の場合は現在のGoogleアカウントまたは未連携と表記）
   const currentUser = getCurrentUser();
   const getDisplayOperatorName = (operator?: string, deviceInfo?: string) => {
-    const isStaffDevice = (deviceInfo || '').includes('スタッフ');
-    if (isStaffDevice) {
-      if (!operator || !operator.trim() || operator.trim() === '管理者' || operator.trim() === '寺院関係者') {
-        return 'スタッフ';
-      }
-      const clean = operator.trim();
-      return clean.includes('スタッフ') ? clean : `スタッフ（${clean}）`;
-    }
-
-    if (!operator) return '管理者';
-    const clean = operator.trim();
-    if (!clean || clean === '寺院関係者' || clean === '管理者') return '管理者';
-    if (currentUser) {
-      if (currentUser.email && clean.toLowerCase() === currentUser.email.toLowerCase()) {
-        return '管理者';
-      }
-      if (currentUser.displayName && clean === currentUser.displayName) {
-        return '管理者';
-      }
+    const clean = (operator || '').trim();
+    if (!clean || clean === '管理者' || clean === '寺院関係者') {
+      const activeGoogle = currentUser?.displayName || currentUser?.email || (typeof window !== 'undefined' ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email')) : '');
+      return activeGoogle || 'Google未連携';
     }
     return clean;
   };
@@ -390,18 +375,31 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                         <td className="py-2.5 px-3.5 whitespace-nowrap text-xs">
                           {(() => {
                             const opName = getDisplayOperatorName(entry.operator, entry.deviceInfo);
-                            const isOwnerAdmin = opName === '管理者';
-                            const isStaff = opName.includes('スタッフ') || (entry.deviceInfo || '').includes('スタッフ');
+                            const activeGoogle = currentUser?.displayName || currentUser?.email || (typeof window !== 'undefined' ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email')) : '');
+                            const isMe = activeGoogle && (
+                              opName.toLowerCase() === activeGoogle.toLowerCase() ||
+                              (currentUser?.email && opName.toLowerCase() === currentUser.email.toLowerCase()) ||
+                              (currentUser?.displayName && opName === currentUser.displayName)
+                            );
+                            const isUnlinked = opName === 'Google未連携' || opName === '未ログイン';
+
                             return (
                               <div className="flex items-center gap-1.5">
-                                {isOwnerAdmin ? (
-                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                                {isMe ? (
+                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                ) : isUnlinked ? (
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                                 ) : (
-                                  <UserIcon className={`w-3.5 h-3.5 shrink-0 ${isStaff ? 'text-indigo-500' : 'text-slate-400'}`} />
+                                  <UserIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                                 )}
-                                <span className={isOwnerAdmin ? 'font-medium text-slate-800' : (isStaff ? 'font-medium text-indigo-700' : 'text-slate-600')}>
+                                <span className={isMe ? 'font-semibold text-emerald-900' : (isUnlinked ? 'text-slate-500' : 'font-medium text-slate-800')}>
                                   {opName}
                                 </span>
+                                {isMe && (
+                                  <span className="text-[10px] px-1 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xs font-normal">
+                                    現在のアカウント
+                                  </span>
+                                )}
                               </div>
                             );
                           })()}

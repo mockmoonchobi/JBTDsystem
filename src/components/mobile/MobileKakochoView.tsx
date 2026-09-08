@@ -29,7 +29,6 @@ interface MobileKakochoViewProps {
   onSavePastRecord: (record: PastRecord) => void;
   onDeletePastRecord: (id: string) => void;
   onOpenAddServiceFromSpirit: (record: PastRecord) => void;
-  isStaffMode?: boolean;
 }
 
 export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
@@ -41,7 +40,6 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
   onSavePastRecord,
   onDeletePastRecord,
   onOpenAddServiceFromSpirit,
-  isStaffMode = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [quickFilter, setQuickFilter] = useState<'all' | 'this_month' | 'today' | 'milestone'>('all');
@@ -149,16 +147,14 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
               </button>
             )}
           </div>
-          {!isStaffMode && (
-            <button
-              type="button"
-              onClick={handleAddNew}
-              className="px-3.5 py-2 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>精霊登録</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleAddNew}
+            className="px-3.5 py-2 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>精霊登録</span>
+          </button>
         </div>
 
         {/* Quick Filter Chips */}
@@ -329,7 +325,7 @@ export const MobileKakochoView: React.FC<MobileKakochoViewProps> = ({
         temples={temples}
         activeTempleId={activeTempleId}
         onSave={onSavePastRecord}
-        onDelete={isStaffMode ? undefined : onDeletePastRecord}
+        onDelete={onDeletePastRecord}
         initialHouseholdId={initialHhIdForNew}
       />
     </div>

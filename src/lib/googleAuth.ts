@@ -10,6 +10,7 @@ import {
   User 
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { safeStorage } from '../utils/storageUtils';
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 export const auth = getAuth(app);
@@ -82,6 +83,13 @@ export const setCachedAccessToken = (token: string | null) => {
 // Global Firebase Auth state monitor
 onAuthStateChanged(auth, async (user: User | null) => {
   if (user) {
+    const accountName = user.displayName?.trim() || user.email?.trim() || '';
+    if (accountName) {
+      safeStorage.setItem('renge_google_user_name', accountName);
+    }
+    if (user.email) {
+      safeStorage.setItem('renge_google_user_email', user.email);
+    }
     if (cachedAccessToken) {
       notifySubscribers(user, cachedAccessToken);
     } else if (!isSigningIn) {
@@ -140,6 +148,13 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    const accountName = result.user.displayName?.trim() || result.user.email?.trim() || '';
+    if (accountName) {
+      safeStorage.setItem('renge_google_user_name', accountName);
+    }
+    if (result.user.email) {
+      safeStorage.setItem('renge_google_user_email', result.user.email);
+    }
     notifySubscribers(result.user, cachedAccessToken);
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
@@ -173,12 +188,34 @@ export const getCurrentUser = (): User | null => {
   return auth.currentUser;
 };
 
+/**
+ * Returns active Google account name (display name or email), with safeStorage caching fallback
+ */
+export const getActiveGoogleAccountName = (): string => {
+  const user = auth.currentUser;
+  if (user?.displayName && user.displayName.trim()) {
+    return user.displayName.trim();
+  }
+  if (user?.email && user.email.trim()) {
+    return user.email.trim();
+  }
+  try {
+    const cachedName = safeStorage.getItem('renge_google_user_name');
+    if (cachedName && cachedName.trim()) return cachedName.trim();
+    const cachedEmail = safeStorage.getItem('renge_google_user_email');
+    if (cachedEmail && cachedEmail.trim()) return cachedEmail.trim();
+  } catch (e) {}
+  return '';
+};
+
 export const getAccessToken = async (): Promise<string | null> => {
   return cachedAccessToken;
 };
 
 export const logout = async () => {
   cachedAccessToken = null;
+  safeStorage.removeItem('renge_google_user_name');
+  safeStorage.removeItem('renge_google_user_email');
   try {
     await auth.signOut();
   } catch (e) {

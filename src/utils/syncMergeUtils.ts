@@ -47,6 +47,10 @@ export interface SyncMergeStats {
   totalAddedFromRemote: number;
   totalLocalKeptNewer: number;
   totalDeletedSuppressed?: number;
+  totalLocalNewer: number;
+  totalLocalAdded: number;
+  localNewLogsCount: number;
+  hasLocalChanges: boolean;
 }
 
 export interface MergedDatasetResult {
@@ -65,6 +69,7 @@ export interface MergedDatasetResult {
   deletedRecords?: DeletedRecordEntry[];
   stats: SyncMergeStats;
   summaryMessage: string;
+  hasLocalChanges: boolean;
 }
 
 /**
@@ -192,10 +197,14 @@ export function mergeFamilyMembers(
   merged: FamilyMember[];
   updatedCount: number;
   addedCount: number;
+  localNewerCount: number;
+  localAddedCount: number;
   suppressedCount: number;
 } {
   let updatedCount = 0;
   let addedCount = 0;
+  let localNewerCount = 0;
+  let localAddedCount = 0;
   let suppressedCount = 0;
 
   const localMap = new Map<string, FamilyMember>();
@@ -245,6 +254,9 @@ export function mergeFamilyMembers(
         updatedCount++;
       } else {
         // Local is newer or equal -> Keep local
+        if (localTime > remoteTime) {
+          localNewerCount++;
+        }
         merged.push(localFm);
       }
     }
@@ -260,9 +272,10 @@ export function mergeFamilyMembers(
       return;
     }
     merged.push(localFm);
+    localAddedCount++;
   });
 
-  return { merged, updatedCount, addedCount, suppressedCount };
+  return { merged, updatedCount, addedCount, localNewerCount, localAddedCount, suppressedCount };
 }
 
 /**
@@ -277,11 +290,15 @@ export function mergeHouseholds(
   updatedCount: number;
   addedCount: number;
   localKeptCount: number;
+  localNewerCount: number;
+  localAddedCount: number;
   suppressedCount: number;
 } {
   let updatedCount = 0;
   let addedCount = 0;
   let localKeptCount = 0;
+  let localNewerCount = 0;
+  let localAddedCount = 0;
   let suppressedCount = 0;
 
   const localMap = new Map<string, Household>();
@@ -326,7 +343,8 @@ export function mergeHouseholds(
       }
 
       // Recursively merge family members within this household
-      const mergedFamily = mergeFamilyMembers(localHh.familyMembers || [], remoteHh.familyMembers || [], deletedLogMap).merged;
+      const familyMerge = mergeFamilyMembers(localHh.familyMembers || [], remoteHh.familyMembers || [], deletedLogMap);
+      const mergedFamily = familyMerge.merged;
 
       if (remoteTime > localTime) {
         // Remote is newer - adopt remote fields, but protect valid local pin coordinates if remote has none
@@ -346,6 +364,9 @@ export function mergeHouseholds(
         updatedCount++;
       } else {
         // Local is newer or equal - keep local, but inherit remote coordinates if local has none
+        if (localTime > remoteTime || familyMerge.localNewerCount > 0 || familyMerge.localAddedCount > 0) {
+          localNewerCount++;
+        }
         const effectiveLat = (typeof localHh.latitude === 'number' && !isNaN(localHh.latitude))
           ? localHh.latitude
           : (typeof remoteHh.latitude === 'number' && !isNaN(remoteHh.latitude) ? remoteHh.latitude : undefined);
@@ -375,9 +396,10 @@ export function mergeHouseholds(
     }
     merged.push(localHh);
     localKeptCount++;
+    localAddedCount++;
   });
 
-  return { merged, updatedCount, addedCount, localKeptCount, suppressedCount };
+  return { merged, updatedCount, addedCount, localKeptCount, localNewerCount, localAddedCount, suppressedCount };
 }
 
 /**
@@ -400,11 +422,15 @@ export function mergeGenericEntityList<T extends {
   updatedCount: number;
   addedCount: number;
   localKeptCount: number;
+  localNewerCount: number;
+  localAddedCount: number;
   suppressedCount: number;
 } {
   let updatedCount = 0;
   let addedCount = 0;
   let localKeptCount = 0;
+  let localNewerCount = 0;
+  let localAddedCount = 0;
   let suppressedCount = 0;
 
   const localMap = new Map<string, T>();
@@ -452,6 +478,9 @@ export function mergeGenericEntityList<T extends {
         updatedCount++;
       } else {
         // Local is newer or equal
+        if (localTime > remoteTime) {
+          localNewerCount++;
+        }
         merged.push(localItem);
         localKeptCount++;
       }
@@ -468,9 +497,10 @@ export function mergeGenericEntityList<T extends {
     }
     merged.push(localItem);
     localKeptCount++;
+    localAddedCount++;
   });
 
-  return { merged, updatedCount, addedCount, localKeptCount, suppressedCount };
+  return { merged, updatedCount, addedCount, localKeptCount, localNewerCount, localAddedCount, suppressedCount };
 }
 
 /**
@@ -616,6 +646,7 @@ export function mergeDatasetsWithAuditPriority(
     noticeTemplates?: { higan: string; niibon: string };
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
+    batchAccountingData?: any;
   },
   remoteData: SheetsImportResult
 ): MergedDatasetResult {
@@ -784,6 +815,50 @@ export function mergeDatasetsWithAuditPriority(
     txMerge.suppressedCount +
     fmMerge.suppressedCount;
 
+  const totalLocalNewer =
+    hhMerge.localNewerCount +
+    prMerge.localNewerCount +
+    msMerge.localNewerCount +
+    tdMerge.localNewerCount +
+    txMerge.localNewerCount +
+    fmMerge.localNewerCount;
+
+  const totalLocalAdded =
+    hhMerge.localAddedCount +
+    prMerge.localAddedCount +
+    msMerge.localAddedCount +
+    tdMerge.localAddedCount +
+    txMerge.localAddedCount +
+    fmMerge.localAddedCount;
+
+  // Compare deletion & operation logs:
+  // Check if local has operation/deletion logs that are NOT yet in remote
+  const remoteLogKeys = new Set(
+    (remoteData.deletedRecords || []).map((r) => r.logId || `${r.id}_${r.actionType || ''}_${r.deletedTimestamp}`)
+  );
+  const localNewLogsCount = (localState.deletedRecords || []).filter(
+    (l) => !remoteLogKeys.has(l.logId || `${l.id}_${l.actionType || ''}_${l.deletedTimestamp}`)
+  ).length;
+
+  const hasLocalTempleInfoUpdate = localInfoTs > remoteInfoTs;
+
+  const hasLocalNewTemples = (localState.temples || []).some(
+    (lt) => !(remoteData.temples || []).some((rt) => rt.id === lt.id)
+  );
+
+  const hasLocalBatchAccountingUpdate = Boolean(
+    localState.batchAccountingData?.lastSavedAt &&
+    (!remoteData.batchAccountingData?.lastSavedAt || localState.batchAccountingData.lastSavedAt > remoteData.batchAccountingData.lastSavedAt)
+  );
+
+  const hasLocalChanges =
+    totalLocalNewer > 0 ||
+    totalLocalAdded > 0 ||
+    localNewLogsCount > 0 ||
+    hasLocalTempleInfoUpdate ||
+    hasLocalNewTemples ||
+    hasLocalBatchAccountingUpdate;
+
   const stats: SyncMergeStats = {
     householdsUpdated: hhMerge.updatedCount,
     householdsAdded: hhMerge.addedCount,
@@ -809,16 +884,30 @@ export function mergeDatasetsWithAuditPriority(
     totalAddedFromRemote,
     totalLocalKeptNewer,
     totalDeletedSuppressed,
+    totalLocalNewer,
+    totalLocalAdded,
+    localNewLogsCount,
+    hasLocalChanges,
   };
 
   let summaryMessage = 'Googleシートと照会し、日時が新しいデータで同期を完了しました。';
-  if (totalUpdatedFromRemote > 0 || totalAddedFromRemote > 0 || totalDeletedSuppressed > 0) {
+  if (!hasLocalChanges && totalUpdatedFromRemote === 0 && totalAddedFromRemote === 0 && totalDeletedSuppressed === 0) {
+    summaryMessage = '端末とGoogleシートは最新の状態です（変更なし・書き戻しスキップ）';
+  } else if (!hasLocalChanges) {
     const parts: string[] = [];
     if (totalUpdatedFromRemote > 0) parts.push(`シートから最新更新 ${totalUpdatedFromRemote}件 取込`);
     if (totalAddedFromRemote > 0) parts.push(`シートの新規 ${totalAddedFromRemote}件 追加`);
     if (totalDeletedSuppressed > 0) parts.push(`削除同期反映 ${totalDeletedSuppressed}件 適用`);
-    if (totalLocalKeptNewer > 0) parts.push(`端末側の最新データ ${totalLocalKeptNewer}件 を保持・反映`);
-    summaryMessage = parts.join('、');
+    summaryMessage = `${parts.join('、')}（Googleシートへの書き戻し不要）`;
+  } else {
+    const parts: string[] = [];
+    if (totalUpdatedFromRemote > 0) parts.push(`シートから最新更新 ${totalUpdatedFromRemote}件 取込`);
+    if (totalAddedFromRemote > 0) parts.push(`シートの新規 ${totalAddedFromRemote}件 追加`);
+    if (totalDeletedSuppressed > 0) parts.push(`削除同期反映 ${totalDeletedSuppressed}件 適用`);
+    if (totalLocalNewer > 0) parts.push(`端末側の最新 ${totalLocalNewer}件 反映`);
+    if (totalLocalAdded > 0) parts.push(`端末側の新規 ${totalLocalAdded}件 反映`);
+    if (localNewLogsCount > 0) parts.push(`操作ログ ${localNewLogsCount}件 反映`);
+    summaryMessage = parts.join('、') || 'Googleシートへ最新データを反映しました。';
   }
 
   return {
@@ -837,5 +926,6 @@ export function mergeDatasetsWithAuditPriority(
     deletedRecords: mergedDeletedRecords,
     stats,
     summaryMessage,
+    hasLocalChanges,
   };
 }

@@ -30,7 +30,6 @@ interface MobileTanagyoViewProps {
   templeInfo: TempleInfo;
   priests?: Priest[];
   pastRecords?: PastRecord[];
-  isStaffMode?: boolean;
 }
 
 interface DateSlotGroup {
@@ -55,7 +54,6 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
   templeInfo,
   priests = [],
   pastRecords = [],
-  isStaffMode = false,
 }) => {
   // 1. 棚経対象の檀信徒を抽出
   const tanagyoHouseholds = useMemo(() => {
@@ -285,11 +283,6 @@ export const MobileTanagyoView: React.FC<MobileTanagyoViewProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {isStaffMode && (
-              <span className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold rounded-xs">
-                スタッフ
-              </span>
-            )}
             <div className="text-[11px] font-bold text-gray-300 bg-[#2A2A2A] px-2 py-1 rounded-xs border border-gray-700">
               合計 <strong className="text-[#D4AF37] font-black text-xs">{currentPriestCount}</strong> 軒
             </div>

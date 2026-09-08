@@ -70,7 +70,6 @@ interface GoogleSheetsModalProps {
   templeInfo?: TempleInfo;
   households?: Household[];
   activeTempleId?: string;
-  isStaffMode?: boolean;
 }
 
 export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
@@ -94,9 +93,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   templeInfo,
   households = [],
   activeTempleId = 'temple-main',
-  isStaffMode = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>(() => isStaffMode ? 'sheets' : 'excel');
+  const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>('excel');
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
   const [loading, setLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | 'loading'; text: string } | null>(null);
@@ -453,18 +451,18 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
     }
   };
 
-  // Get staff invite URL with mode=staff query parameter
-  const getStaffInviteUrl = () => {
+  // Get collaboration invite URL (PC & Smartphone fully functional)
+  const getShareInviteUrl = () => {
     if (!spreadsheetInfo?.id) return '';
     const baseUrl = typeof window !== 'undefined' && window.location.origin
       ? `${window.location.origin}${window.location.pathname}`
       : 'https://mockmoonchobi.github.io/JBTDsystem/';
     const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    return `${cleanBase}?sheetId=${encodeURIComponent(spreadsheetInfo.id)}&mode=staff`;
+    return `${cleanBase}?sheetId=${encodeURIComponent(spreadsheetInfo.id)}`;
   };
 
-  const handleCopyStaffLink = () => {
-    const link = getStaffInviteUrl();
+  const handleCopyShareLink = () => {
+    const link = getShareInviteUrl();
     if (!link) return;
     navigator.clipboard.writeText(link);
     setCopiedStaffLink(true);
@@ -482,8 +480,8 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       const token = await getAccessToken();
       if (!token) throw new Error('認証トークンが見つかりません。再ログインしてください。');
 
-      const staffLink = getStaffInviteUrl();
-      const emailMessage = `寺院管理システム（蓮華・スタッフ用）の共有通知です。\n以下のリンクを開くと、自動的にスタッフモードとしてデータ連携が立ち上がります：\n${staffLink}\n\n※スマートフォン（GmailアプリやLINE等）で開く場合は、アプリ内の内蔵ブラウザではなく、SafariまたはChromeで開いてください（ポップアップブロック回避のため）。`;
+      const shareLink = getShareInviteUrl();
+      const emailMessage = `寺院檀家名簿・法要受付管理システムの共同管理（Googleシート連携）の招待通知です。\n以下のリンクを開くと、自動的にGoogleシート連携が立ち上がります（PC・スマホ両対応）：\n${shareLink}\n\n※スマートフォン（GmailアプリやLINE等）で開く場合は、アプリ内の内蔵ブラウザではなく、SafariまたはChromeで開いてください（Googleログインのポップアップブロック回避のため）。`;
 
       await shareSpreadsheetWithUser(
         token,
@@ -496,7 +494,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
       setStatusMessage({ 
         type: 'success', 
-        text: `「${shareEmail.trim()}」に${shareRole === 'writer' ? '編集' : '閲覧'}権限を共有しました。招待メールにスタッフ用アクセスURLを自動記載しました。` 
+        text: `「${shareEmail.trim()}」に${shareRole === 'writer' ? '編集' : '閲覧'}権限を共有しました。招待メールに共同管理用アクセスURLを自動記載しました。` 
       });
       setShareEmail('');
       await loadPermissions(spreadsheetInfo.id);
@@ -635,31 +633,29 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
 
         {/* Tab Switcher */}
         <div className="flex border-b border-[#D1CEC7] bg-[#F2EFE9] text-xs font-bold shrink-0">
-          {!isStaffMode && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('excel')}
-              className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
-                activeTab === 'excel'
-                  ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
-                  : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
-              }`}
-            >
-              <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
-              <span>① Excel入出力 (.xlsx) ＆ 他DB取込</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setActiveTab('excel')}
+            className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
+              activeTab === 'excel'
+                ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
+                : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
+            <span>① Excel入出力 (.xlsx) ＆ 他DB取込</span>
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab('sheets')}
             className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'sheets' || isStaffMode
+              activeTab === 'sheets'
                 ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
                 : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
             }`}
           >
             <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-emerald-500' : 'text-[#888888]'}`} />
-            <span>{isStaffMode ? 'Googleシート常時自動同期（連携状況）' : '② Googleシート常時自動同期'}</span>
+            <span>② Googleシート常時自動同期</span>
             {syncStatus === 'synced' && (
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             )}
@@ -698,7 +694,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           )}
 
           {/* ==================== TAB 1: EXCEL IO & EXTERNAL DB ==================== */}
-          {activeTab === 'excel' && !isStaffMode && (
+          {activeTab === 'excel' && (
             <div className="space-y-3.5">
               {/* Excel Local File Export/Import */}
               <div className="bg-[#FAF8F5] border border-[#D4AF37]/60 p-3.5 space-y-3">
@@ -757,6 +753,9 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       </span>
                     </button>
                   )}
+                  <p className="text-[10px] text-[#777777] leading-tight">
+                    ※ 檀家名簿・過去帳・法要・出納・ToDo・一括会計に加え、操作・削除履歴（共同管理・監査用）を含めて完全出力します。
+                  </p>
                 </div>
 
                 {/* Import Card with Drop Zone */}
@@ -1051,65 +1050,49 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       </div>
 
                       {/* 接続中だが初期化読込・初期化書込をしたい時のための補助アコーディオン */}
-                      {!isStaffMode && (
-                        <div className="pt-1">
-                          <details className="text-[11px] text-[#666666] border border-[#E5E0D8] bg-[#FAF8F5] p-2 rounded-xs group">
-                            <summary className="font-bold text-gray-700 cursor-pointer select-none flex items-center justify-between">
-                              <span>データの初期化再同期（端末初期化 / シート初期化）</span>
-                              <span className="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
-                            </summary>
-                            <div className="pt-2.5 space-y-2 border-t border-[#E5E0D8] mt-2">
-                              <div className="flex items-center justify-between gap-2 bg-rose-50/60 border border-rose-200 p-2 rounded-xs">
-                                <div>
-                                  <div className="font-bold text-rose-900">端末データを初期化して読込</div>
-                                  <div className="text-[10px] text-rose-800">端末を初期化し、シートのデータを取り込み直します</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowResetAndLoginModal(true)}
-                                  className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 font-bold text-[10px] shrink-0 cursor-pointer"
-                                >
-                                  実行
-                                </button>
+                      <div className="pt-1">
+                        <details className="text-[11px] text-[#666666] border border-[#E5E0D8] bg-[#FAF8F5] p-2 rounded-xs group">
+                          <summary className="font-bold text-gray-700 cursor-pointer select-none flex items-center justify-between">
+                            <span>データの初期化再同期（端末初期化 / シート初期化）</span>
+                            <span className="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                          </summary>
+                          <div className="pt-2.5 space-y-2 border-t border-[#E5E0D8] mt-2">
+                            <div className="flex items-center justify-between gap-2 bg-rose-50/60 border border-rose-200 p-2 rounded-xs">
+                              <div>
+                                <div className="font-bold text-rose-900">端末データを初期化して読込</div>
+                                <div className="text-[10px] text-rose-800">端末を初期化し、シートのデータを取り込み直します</div>
                               </div>
-                              <div className="flex items-center justify-between gap-2 bg-sky-50/60 border border-sky-200 p-2 rounded-xs">
-                                <div>
-                                  <div className="font-bold text-sky-900">Googleシートを初期化して書込</div>
-                                  <div className="text-[10px] text-sky-800">シート側を消去し、端末データで新規作成・上書きします</div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={handleInitiateCleanWrite}
-                                  className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-bold text-[10px] shrink-0 cursor-pointer"
-                                >
-                                  実行
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowResetAndLoginModal(true)}
+                                className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 font-bold text-[10px] shrink-0 cursor-pointer"
+                              >
+                                実行
+                              </button>
                             </div>
-                          </details>
-                        </div>
-                      )}
+                            <div className="flex items-center justify-between gap-2 bg-sky-50/60 border border-sky-200 p-2 rounded-xs">
+                              <div>
+                                <div className="font-bold text-sky-900">Googleシートを初期化して書込</div>
+                                <div className="text-[10px] text-sky-800">シート側を消去し、端末データで新規作成・上書きします</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={handleInitiateCleanWrite}
+                                className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-bold text-[10px] shrink-0 cursor-pointer"
+                              >
+                                実行
+                              </button>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
                     </div>
                   )
                 )}
               </div>
 
-              {/* Staff Mode Information Notice */}
-              {isStaffMode && (
-                <div className="border border-amber-300 bg-amber-50 p-3 sm:p-4 space-y-2 text-xs sm:text-sm text-amber-950 rounded-xs shadow-2xs">
-                  <div className="flex items-center gap-2 font-bold text-amber-900 text-sm sm:text-base">
-                    <span className="text-base sm:text-lg">👤</span>
-                    <span>スタッフモードで接続中</span>
-                  </div>
-                  <p className="leading-relaxed text-xs sm:text-sm text-amber-900">
-                    寺院管理者から共有されたGoogleスプレッドシートのデータを読み込み、自動同期しています。<br />
-                    スタッフモードでは、住所録・過去帳の追加や削除、および共有設定や初期化などの管理者専用設定は安全のため制限されています。
-                  </p>
-                </div>
-              )}
-
-              {/* ==================== GOOGLE SHEET SHARING & COLLABORATION SECTION (管理者のみ) ==================== */}
-              {!isStaffMode && user && spreadsheetInfo && (
+              {/* ==================== GOOGLE SHEET SHARING & COLLABORATION SECTION ==================== */}
+              {user && spreadsheetInfo && (
                 <div className="border border-[#D4AF37]/60 bg-white p-3.5 sm:p-4 space-y-3 shadow-2xs">
                   {/* Section Title */}
                   <div className="flex items-center justify-between border-b border-[#EBE7DF] pb-2">
@@ -1287,32 +1270,32 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     )}
                   </div>
 
-                  {/* Staff Mode Dedicated Invitation Link Box */}
+                  {/* Collaboration Dedicated Invitation Link Box */}
                   <div className="pt-2">
-                    <div className="p-3 bg-amber-50/90 border border-amber-300/80 rounded-xs space-y-2">
+                    <div className="p-3 bg-emerald-50/90 border border-emerald-300/80 rounded-xs space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="flex items-center space-x-1.5 text-xs font-bold text-amber-950">
-                          <span className="text-amber-600 font-normal">👤</span>
-                          <span>スタッフモード専用 招待URL（リンク）</span>
+                        <span className="flex items-center space-x-1.5 text-xs font-bold text-emerald-950">
+                          <Users className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                          <span>共同管理者用 共有・招待URL（リンク）</span>
                         </span>
-                        <span className="px-1.5 py-0.5 bg-amber-200 text-amber-900 text-[10px] font-bold rounded">
-                          スマホ版・機能制限
+                        <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-900 text-[10px] font-bold rounded">
+                          PC・スマホ両対応
                         </span>
                       </div>
-                      <p className="text-[11px] text-amber-900 leading-relaxed">
-                        このリンクを副住職様・寺族様・受付スタッフ様にLINEやメール等でお送りください。リンクを開くと自動的にスタッフ連携画面が立ち上がり、機能制限されたモバイル版（世帯・過去帳の新規/削除不可、予定帳・棚経巡回計画・ToDo・受付は全機能可能）として起動します。
+                      <p className="text-[11px] text-emerald-900 leading-relaxed">
+                        このリンクを副住職様・寺族様等にLINEやメールでお送りください。リンクを開くと自動的に同一のGoogleシートと連携して立ち上がります。PCで開けばPC版（印刷・会計・全機能）、スマートフォンで開けばスマホ版としてフルアクセスで快適に共同管理できます。
                       </p>
                       <div className="flex items-center gap-1.5 pt-1">
                         <input
                           type="text"
                           readOnly
-                          value={getStaffInviteUrl()}
-                          className="flex-1 px-2.5 py-1.5 border border-amber-300 bg-white text-[11px] font-mono select-all text-gray-800"
+                          value={getShareInviteUrl()}
+                          className="flex-1 px-2.5 py-1.5 border border-emerald-300 bg-white text-[11px] font-mono select-all text-gray-800"
                         />
                         <button
                           type="button"
-                          onClick={handleCopyStaffLink}
-                          className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 active:bg-amber-900 text-white font-bold text-xs flex items-center gap-1 shrink-0 cursor-pointer shadow-xs rounded-xs transition-colors"
+                          onClick={handleCopyShareLink}
+                          className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white font-bold text-xs flex items-center gap-1 shrink-0 cursor-pointer shadow-xs rounded-xs transition-colors"
                         >
                           {copiedStaffLink ? (
                             <>

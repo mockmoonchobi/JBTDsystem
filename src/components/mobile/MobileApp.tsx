@@ -52,7 +52,6 @@ interface MobileAppProps {
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disconnected';
   lastSyncTime?: string | null;
   onTriggerManualSync?: () => void;
-  isStaffMode?: boolean;
 }
 
 export const MobileApp: React.FC<MobileAppProps> = ({
@@ -84,7 +83,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   syncStatus = 'disconnected',
   lastSyncTime,
   onTriggerManualSync,
-  isStaffMode = false,
 }) => {
   const [activeTab, setActiveTab] = useState<MobileTab>('households');
   const [scheduleSubTab, setScheduleSubTab] = useState<'calendar' | 'todos' | 'tanagyo'>('calendar');
@@ -141,7 +139,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
   // Trigger past record creation from Household
   const handleOpenAddPastRecordFromHousehold = (householdId: string) => {
-    if (isStaffMode) return;
     setQuickKakochoTargetHhId(householdId);
     setQuickKakochoModalOpen(true);
   };
@@ -170,7 +167,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
         lastSyncTime={lastSyncTime}
         onTriggerManualSync={onTriggerManualSync}
         activeTab={activeTab}
-        isStaffMode={isStaffMode}
       />
 
       {/* Main View Container */}
@@ -190,7 +186,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onOpenAddPastRecord={handleOpenAddPastRecordFromHousehold}
             onOpenAddService={handleOpenAddServiceFromHousehold}
             onBatchAddPastRecords={onBatchAddPastRecords}
-            isStaffMode={isStaffMode}
           />
         )}
 
@@ -204,7 +199,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             onSavePastRecord={onSavePastRecord}
             onDeletePastRecord={onDeletePastRecord}
             onOpenAddServiceFromSpirit={handleOpenAddServiceFromSpirit}
-            isStaffMode={isStaffMode}
           />
         )}
 
@@ -304,7 +298,6 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 templeInfo={templeInfo}
                 priests={priests}
                 pastRecords={effectiveAllPastRecords}
-                isStaffMode={isStaffMode}
               />
             )}
           </div>

@@ -19,7 +19,7 @@ import { StartupLauncher } from './components/StartupLauncher';
 
 import { FamilyManager } from './components/FamilyManager';
 
-import { initAuth, getAccessToken, googleSignIn, isAuthError, getCurrentUser } from './lib/googleAuth';
+import { initAuth, getAccessToken, googleSignIn, isAuthError, getCurrentUser, getActiveGoogleAccountName } from './lib/googleAuth';
 import { 
   findOrCreateSpreadsheet, 
   exportToSheets, 
@@ -137,40 +137,24 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('households');
   const [calendarTargetDate, setCalendarTargetDate] = useState<string | undefined>(undefined);
 
-  // Staff Mode & Staff Invite Sheet ID (supports URL parameters: mode=staff & sheetId=...)
-  const [isStaffMode, setIsStaffMode] = useState<boolean>(() => {
+  // Shared Collaboration Sheet ID (supports URL parameter: sheetId=...)
+  const [sharedInviteSheetId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('mode') === 'staff') {
-        safeStorage.setItem('renge_staff_mode', 'true');
-        return true;
-      }
-      return safeStorage.getItem('renge_staff_mode') === 'true';
-    }
-    return false;
-  });
-
-  const [staffInviteSheetId, setStaffInviteSheetId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
+      // Clean up legacy staff mode flag to ensure full access
+      safeStorage.removeItem('renge_staff_mode');
       const params = new URLSearchParams(window.location.search);
       const sId = params.get('sheetId');
       if (sId) {
-        safeStorage.setItem('renge_staff_invite_sheet_id', sId);
+        safeStorage.setItem('renge_shared_invite_sheet_id', sId);
         return sId;
       }
-      return safeStorage.getItem('renge_staff_invite_sheet_id');
+      return safeStorage.getItem('renge_shared_invite_sheet_id');
     }
     return null;
   });
 
-  // View mode: 'desktop' | 'mobile' (supports auto-detect on phone access, staff mode, & manual toggle)
+  // View mode: 'desktop' | 'mobile' (supports responsive auto-detect on phone access & free manual toggle)
   const [viewMode, setViewMode] = useState<'desktop' | 'mobile'>(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('mode') === 'staff' || safeStorage.getItem('renge_staff_mode') === 'true') {
-        return 'mobile';
-      }
-    }
     const saved = safeStorage.getItem('renge_view_mode');
     if (saved === 'mobile' || saved === 'desktop') return saved;
     if (typeof window !== 'undefined') {
@@ -184,10 +168,6 @@ export default function App() {
   });
 
   const handleSetViewMode = (mode: 'desktop' | 'mobile') => {
-    if (isStaffMode && mode === 'desktop') {
-      // Staff mode is strictly mobile UI
-      return;
-    }
     setViewMode(mode);
     safeStorage.setItem('renge_view_mode', mode);
   };
@@ -195,19 +175,9 @@ export default function App() {
   // Helper to obtain operator and device info for audit logging
   const getCurrentOperatorInfo = () => {
     const user = getCurrentUser();
-    // スタッフモード時はGoogleアカウントログインの有無に関わらず「スタッフ」として明示記録
-    // （同一Googleアカウントでの検証時にも「管理者」と混同されないよう区別）
-    let operator = '管理者';
-    if (isStaffMode) {
-      if (user?.displayName) {
-        operator = `スタッフ（${user.displayName}）`;
-      } else if (user?.email) {
-        operator = `スタッフ（${user.email.split('@')[0]}）`;
-      } else {
-        operator = 'スタッフ';
-      }
-    }
-    const device = isStaffMode ? 'スマホ(スタッフ)' : (viewMode === 'mobile' ? 'スマホ' : 'PC');
+    const activeGoogleName = getActiveGoogleAccountName();
+    const operator = user?.displayName?.trim() || user?.email?.trim() || activeGoogleName || 'Google未連携';
+    const device = viewMode === 'mobile' ? 'スマホ' : 'PC';
     return { operator, deviceInfo: device };
   };
 
@@ -277,16 +247,19 @@ export default function App() {
     };
   }, [refreshDeletedRecords]);
 
-  // 過去ログの「寺院関係者」やGoogleアカウント名の表記ブレを「管理者」に自動マイグレーション
+  // 過去ログの旧「管理者」「寺院関係者」表記を、現在のGoogleアカウント名に自動更新（操作者を正しく判別可能にする）
   useEffect(() => {
     const rawLogs = loadDeletedRecordsLog();
     const currentUser = getCurrentUser();
+    const activeGoogleName = currentUser?.displayName?.trim() || currentUser?.email?.trim() || getActiveGoogleAccountName();
+    if (!activeGoogleName) return;
+
     let hasChanges = false;
     const migrated = rawLogs.map((entry) => {
       const op = entry.operator ? entry.operator.trim() : '';
       let nextOp = op;
-      if (!op || op === '寺院関係者' || (currentUser && (op === currentUser.email || op === currentUser.displayName))) {
-        nextOp = '管理者';
+      if (!op || op === '管理者' || op === '寺院関係者') {
+        nextOp = activeGoogleName;
       }
       if (nextOp !== entry.operator) {
         hasChanges = true;
@@ -983,11 +956,15 @@ export default function App() {
         if (data.templeTodos) setTempleTodos(data.templeTodos);
         if (data.priests) setPriests(data.priests);
         if (data.templeMasterOptionsMap) setTempleMasterOptionsMap(data.templeMasterOptionsMap);
+        if (data.deletedRecords && data.deletedRecords.length > 0) {
+          saveDeletedRecordsLog(data.deletedRecords);
+          setDeletedRecords(data.deletedRecords);
+        }
 
         setIsStartupLauncherOpen(false);
         recordHistory(`Excelファイル（${file.name}）から立ち上げ`);
       } else {
-        throw new Error('サポートされていないファイル形式です（.json または .xlsx / .xls を選択してください）。');
+        throw new Error('サポートされていないファイル形式です（Excelファイル .xlsx / .xls を選択してください）。');
       }
     } catch (err: any) {
       console.error('File load error:', err);
@@ -1012,7 +989,7 @@ export default function App() {
 
       setStartupLoadingMsg('Googleスプレッドシートを確認・接続中...');
       const savedInfo = safeStorage.getItem('temple_google_sheet_info');
-      let preferredSheetId: string | undefined = staffInviteSheetId || undefined;
+      let preferredSheetId: string | undefined = sharedInviteSheetId || undefined;
       if (!preferredSheetId && savedInfo) {
         try {
           preferredSheetId = JSON.parse(savedInfo)?.id;
@@ -1253,8 +1230,13 @@ export default function App() {
           totalUpdatedFromRemote: 0,
           totalAddedFromRemote: 0,
           totalLocalKeptNewer: currentLocalCount,
+          totalLocalNewer: currentLocalCount,
+          totalLocalAdded: currentLocalCount,
+          localNewLogsCount: 0,
+          hasLocalChanges: true,
         },
         summaryMessage: 'ローカルデータを保持しました。',
+        hasLocalChanges: true,
       };
     }
 
@@ -1611,29 +1593,33 @@ export default function App() {
           isImportingRef.current = true;
           const mergeResult = applyRemoteSheetsDataRef.current(remoteData);
 
-          // マージ結果をGoogleシートにも即時反映（双方向の最新化）
-          await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
-            await exportToSheets(
-              token,
-              targetId,
-              mergeResult.templeInfo,
-              mergeResult.households,
-              mergeResult.pastRecords,
-              mergeResult.memorialServices,
-              mergeResult.transactions,
-              mergeResult.masterOptions || state.masterOptions,
-              mergeResult.noticeTemplates || state.noticeTemplates,
-              mergeResult.templeTodos,
-              mergeResult.temples,
-              {
-                targetTempleId: 'ALL',
-                templeMasterOptionsMap: mergeResult.templeMasterOptionsMap || state.templeMasterOptionsMap,
-                priests: mergeResult.priests || state.priests,
-                deletedRecords: loadDeletedRecordsLog(),
-                batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
-              }
-            );
-          });
+          // 端末側にGoogleシートへ反映すべき新規・更新データや操作履歴がある場合のみ書き出し（不要な上書き・タイムスタンプ更新を回避）
+          if (mergeResult.hasLocalChanges) {
+            await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
+              await exportToSheets(
+                token,
+                targetId,
+                mergeResult.templeInfo,
+                mergeResult.households,
+                mergeResult.pastRecords,
+                mergeResult.memorialServices,
+                mergeResult.transactions,
+                mergeResult.masterOptions || state.masterOptions,
+                mergeResult.noticeTemplates || state.noticeTemplates,
+                mergeResult.templeTodos,
+                mergeResult.temples,
+                {
+                  targetTempleId: 'ALL',
+                  templeMasterOptionsMap: mergeResult.templeMasterOptionsMap || state.templeMasterOptionsMap,
+                  priests: mergeResult.priests || state.priests,
+                  deletedRecords: loadDeletedRecordsLog(),
+                  batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                }
+              );
+            });
+          } else {
+            console.log('Google Sheets export skipped: Local has no modifications to push. Google Sheet remains unchanged.');
+          }
         } else if (localCount > 0) {
           // 2. リモートが0件でローカルにデータが存在する場合 -> ローカルデータをスプレッドシートへ安全に書き出し（初期同期・データ保護）
           await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
@@ -1992,6 +1978,25 @@ export default function App() {
   // Initial Auto-Import on Auth/App Load (runs only on mount)
   useEffect(() => {
     const unsubscribe = initAuth(async (user, token) => {
+      if (user) {
+        const activeName = user.displayName?.trim() || user.email?.trim() || '';
+        if (activeName) {
+          const rawLogs = loadDeletedRecordsLog();
+          let hasChanges = false;
+          const migrated = rawLogs.map((entry) => {
+            const op = entry.operator ? entry.operator.trim() : '';
+            if (!op || op === '管理者' || op === '寺院関係者') {
+              hasChanges = true;
+              return { ...entry, operator: activeName };
+            }
+            return entry;
+          });
+          if (hasChanges) {
+            saveDeletedRecordsLog(migrated);
+            setDeletedRecords(migrated);
+          }
+        }
+      }
       if (user && token) {
         // Do not auto-import from Google Sheets if launcher is still open or clean write is underway
         if (isStartupLauncherOpenRef.current || isCleanWritingRef.current) {
@@ -2270,6 +2275,7 @@ export default function App() {
         deletedRecords: loadDeletedRecordsLog(),
       };
 
+      let exportNeeded = true;
       if (remoteData && remoteData.totalRecordsCount > 0) {
         const merged = applyRemoteSheetsData(remoteData);
         exportPayload = {
@@ -2287,33 +2293,39 @@ export default function App() {
           batchAccountingData: remoteData.batchAccountingData || batchAccountingData,
           deletedRecords: loadDeletedRecordsLog(),
         };
+        exportNeeded = merged.hasLocalChanges;
         recordHistory(`Googleシートと日時照会同期完了: ${merged.summaryMessage}`);
       }
 
-      // 2. 最新マージ結果をGoogleシートへ書き出し
-      await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
-        await exportToSheets(
-          token,
-          targetId,
-          exportPayload.templeInfo,
-          exportPayload.households,
-          exportPayload.pastRecords,
-          exportPayload.memorialServices,
-          exportPayload.transactions,
-          exportPayload.masterOptions,
-          exportPayload.noticeTemplates,
-          exportPayload.templeTodos,
-          exportPayload.temples,
-          {
-            targetTempleId: 'ALL',
-            templeMasterOptionsMap: exportPayload.templeMasterOptionsMap,
-            priests: exportPayload.priests,
-            deletedRecords: loadDeletedRecordsLog(),
-            batchAccountingData: exportPayload.batchAccountingData || getSavedBatchAccountingData() || undefined,
-          }
-        );
-      });
+      // 2. 端末側に未反映の変更がある場合のみGoogleシートへ書き出し（無駄な更新や競合リスクを防止）
+      if (exportNeeded) {
+        await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
+          await exportToSheets(
+            token,
+            targetId,
+            exportPayload.templeInfo,
+            exportPayload.households,
+            exportPayload.pastRecords,
+            exportPayload.memorialServices,
+            exportPayload.transactions,
+            exportPayload.masterOptions,
+            exportPayload.noticeTemplates,
+            exportPayload.templeTodos,
+            exportPayload.temples,
+            {
+              targetTempleId: 'ALL',
+              templeMasterOptionsMap: exportPayload.templeMasterOptionsMap,
+              priests: exportPayload.priests,
+              deletedRecords: loadDeletedRecordsLog(),
+              batchAccountingData: exportPayload.batchAccountingData || getSavedBatchAccountingData() || undefined,
+            }
+          );
+        });
+      } else {
+        console.log('Manual sync: Google Sheets export skipped (no local changes to push).');
+      }
 
+      lastSyncedSignatureRef.current = computePayloadSignature(exportPayload);
       const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
       setLastSyncTime(nowTime);
       safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
@@ -2452,6 +2464,7 @@ export default function App() {
           templeMasterOptionsMap,
           priests,
           batchAccountingData: activeBatch || undefined,
+          deletedRecords: loadDeletedRecordsLog(),
         }
       );
     } catch (err: any) {
@@ -2495,6 +2508,13 @@ export default function App() {
     // If batch accounting data is present in imported file, restore it
     if (data.batchAccountingData) {
       saveBatchAccountingData(data.batchAccountingData);
+    }
+
+    // If operation/deletion records log is present, merge and restore
+    if (data.deletedRecords && data.deletedRecords.length > 0) {
+      const mergedLogs = mergeDeletedRecordsLogs(loadDeletedRecordsLog(), data.deletedRecords);
+      saveDeletedRecordsLog(mergedLogs);
+      setDeletedRecords(mergedLogs);
     }
 
     const importedHouseholds = data.households || [];
@@ -2657,6 +2677,7 @@ export default function App() {
     if (importedMem.length > 0) summaryParts.push(`法事予約 ${importedMem.length}件`);
     if (importedTodos.length > 0) summaryParts.push(`ToDo ${importedTodos.length}件`);
     if (importedTx.length > 0) summaryParts.push(`出納 ${importedTx.length}件`);
+    if (data.deletedRecords && data.deletedRecords.length > 0) summaryParts.push(`操作履歴 ${data.deletedRecords.length}件`);
 
     const summaryText = summaryParts.length > 0 ? summaryParts.join('、') : '設定情報';
     return {
@@ -3751,7 +3772,7 @@ export default function App() {
           onCancelLoading={() => setIsStartupLoading(false)}
           isLoading={isStartupLoading}
           loadingMessage={startupLoadingMsg}
-          isStaffInvite={isStaffMode || !!staffInviteSheetId}
+          isSharedInvite={!!sharedInviteSheetId}
         />
 
         <MobileApp
@@ -3799,17 +3820,16 @@ export default function App() {
           }}
           onDeleteTodo={handleDeleteTodo}
           onSwitchToDesktop={() => handleSetViewMode('desktop')}
-          onOpenGoogleSheetsModal={isStaffMode ? undefined : () => setIsGoogleSheetsModalOpen(true)}
+          onOpenGoogleSheetsModal={() => setIsGoogleSheetsModalOpen(true)}
           onAddTransaction={handleAddTransaction}
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
           onTriggerManualSync={handleManualSync}
-          isStaffMode={isStaffMode}
         />
 
         {/* Google Sheets Sync Modal available in mobile mode */}
         <GoogleSheetsModal
-          isOpen={!isStaffMode && isGoogleSheetsModalOpen}
+          isOpen={isGoogleSheetsModalOpen}
           onClose={() => setIsGoogleSheetsModalOpen(false)}
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
@@ -3820,16 +3840,15 @@ export default function App() {
           onCleanWriteToSheets={cleanWriteToGoogleSheets}
           onResetAndCleanImport={handleResetAndCleanImportFromSheets}
           onDisconnect={handleDisconnectGoogle}
-          onExportExcel={isStaffMode ? undefined : handleExportExcel}
-          onImportExcel={isStaffMode ? undefined : handleImportExcel}
-          onOpenImportModal={isStaffMode ? undefined : () => handleOpenImportModal('household')}
-          onRestoreBackup={isStaffMode ? undefined : handleRestoreFromBackup}
+          onExportExcel={handleExportExcel}
+          onImportExcel={handleImportExcel}
+          onOpenImportModal={() => handleOpenImportModal('household')}
+          onRestoreBackup={handleRestoreFromBackup}
           onResetDatabase={handleResetDatabase}
           temples={temples}
           templeInfo={templeInfo}
           households={households}
           activeTempleId={activeTempleId}
-          isStaffMode={isStaffMode}
         />
 
         {/* Google Sheets Undo Interrupt Modal */}
@@ -3876,7 +3895,7 @@ export default function App() {
         onCancelLoading={() => setIsStartupLoading(false)}
         isLoading={isStartupLoading}
         loadingMessage={startupLoadingMsg}
-        isStaffInvite={isStaffMode || !!staffInviteSheetId}
+        isSharedInvite={!!sharedInviteSheetId}
       />
 
       {/* Header */}
@@ -4142,7 +4161,6 @@ export default function App() {
         templeInfo={templeInfo}
         households={households}
         activeTempleId={activeTempleId}
-        isStaffMode={isStaffMode}
       />
 
       {/* External Database Import Wizard Modal */}

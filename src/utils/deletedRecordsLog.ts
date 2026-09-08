@@ -5,19 +5,20 @@ export const MAX_DELETED_LOG_LENGTH = 1000;
 const STORAGE_KEY = 'temple_deleted_records_log';
 
 /**
- * Normalizes operator name. Defaults empty or legacy "寺院関係者" to "管理者" (or "スタッフ" if performed from a staff device).
+ * Normalizes operator name. Retains Google account name.
+ * If empty or legacy "管理者" / "寺院関係者", attempts to fallback to the active Google account name or "Google未連携".
  */
 export function normalizeLogOperator(operator?: string, deviceInfo?: string): string {
-  const isStaffDevice = (deviceInfo || '').includes('スタッフ');
+  const cachedAccount = typeof window !== 'undefined'
+    ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email') || '')
+    : '';
 
-  if (!operator) return isStaffDevice ? 'スタッフ' : '管理者';
-  const clean = operator.trim();
-  if (!clean || clean === '寺院関係者') {
-    return isStaffDevice ? 'スタッフ' : '管理者';
+  if (!operator) {
+    return cachedAccount.trim() || 'Google未連携';
   }
-  // If the device is explicitly staff but operator was recorded as "管理者" (e.g. tested with admin Google account)
-  if (clean === '管理者' && isStaffDevice) {
-    return 'スタッフ';
+  const clean = operator.trim();
+  if (!clean || clean === '寺院関係者' || clean === '管理者') {
+    return cachedAccount.trim() || 'Google未連携';
   }
   return clean;
 }

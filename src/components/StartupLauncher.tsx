@@ -23,6 +23,7 @@ interface StartupLauncherProps {
   onCancelLoading?: () => void;
   isLoading?: boolean;
   loadingMessage?: string;
+  isSharedInvite?: boolean;
   isStaffInvite?: boolean;
 }
 
@@ -35,8 +36,10 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
   onCancelLoading,
   isLoading = false,
   loadingMessage = 'データを読み込み中...',
+  isSharedInvite = false,
   isStaffInvite = false,
 }) => {
+  const effectiveSharedInvite = isSharedInvite || isStaffInvite;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -109,11 +112,11 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Hidden File Input for JSON / Excel */}
+      {/* Hidden File Input for Excel */}
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.xlsx,.xls"
+        accept=".xlsx,.xls,.json"
         className="hidden"
         onChange={handleFileChange}
       />
@@ -209,29 +212,29 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
 
         {/* 4 Launch Options Grid */}
         <div className="p-4 sm:p-7">
-          {isStaffInvite && (
-            <div className="mb-5 p-4 sm:p-5 rounded-sm border-2 border-amber-500 bg-[#241C12] shadow-xl text-left animate-in fade-in">
+          {effectiveSharedInvite && (
+            <div className="mb-5 p-4 sm:p-5 rounded-sm border-2 border-emerald-500 bg-[#14261C] shadow-xl text-left animate-in fade-in">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-amber-400 font-bold text-sm sm:text-base">
-                  <span className="text-xl sm:text-2xl">👤</span>
-                  <span>スタッフモードで招待されました</span>
+                <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm sm:text-base">
+                  <span className="text-xl sm:text-2xl">🤝</span>
+                  <span>共有データ連携リンクから開かれました</span>
                 </div>
-                <span className="px-2.5 py-1 bg-amber-500 text-stone-950 font-bold text-xs sm:text-sm rounded-xs">
-                  スマホ版・機能制限モード
+                <span className="px-2.5 py-1 bg-emerald-500 text-stone-950 font-bold text-xs sm:text-sm rounded-xs">
+                  PC・スマホ両対応
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-amber-100/90 mt-2 leading-relaxed">
-                寺院管理者様から共有されたスプレッドシートへのデータ連携が準備されています。
-                「Googleアカウントでスタッフ連携を開始」を押すと、共有データに直接接続しスタッフモード（世帯・過去帳の追加/削除不可、予定帳・棚経巡回計画・ToDo・受付は全機能可能）として起動します。
+              <p className="text-xs sm:text-sm text-emerald-100/90 mt-2 leading-relaxed">
+                共有されたGoogleスプレッドシートへのデータ連携が準備されています。
+                「Googleアカウントで共同連携を開始」を押すと、共有データに接続し、PC・スマートフォン双方で全機能（檀家名簿・過去帳・法事予定・会計・印刷・Excel入出力）を共同管理できます。
               </p>
               <button
                 type="button"
                 onClick={handleGoogleSheetsClick}
                 disabled={isLoading}
-                className="mt-3.5 w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 active:to-amber-700 text-stone-950 font-bold text-sm sm:text-base rounded-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                className="mt-3.5 w-full py-3.5 px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 active:from-emerald-600 active:to-emerald-700 text-stone-950 font-bold text-sm sm:text-base rounded-xs flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all disabled:opacity-50"
               >
                 <Cloud className="w-5 h-5 text-stone-950" />
-                <span>Googleアカウントでスタッフ連携を開始</span>
+                <span>Googleアカウントで共同連携を開始</span>
                 <ArrowRight className="w-5 h-5 text-stone-950" />
               </button>
             </div>
@@ -254,15 +257,15 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
                     <FolderUp className="w-5 h-5" />
                   </div>
                   <span className="px-2 py-0.5 bg-[#333333] text-[#D4AF37] text-[10px] sm:text-xs font-bold rounded-sm border border-[#555555]">
-                    JSON / Excel対応
+                    Excelファイル対応
                   </span>
                 </div>
                 <div>
                   <h3 className="text-base sm:text-lg font-serif font-bold text-[#F9F7F2] group-hover:text-[#D4AF37] transition-colors flex items-center gap-1.5">
-                    <span>PCからデータ読み込み</span>
+                    <span>PCからデータ読み込み（Excel）</span>
                   </h3>
                   <p className="text-xs text-[#AAAAAA] mt-1 leading-relaxed">
-                    以前保存したバックアップ（JSONファイル）または檀家・過去帳のExcelデータを取り込んで立ち上げます。
+                    保存したExcelバックアップ（.xlsx）または檀家・過去帳のExcelデータを取り込んで立ち上げます。
                   </p>
                 </div>
               </div>

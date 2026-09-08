@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData } from '../types';
+import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData, DeletedRecordEntry } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, INITIAL_TEMPLE_INFO } from '../data/initialData';
 import { 
   getSavedNoticeTemplates, 
@@ -26,12 +26,14 @@ import {
   parseBatchAccountingConfigFromRows,
   reconstructBatchAccountingData
 } from './batchAccountingUtils';
+import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH, normalizeLogOperator } from './deletedRecordsLog';
 
 export interface ExportToExcelOptions {
   targetTempleId?: string | 'ALL';
   templeMasterOptionsMap?: Record<string, MasterOptions>;
   priests?: Priest[];
   batchAccountingData?: BatchAccountingData;
+  deletedRecords?: DeletedRecordEntry[];
 }
 
 export function exportToExcel(
@@ -711,11 +713,63 @@ export function exportToExcel(
   const wsBatch = XLSX.utils.aoa_to_sheet([batchHeaders, ...batchRows]);
   XLSX.utils.book_append_sheet(wb, wsBatch, '一括会計受付');
 
+  // 13. 操作・削除履歴（共同管理・監査用：新規/更新/削除/復元ログ）
+  const deletedHeaders = [
+    '履歴ID',
+    '種別',
+    '対象エンティティ',
+    '対象ID',
+    '対象名称/内容',
+    '操作日時',
+    '日時(ms)',
+    '所属寺院',
+    '所属寺院ID',
+    '操作者',
+    '端末・環境'
+  ];
+
+  const deletedLogsToExport: DeletedRecordEntry[] = (exportOptions?.deletedRecords && exportOptions.deletedRecords.length > 0)
+    ? exportOptions.deletedRecords
+    : loadDeletedRecordsLog();
+
+  const filteredLogs = isIndividualExport
+    ? deletedLogsToExport.filter((entry) => !entry.templeId || entry.templeId === targetTempleId)
+    : deletedLogsToExport;
+
+  const deletedRows = filteredLogs.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => [
+    entry.logId || `LOG-${idx + 1}`,
+    entry.actionType || 'delete',
+    entry.entityType || '',
+    entry.id || '',
+    entry.label || '',
+    entry.deletedAt || '',
+    String(entry.deletedTimestamp || ''),
+    getTempleLabel(entry.templeId),
+    getTempleId(entry.templeId),
+    normalizeLogOperator(entry.operator),
+    entry.deviceInfo || '',
+  ]);
+  const wsDeleted = XLSX.utils.aoa_to_sheet([deletedHeaders, ...deletedRows]);
+  XLSX.utils.book_append_sheet(wb, wsDeleted, '操作・削除履歴');
+
   // Auto column widths
-  const allSheets = [wsTemples, wsHouseholds, wsFamily, wsPast, wsMemorial, wsTodos, wsTransactions, wsPriests, wsBatchConfig, wsBatch];
+  const allSheets = [wsTemples, wsHouseholds, wsFamily, wsPast, wsMemorial, wsTodos, wsTransactions, wsPriests, wsBatchConfig, wsBatch, wsDeleted];
   allSheets.forEach((ws) => {
     ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 30 }, { wch: 20 }];
   });
+  wsDeleted['!cols'] = [
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 28 },
+    { wch: 20 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 20 },
+  ];
   wsBatch['!cols'] = [
     { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 14 },
     { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 12 },
@@ -798,6 +852,7 @@ export async function importFromExcel(
   templeTodos?: TempleTodo[];
   priests?: Priest[];
   batchAccountingData?: BatchAccountingData;
+  deletedRecords?: DeletedRecordEntry[];
 }> {
   const dataBuffer = await file.arrayBuffer();
   const wb = XLSX.read(dataBuffer, { 
@@ -2127,6 +2182,75 @@ export async function importFromExcel(
     }
   }
 
+  // 12. 操作・削除履歴の読み込み
+  const parsedDeletedRecords: DeletedRecordEntry[] = [];
+  const deletedSheetName = findSheet(
+    ['操作・削除履歴', '操作履歴', '削除履歴', '削除ログ', '操作ログ'],
+    ['履歴ID', '種別', '対象エンティティ', '対象ID']
+  );
+  if (deletedSheetName && wb.Sheets[deletedSheetName]) {
+    const { headers: dHeaders, rows: dRows } = getSheetDataByName(deletedSheetName);
+    if (dRows && dRows.length > 0) {
+      const logIdIdx = findColIdx(dHeaders, ['履歴ID', 'ログID', 'logId']);
+      const actionTypeIdx = findColIdx(dHeaders, ['操作種別', '種別', 'アクション', 'actionType']);
+      const entityTypeIdx = findColIdx(dHeaders, ['対象エンティティ', 'データ種別', 'エンティティ', '対象種別', '対象', 'entityType']);
+      const idIdx = findColIdx(dHeaders, ['対象ID', 'レコードID', 'データID', 'targetId', 'recordId']);
+      const labelIdx = findColIdx(dHeaders, ['対象名称/内容', '対象名称内容', '名称・内容', '名称', '内容', 'ラベル', '説明', 'label']);
+      const deletedAtIdx = findColIdx(dHeaders, ['削除・操作日時', '削除操作日時', '操作日時', '日時', '削除日時', 'deletedAt']);
+      const timestampIdx = findColIdx(dHeaders, ['日時(ms)', 'タイムスタンプ(ms)', 'タイムスタンプms', '日時(ミリ秒)', 'タイムスタンプ', 'ms', 'timestamp']);
+      const dTempleIdIdx = findColIdx(dHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
+      const operatorIdx = findColIdx(dHeaders, ['操作者', '実行者', 'ユーザー', 'operator', 'user']);
+      const deviceInfoIdx = findColIdx(dHeaders, ['端末・環境', '端末', '環境', 'デバイス', 'deviceInfo', 'device']);
+
+      dRows.forEach((row, rowIdx) => {
+        const logId = String((logIdIdx !== -1 ? row[logIdIdx] : (row[0] && String(row[0]).startsWith('LOG-') ? row[0] : '')) || '').trim();
+        let id = '';
+        if (idIdx !== -1 && idIdx !== logIdIdx) {
+          id = String(row[idIdx] || '').trim();
+        } else {
+          id = String(row[3] || row[2] || '').trim();
+        }
+        if (id.startsWith('LOG-') && row[3] && !String(row[3]).startsWith('LOG-')) {
+          id = String(row[3]).trim();
+        }
+        if (!id || id.startsWith('LOG-') || id === 'ID' || id === '対象ID' || id === 'レコードID') return;
+
+        const entityType = (entityTypeIdx !== -1 ? String(row[entityTypeIdx] || '').trim() : (row[2] || 'household')) as any;
+        const actionType = (actionTypeIdx !== -1 ? String(row[actionTypeIdx] || '').trim() : (row[1] || 'delete')) as any;
+        const label = labelIdx !== -1 ? String(row[labelIdx] || '').trim() : (row[4] ? String(row[4]) : '');
+        const deletedAt = deletedAtIdx !== -1 ? String(row[deletedAtIdx] || '').trim() : (row[5] ? String(row[5]) : '');
+        let deletedTimestamp = timestampIdx !== -1 ? Number(row[timestampIdx]) : 0;
+        if (!deletedTimestamp || isNaN(deletedTimestamp) || deletedTimestamp <= 0) {
+          if (row[6] && !isNaN(Number(row[6]))) {
+            deletedTimestamp = Number(row[6]);
+          } else if (deletedAt) {
+            deletedTimestamp = new Date(deletedAt).getTime();
+          }
+        }
+        if (isNaN(deletedTimestamp) || deletedTimestamp <= 0) {
+          deletedTimestamp = Date.now();
+        }
+        const templeId = dTempleIdIdx !== -1 ? String(row[dTempleIdIdx] || '').trim() : (row[8] ? String(row[8]) : undefined);
+        const rawOperator = operatorIdx !== -1 ? String(row[operatorIdx] || '').trim() : (row[9] ? String(row[9]) : undefined);
+        const operator = normalizeLogOperator(rawOperator);
+        const deviceInfo = deviceInfoIdx !== -1 ? String(row[deviceInfoIdx] || '').trim() : (row[10] ? String(row[10]) : undefined);
+
+        parsedDeletedRecords.push({
+          logId: logId || `LOG-${deletedTimestamp}-${rowIdx}`,
+          id,
+          entityType,
+          actionType,
+          label,
+          deletedAt: deletedAt || new Date(deletedTimestamp).toISOString(),
+          deletedTimestamp,
+          templeId,
+          operator: operator || undefined,
+          deviceInfo: deviceInfo || undefined,
+        });
+      });
+    }
+  }
+
   return {
     templeInfo,
     temples,
@@ -2140,5 +2264,6 @@ export async function importFromExcel(
     noticeTemplates,
     priests: parsedPriests.length > 0 ? parsedPriests : undefined,
     batchAccountingData: parsedBatchAccountingData,
+    deletedRecords: parsedDeletedRecords.length > 0 ? parsedDeletedRecords : undefined,
   };
 }

@@ -38,7 +38,6 @@ interface MobileHouseholdViewProps {
   onOpenAddPastRecord: (householdId: string) => void;
   onOpenAddService: (householdId: string) => void;
   onBatchAddPastRecords?: (records: PastRecord[], description?: string) => void;
-  isStaffMode?: boolean;
 }
 
 export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
@@ -55,7 +54,6 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   onOpenAddPastRecord,
   onOpenAddService,
   onBatchAddPastRecords,
-  isStaffMode = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>('all');
@@ -206,16 +204,14 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
               </button>
             )}
           </div>
-          {!isStaffMode && (
-            <button
-              type="button"
-              onClick={handleAddNew}
-              className="px-4 py-2.5 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
-            >
-              <Plus className="w-4.5 h-4.5" />
-              <span>新規世帯</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleAddNew}
+            className="px-4 py-2.5 bg-[#8C2D19] hover:bg-[#732414] active:bg-[#5C1D10] text-white rounded-xs text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+          >
+            <Plus className="w-4.5 h-4.5" />
+            <span>新規世帯</span>
+          </button>
         </div>
 
         {/* Filter Controls for Mobile (区分１, 区分２, 役職, 施餓鬼塔婆, 棚経) */}
@@ -562,54 +558,50 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                           <BookOpen className="w-4 h-4" />
                           <span>当家の過去帳・精霊 ({relPast.length}霊):</span>
                         </div>
-                        {!isStaffMode && (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setAiImportHousehold(h)}
-                              className="text-xs text-[#8C2D19] hover:bg-[#F0ECE1] font-bold bg-[#FAF7F0] px-2.5 py-1 border border-[#D4AF37] rounded-xs cursor-pointer flex items-center gap-1 shadow-2xs"
-                              title="メモ帳テキスト貼り付け・AIカメラ文字起こしプロンプト連携から一括取込"
-                            >
-                              <FileText className="w-3.5 h-3.5 text-[#8C2D19]" />
-                              <Sparkles className="w-3 h-3 text-[#D4AF37]" />
-                              <span>テキスト取込</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onOpenAddPastRecord(h.id)}
-                              className="text-xs text-[#1A1A1A] hover:underline font-bold bg-white px-2.5 py-1 border border-stone-300 rounded-xs cursor-pointer flex items-center gap-1"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>手動追加</span>
-                            </button>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAiImportHousehold(h)}
+                            className="text-xs text-[#8C2D19] hover:bg-[#F0ECE1] font-bold bg-[#FAF7F0] px-2.5 py-1 border border-[#D4AF37] rounded-xs cursor-pointer flex items-center gap-1 shadow-2xs"
+                            title="メモ帳テキスト貼り付け・AIカメラ文字起こしプロンプト連携から一括取込"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-[#8C2D19]" />
+                            <Sparkles className="w-3 h-3 text-[#D4AF37]" />
+                            <span>テキスト取込</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onOpenAddPastRecord(h.id)}
+                            className="text-xs text-[#1A1A1A] hover:underline font-bold bg-white px-2.5 py-1 border border-stone-300 rounded-xs cursor-pointer flex items-center gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>手動追加</span>
+                          </button>
+                        </div>
                       </div>
 
                       {relPast.length === 0 ? (
                         <div className="p-4 bg-white border border-dashed border-[#D1CEC7] text-center space-y-2 rounded-xs">
                           <div className="text-xs sm:text-sm text-gray-500 font-bold">過去帳データが未登録です</div>
-                          {!isStaffMode && (
-                            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => setAiImportHousehold(h)}
-                                className="px-3 py-1.5 bg-[#FAF7F0] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs sm:text-sm rounded-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
-                              >
-                                <FileText className="w-4 h-4 text-[#8C2D19]" />
-                                <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
-                                <span>メモ帳・テキストから取り込み</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onOpenAddPastRecord(h.id)}
-                                className="px-3 py-1.5 bg-stone-100 text-stone-700 font-bold text-xs sm:text-sm rounded-xs flex items-center gap-1 cursor-pointer"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>手動追加</span>
-                              </button>
-                            </div>
-                          )}
+                          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setAiImportHousehold(h)}
+                              className="px-3 py-1.5 bg-[#FAF7F0] text-[#8C2D19] border border-[#D4AF37] font-bold text-xs sm:text-sm rounded-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                            >
+                              <FileText className="w-4 h-4 text-[#8C2D19]" />
+                              <Sparkles className="w-3.5 h-3.5 text-[#D4AF37]" />
+                              <span>メモ帳・テキストから取り込み</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onOpenAddPastRecord(h.id)}
+                              className="px-3 py-1.5 bg-stone-100 text-stone-700 font-bold text-xs sm:text-sm rounded-xs flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>手動追加</span>
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="space-y-2">
@@ -696,7 +688,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         activeTempleId={activeTempleId}
         existingHouseholds={households}
         onSave={onSaveHousehold}
-        onDelete={isStaffMode ? undefined : onDeleteHousehold}
+        onDelete={onDeleteHousehold}
       />
 
       {/* Single Household Past Record Text/AI Import Wizard (Mobile Specific) */}
