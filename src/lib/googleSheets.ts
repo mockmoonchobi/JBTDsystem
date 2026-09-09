@@ -203,10 +203,36 @@ export async function findOrCreateSpreadsheet(
   forceCreateNew: boolean = false,
   options?: {
     preferredSheetId?: string;
+    strictSheetIdOnly?: boolean;
     onProgress?: (message: string) => void;
   }
 ): Promise<{ id: string; url: string; isExisting: boolean }> {
   const onProgress = options?.onProgress;
+
+  if (options?.strictSheetIdOnly) {
+    const preferredId = options.preferredSheetId;
+    if (!preferredId) {
+      throw new Error('共有スプレッドシートのIDが指定されていません。');
+    }
+    if (onProgress) onProgress('共有スプレッドシートを確認・接続中...');
+    const testUrl = `https://sheets.googleapis.com/v4/spreadsheets/${preferredId}?fields=spreadsheetId,properties.title,sheets.properties(sheetId,title)`;
+    const testRes = await fetchWithRetry(testUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }, 2, 500, 8000);
+
+    if (testRes.ok) {
+      if (onProgress) onProgress('シート構成を確認中...');
+      await ensureAllSheetsExist(accessToken, preferredId);
+      return {
+        id: preferredId,
+        url: `https://docs.google.com/spreadsheets/d/${preferredId}`,
+        isExisting: true,
+      };
+    } else {
+      const errData = await testRes.json().catch(() => ({}));
+      throw new Error(errData?.error?.message || `HTTP ${testRes.status}: 共有スプレッドシートにアクセスできませんでした。`);
+    }
+  }
 
   if (!forceCreateNew) {
     // 0. Fast-path: Check preferredSheetId or cached sheet info in localStorage (~200ms)

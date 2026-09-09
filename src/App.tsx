@@ -138,7 +138,7 @@ export default function App() {
   const [calendarTargetDate, setCalendarTargetDate] = useState<string | undefined>(undefined);
 
   // Shared Collaboration Sheet ID (supports URL parameter: sheetId=...)
-  const [sharedInviteSheetId] = useState<string | null>(() => {
+  const [sharedInviteSheetId, setSharedInviteSheetId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       // Clean up legacy staff mode flag to ensure full access
       safeStorage.removeItem('renge_staff_mode');
@@ -151,6 +151,25 @@ export default function App() {
       return safeStorage.getItem('renge_shared_invite_sheet_id');
     }
     return null;
+  });
+
+  // 共有データ接続モード（共有リンク・招待から起動した場合にtrue）
+  const [isSharedMode, setIsSharedMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('sheetId')) {
+        try {
+          sessionStorage.setItem('renge_is_shared_mode', 'true');
+        } catch {}
+        return true;
+      }
+      try {
+        return sessionStorage.getItem('renge_is_shared_mode') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
   });
 
   // View mode: 'desktop' | 'mobile' (supports responsive auto-detect on phone access & free manual toggle)
@@ -824,13 +843,61 @@ export default function App() {
     safeStorage.removeItem('temple_google_sheet_info');
     safeStorage.removeItem('temple_google_sheet_last_sync');
 
+    setIsSharedMode(false);
+    try {
+      sessionStorage.removeItem('renge_is_shared_mode');
+      sessionStorage.removeItem('renge_shared_sheet_id');
+      safeStorage.removeItem('renge_shared_invite_sheet_id');
+    } catch {}
+    setSharedInviteSheetId(null);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('sheetId');
+      window.history.replaceState(null, '', url.pathname);
+    }
+
     setIsStartupLauncherOpen(false);
     isStartupLauncherOpenRef.current = false;
     recordHistory('データ無し（新規）で立ち上げ');
   };
 
+  // 共有データ接続モードから安全に初期状態（ブラウザ更新・初期ランチャー）へ復帰する処理
+  const handleResetToInitialStartup = async () => {
+    try {
+      safeStorage.removeItem('temple_google_sheet_info');
+      safeStorage.removeItem('temple_google_sheet_last_sync');
+      safeStorage.removeItem('renge_shared_invite_sheet_id');
+      sessionStorage.removeItem('renge_is_shared_mode');
+      sessionStorage.removeItem('renge_shared_sheet_id');
+    } catch {}
+    setIsSharedMode(false);
+    setSharedInviteSheetId(null);
+    setSyncStatus('disconnected');
+    setLastSyncTime(null);
+    setIsGoogleSheetsModalOpen(false);
+
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('sheetId');
+      window.history.replaceState(null, '', url.pathname);
+      window.location.href = url.pathname;
+    }
+  };
+
   // ② チュートリアルデータ（ダミーデータ）ありで立ち上げ
   const handleStartWithTutorial = () => {
+    setIsSharedMode(false);
+    try {
+      sessionStorage.removeItem('renge_is_shared_mode');
+      sessionStorage.removeItem('renge_shared_sheet_id');
+      safeStorage.removeItem('renge_shared_invite_sheet_id');
+    } catch {}
+    setSharedInviteSheetId(null);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('sheetId');
+      window.history.replaceState(null, '', url.pathname);
+    }
     const formattedPast = INITIAL_PAST_RECORDS.map((r) => ({
       ...r,
       niibon: r.niibon && r.niibon.trim() !== '' ? r.niibon : calculateNiibonFromDeathDate(r.deathDate, INITIAL_TEMPLE_INFO.bonSeason || '8月盆'),
@@ -966,6 +1033,19 @@ export default function App() {
       } else {
         throw new Error('サポートされていないファイル形式です（Excelファイル .xlsx / .xls を選択してください）。');
       }
+
+      setIsSharedMode(false);
+      try {
+        sessionStorage.removeItem('renge_is_shared_mode');
+        sessionStorage.removeItem('renge_shared_sheet_id');
+        safeStorage.removeItem('renge_shared_invite_sheet_id');
+      } catch {}
+      setSharedInviteSheetId(null);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('sheetId');
+        window.history.replaceState(null, '', url.pathname);
+      }
     } catch (err: any) {
       console.error('File load error:', err);
       throw new Error(`ファイルの読み込みに失敗しました: ${err.message || err}`);
@@ -987,6 +1067,22 @@ export default function App() {
         return;
       }
 
+      const isFromSharedInvite = !!sharedInviteSheetId;
+      setIsSharedMode(isFromSharedInvite);
+      if (isFromSharedInvite) {
+        try {
+          sessionStorage.setItem('renge_is_shared_mode', 'true');
+          sessionStorage.setItem('renge_shared_sheet_id', sharedInviteSheetId);
+        } catch {}
+      } else {
+        try {
+          sessionStorage.removeItem('renge_is_shared_mode');
+          sessionStorage.removeItem('renge_shared_sheet_id');
+          safeStorage.removeItem('renge_shared_invite_sheet_id');
+        } catch {}
+        setSharedInviteSheetId(null);
+      }
+
       setStartupLoadingMsg('Googleスプレッドシートを確認・接続中...');
       const savedInfo = safeStorage.getItem('temple_google_sheet_info');
       let preferredSheetId: string | undefined = sharedInviteSheetId || undefined;
@@ -998,6 +1094,7 @@ export default function App() {
 
       const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
         preferredSheetId,
+        strictSheetIdOnly: isFromSharedInvite,
         onProgress: (msg) => setStartupLoadingMsg(msg),
       });
 
@@ -3887,6 +3984,9 @@ export default function App() {
           syncStatus={syncStatus}
           lastSyncTime={lastSyncTime}
           syncErrorMessage={syncErrorMessage}
+          isSharedMode={isSharedMode}
+          sharedSheetId={sharedInviteSheetId}
+          onResetToInitialStartup={handleResetToInitialStartup}
           onTriggerManualSync={handleManualSync}
           onPullFromSheets={handlePullFromSheets}
           onSyncWithGoogleDrive={syncWithGoogleDrive}
@@ -4199,6 +4299,9 @@ export default function App() {
         syncStatus={syncStatus}
         lastSyncTime={lastSyncTime}
         syncErrorMessage={syncErrorMessage}
+        isSharedMode={isSharedMode}
+        sharedSheetId={sharedInviteSheetId}
+        onResetToInitialStartup={handleResetToInitialStartup}
         onTriggerManualSync={handleManualSync}
         onPullFromSheets={handlePullFromSheets}
         onSyncWithGoogleDrive={syncWithGoogleDrive}

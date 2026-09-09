@@ -32,7 +32,8 @@ import {
   Lock,
   Edit3,
   Eye,
-  UploadCloud
+  UploadCloud,
+  RotateCcw
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { googleSignIn, logout, initAuth, getAccessToken, getCurrentUser } from '../lib/googleAuth';
@@ -70,6 +71,9 @@ interface GoogleSheetsModalProps {
   templeInfo?: TempleInfo;
   households?: Household[];
   activeTempleId?: string;
+  isSharedMode?: boolean;
+  sharedSheetId?: string | null;
+  onResetToInitialStartup?: () => void;
 }
 
 export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
@@ -93,8 +97,11 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   templeInfo,
   households = [],
   activeTempleId = 'temple-main',
+  isSharedMode = false,
+  sharedSheetId = null,
+  onResetToInitialStartup,
 }) => {
-  const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>('excel');
+  const [activeTab, setActiveTab] = useState<'excel' | 'sheets'>(() => isSharedMode ? 'sheets' : 'excel');
   const [user, setUser] = useState<User | null>(() => getCurrentUser());
   const [loading, setLoading] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info' | 'loading'; text: string } | null>(null);
@@ -129,6 +136,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [showResetAndLoginModal, setShowResetAndLoginModal] = useState<boolean>(false);
   const [showCleanWriteModal, setShowCleanWriteModal] = useState<boolean>(false);
   const [showTutorialWarningModal, setShowTutorialWarningModal] = useState<boolean>(false);
+  const [showSharedDisconnectChoiceModal, setShowSharedDisconnectChoiceModal] = useState<boolean>(false);
 
   // チュートリアルデータ残置判定（寺院情報の一致、またはDA/D1かつ電話番号に●●●●混入）
   const checkTutorialRemaining = () => {
@@ -193,14 +201,101 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen && activeTab === 'sheets' && user && spreadsheetInfo?.id) {
+    if (isOpen && isSharedMode) {
+      setActiveTab('sheets');
+    }
+  }, [isOpen, isSharedMode]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'sheets' && user && spreadsheetInfo?.id && !isSharedMode) {
       loadPermissions(spreadsheetInfo.id);
     }
-  }, [isOpen, activeTab, user, spreadsheetInfo?.id]);
+  }, [isOpen, activeTab, user, spreadsheetInfo?.id, isSharedMode]);
 
   if (!isOpen) return null;
 
   const isConnected = Boolean(user && spreadsheetInfo?.id && syncStatus !== 'disconnected');
+
+  // 共有データへの再接続ハンドラー（共有モード専用：自分のDrive検索や新規作成は絶対に呼ばない）
+  const handleReconnectSharedSheet = async () => {
+    setLoading(true);
+    setStatusMessage({ type: 'loading', text: 'Googleアカウントにログインし、共有スプレッドシートに再接続中...' });
+    try {
+      let token = await getAccessToken();
+      let currentUser = getCurrentUser();
+
+      if (!token || !currentUser) {
+        const res = await googleSignIn();
+        if (!res) {
+          setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+          setLoading(false);
+          return;
+        }
+        token = res.accessToken;
+        currentUser = res.user;
+        setUser(res.user);
+      } else {
+        setUser(currentUser);
+      }
+
+      const targetSheetId = sharedSheetId || spreadsheetInfo?.id;
+      if (!targetSheetId) {
+        throw new Error('共有スプレッドシートのIDが見つかりません。');
+      }
+
+      setStatusMessage({ type: 'loading', text: '共有スプレッドシートを確認・再接続中...' });
+      const sheet = await findOrCreateSpreadsheet(token, false, {
+        preferredSheetId: targetSheetId,
+        strictSheetIdOnly: true,
+        onProgress: (text) => setStatusMessage({ type: 'loading', text }),
+      });
+      setSpreadsheetInfo(sheet);
+      saveJsonState('temple_google_sheet_info', sheet);
+
+      if (onSyncWithGoogleDrive) {
+        setStatusMessage({ type: 'loading', text: '共有スプレッドシートから最新データを同期中...' });
+        await onSyncWithGoogleDrive(token, sheet.id);
+      }
+      setStatusMessage({ type: 'success', text: '共有スプレッドシートとの再接続・同期が完了しました。' });
+    } catch (err: any) {
+      if (
+        err?.code === 'auth/popup-closed-by-user' ||
+        err?.code === 'auth/cancelled-popup-request' ||
+        err?.message?.includes('closed-by-user') ||
+        err?.message?.includes('キャンセル')
+      ) {
+        setStatusMessage({ type: 'info', text: 'Googleログインがキャンセルされました。' });
+        return;
+      }
+      console.error('Shared sheet reconnect error:', err);
+      setStatusMessage({ type: 'error', text: `再接続エラー: ${err.message || '共有スプレッドシートへの接続に失敗しました。'}` });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 連携中止＆初期状態（ブラウザ更新・ランチャー画面）へ戻るハンドラー
+  const handleConfirmResetToInitialStartup = () => {
+    if (window.confirm(
+      '共有データとの連携を終了し、アプリの初期状態に戻りますか？\n\n' +
+      '※端末内の共有データ一時キャッシュは安全に消去され、起動画面（ブラウザを更新した初期状態）に戻ります。'
+    )) {
+      if (onResetToInitialStartup) {
+        onResetToInitialStartup();
+      } else {
+        safeStorage.removeItem('temple_google_sheet_info');
+        safeStorage.removeItem('temple_google_sheet_last_sync');
+        sessionStorage.removeItem('renge_shared_session_mode');
+        sessionStorage.removeItem('renge_shared_sheet_id');
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('sheetId');
+          window.history.replaceState(null, '', url.pathname);
+          window.location.href = url.pathname;
+        }
+      }
+    }
+  };
 
   // Handle Google Login & Setup Auto-Sync
   const handleLogin = async (isCleanImport: boolean = false) => {
@@ -615,11 +710,18 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               <Zap className="w-4 h-4 animate-pulse" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold font-serif text-[#F9F7F2] flex items-center gap-1.5">
-                データ連携・Excel / Googleシート管理
+              <h2 className="text-base sm:text-lg font-bold font-serif text-[#F9F7F2] flex items-center gap-2">
+                <span>{isSharedMode ? '共有データ連携・同期状況' : 'データ連携・Excel / Googleシート管理'}</span>
+                {isSharedMode && (
+                  <span className="text-[10px] bg-emerald-800/90 text-emerald-200 px-2 py-0.5 border border-emerald-400 font-sans font-normal">
+                    🤝 共有データアクセス中
+                  </span>
+                )}
               </h2>
               <p className="text-[11px] text-[#CCCCCC] font-sans">
-                全寺院一括 ＆ 各寺院個別 Excel入出力・Googleスプレッドシート自動同期
+                {isSharedMode 
+                  ? '共有スプレッドシートとの常時同期および接続設定' 
+                  : '全寺院一括 ＆ 各寺院個別 Excel入出力・Googleスプレッドシート自動同期'}
               </p>
             </div>
           </div>
@@ -631,36 +733,38 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="flex border-b border-[#D1CEC7] bg-[#F2EFE9] text-xs font-bold shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('excel')}
-            className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'excel'
-                ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
-                : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
-            }`}
-          >
-            <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
-            <span>① Excel入出力 (.xlsx) ＆ 他DB取込</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('sheets')}
-            className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'sheets'
-                ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
-                : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
-            }`}
-          >
-            <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-emerald-500' : 'text-[#888888]'}`} />
-            <span>② Googleシート常時自動同期</span>
-            {syncStatus === 'synced' && (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            )}
-          </button>
-        </div>
+        {/* Tab Switcher: 共有モード時はExcelタブが不要なため非表示 */}
+        {!isSharedMode && (
+          <div className="flex border-b border-[#D1CEC7] bg-[#F2EFE9] text-xs font-bold shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('excel')}
+              className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'excel'
+                  ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
+                  : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4 text-[#D4AF37]" />
+              <span>① Excel入出力 (.xlsx) ＆ 他DB取込</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('sheets')}
+              className={`flex-1 py-2.5 px-3 flex items-center justify-center space-x-1.5 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'sheets'
+                  ? 'bg-white text-[#1A1A1A] border-[#D4AF37] shadow-xs'
+                  : 'text-[#666666] hover:text-[#1A1A1A] border-transparent'
+              }`}
+            >
+              <Zap className={`w-4 h-4 ${syncStatus === 'synced' ? 'text-emerald-500' : 'text-[#888888]'}`} />
+              <span>② Googleシート常時自動同期</span>
+              {syncStatus === 'synced' && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Content Body (Scrollable) */}
         <div className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
@@ -694,7 +798,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           )}
 
           {/* ==================== TAB 1: EXCEL IO & EXTERNAL DB ==================== */}
-          {activeTab === 'excel' && (
+          {!isSharedMode && activeTab === 'excel' && (
             <div className="space-y-3.5">
               {/* Excel Local File Export/Import */}
               <div className="bg-[#FAF8F5] border border-[#D4AF37]/60 p-3.5 space-y-3">
@@ -894,12 +998,18 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   {user && (
                     <button
                       type="button"
-                      onClick={handleLogout}
+                      onClick={isSharedMode ? () => setShowSharedDisconnectChoiceModal(true) : handleLogout}
                       className="px-2 py-0.5 bg-white hover:bg-gray-100 border border-[#D1CEC7] text-gray-700 font-bold text-[11px] flex items-center space-x-1 transition-colors cursor-pointer"
-                      title={isConnected ? 'Googleシートとの自動同期を停止して連携を解除します' : 'Googleアカウントからログアウトします'}
+                      title={
+                        isSharedMode
+                          ? '共有データ連携の操作（再接続または連携中止）を選択します'
+                          : isConnected
+                          ? 'Googleシートとの自動同期を停止して連携を解除します'
+                          : 'Googleアカウントからログアウトします'
+                      }
                     >
                       <LogOut className="w-3 h-3" />
-                      <span>{isConnected ? '連携解除' : 'ログアウト'}</span>
+                      <span>{isSharedMode ? '連携解除操作' : isConnected ? '連携解除' : 'ログアウト'}</span>
                     </button>
                   )}
                 </div>
@@ -916,12 +1026,14 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   </div>
                 ) : (
                   <div className="text-[11px] text-[#666666] leading-relaxed">
-                    Googleアカウントと連携すると、スプレッドシートとのリアルタイム自動同期・バックアップが行えます。連携方法を選択してください。
+                    {isSharedMode
+                      ? '共有スプレッドシートへのアクセスにはGoogleアカウントでのログインが必要です。'
+                      : 'Googleアカウントと連携すると、スプレッドシートとのリアルタイム自動同期・バックアップが行えます。連携方法を選択してください。'}
                   </div>
                 )}
 
                 {/* ---------------------------------------------------- */}
-                {/* 1. 未接続の場合：3つの連携ボタンを必ず表示する */}
+                {/* 1. 未接続の場合 */}
                 {/* ---------------------------------------------------- */}
                 {!isConnected ? (
                   <div className="space-y-3 pt-2 border-t border-[#EBE7DF]">
@@ -929,88 +1041,143 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       <div className="flex items-center gap-1.5">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                         <span>
-                          {user 
+                          {isSharedMode
+                            ? '共有スプレッドシートとの接続が切断されています。以下のいずれかを選択してください。'
+                            : user 
                             ? `アカウント（${user.email}）で認証中ですが、スプレッドシートは未接続です。以下の連携方法を選択してください。` 
                             : 'スプレッドシート未連携です。以下の連携方法を選択して同期を開始してください。'}
                         </span>
                       </div>
                     </div>
 
-                    <div className="space-y-2.5">
-                      {/* 1. Googleシートと連携 */}
-                      <div className="bg-[#FAF9F5] border border-[#D4AF37]/60 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center space-x-2 text-[#1A1A1A] font-bold text-xs">
-                            <FileSpreadsheet className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                    {isSharedMode ? (
+                      /* 共有モード専用の未接続時選択肢（選択肢①と選択肢②のみ） */
+                      <div className="space-y-2.5">
+                        {/* 選択肢①: 共有データと再接続 */}
+                        <div className="bg-emerald-50/70 border-2 border-emerald-500 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs rounded-xs">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center space-x-2 text-emerald-950 font-bold text-xs sm:text-sm">
+                              <RefreshCw className={`w-4 h-4 text-emerald-600 shrink-0 ${loading ? 'animate-spin' : ''}`} />
+                              <span>① 共有データと再接続（共有シートに再接続）</span>
+                              <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 font-normal">推奨</span>
+                            </div>
+                            <p className="text-[11px] text-emerald-900/90 leading-relaxed">
+                              指定された共有スプレッドシートに安全に再接続し、最新データを読み込んで自動同期を再開します（個人のGoogleドライブのデータとは一切混同・作成されません）。
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleReconnectSharedSheet}
+                            disabled={loading}
+                            className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
+                            title="共有スプレッドシートに再接続します"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                            <span>共有データと再接続</span>
+                          </button>
+                        </div>
+
+                        {/* 選択肢②: 連携を中止して初期状態に戻る */}
+                        <div className="bg-[#FAF9F5] border border-gray-400 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs rounded-xs">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center space-x-2 text-gray-900 font-bold text-xs sm:text-sm">
+                              <RotateCcw className="w-4 h-4 text-gray-700 shrink-0" />
+                              <span>② 連携を中止して初期状態に戻る（ブラウザ更新）</span>
+                            </div>
+                            <p className="text-[11px] text-gray-600 leading-relaxed">
+                              共有データとの連携を終了し、端末内に残った一時データを消去して初期起動ランチャー画面（PC読込・通常連携・新規など）に戻ります。
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleConfirmResetToInitialStartup}
+                            disabled={loading}
+                            className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-white hover:bg-gray-100 disabled:opacity-50 text-gray-800 border border-gray-400 font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
+                            title="初期起動画面に戻ります"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-gray-600" />
+                            <span>初期状態に戻る</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* 通常モード：従来通りの3つの連携ボタン */
+                      <div className="space-y-2.5">
+                        {/* 1. Googleシートと連携 */}
+                        <div className="bg-[#FAF9F5] border border-[#D4AF37]/60 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center space-x-2 text-[#1A1A1A] font-bold text-xs">
+                              <FileSpreadsheet className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                              <span>Googleシートと連携</span>
+                              <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 border border-amber-300 font-normal">通常連携</span>
+                            </div>
+                            <p className="text-[11px] text-[#666666] leading-relaxed">
+                              この端末にある現在のデータ（檀家・過去帳等）を保持したまま、Googleアカウントと連携して自動同期を開始します。
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleInitiateLogin}
+                            disabled={loading}
+                            className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-[#1A1A1A] hover:bg-[#333333] disabled:opacity-50 text-[#D4AF37] font-bold text-xs flex items-center justify-center space-x-2 transition-colors border border-[#D4AF37]/50 cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
+                            title="現在の端末データを保持してGoogleアカウントと自動同期を開始します"
+                          >
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-[#D4AF37]" />
                             <span>Googleシートと連携</span>
-                            <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 border border-amber-300 font-normal">通常連携</span>
-                          </div>
-                          <p className="text-[11px] text-[#666666] leading-relaxed">
-                            この端末にある現在のデータ（檀家・過去帳等）を保持したまま、Googleアカウントと連携して自動同期を開始します。
-                          </p>
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleInitiateLogin}
-                          disabled={loading}
-                          className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-[#1A1A1A] hover:bg-[#333333] disabled:opacity-50 text-[#D4AF37] font-bold text-xs flex items-center justify-center space-x-2 transition-colors border border-[#D4AF37]/50 cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
-                          title="現在の端末データを保持してGoogleアカウントと自動同期を開始します"
-                        >
-                          <FileSpreadsheet className="w-3.5 h-3.5 text-[#D4AF37]" />
-                          <span>Googleシートと連携</span>
-                        </button>
-                      </div>
 
-                      {/* 2. 端末データを初期化して読込 */}
-                      <div className="bg-rose-50/40 border border-rose-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center space-x-2 text-rose-950 font-bold text-xs">
-                            <Database className="w-4 h-4 text-rose-600 shrink-0" />
+                        {/* 2. 端末データを初期化して読込 */}
+                        <div className="bg-rose-50/40 border border-rose-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center space-x-2 text-rose-950 font-bold text-xs">
+                              <Database className="w-4 h-4 text-rose-600 shrink-0" />
+                              <span>端末データを初期化して読込</span>
+                              <span className="text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.5 border border-rose-300 font-normal">クラウド優先</span>
+                            </div>
+                            <p className="text-[11px] text-rose-900/80 leading-relaxed">
+                              端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込みます。
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowResetAndLoginModal(true);
+                            }}
+                            disabled={loading}
+                            className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-800 border border-rose-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
+                            title="端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込みます"
+                          >
+                            <Database className="w-3.5 h-3.5 text-rose-600" />
                             <span>端末データを初期化して読込</span>
-                            <span className="text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.5 border border-rose-300 font-normal">クラウド優先</span>
-                          </div>
-                          <p className="text-[11px] text-rose-900/80 leading-relaxed">
-                            端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込みます。
-                          </p>
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowResetAndLoginModal(true);
-                          }}
-                          disabled={loading}
-                          className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-800 border border-rose-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
-                          title="端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込みます"
-                        >
-                          <Database className="w-3.5 h-3.5 text-rose-600" />
-                          <span>端末データを初期化して読込</span>
-                        </button>
-                      </div>
 
-                      {/* 3. Googleシートを初期化して書込 */}
-                      <div className="bg-sky-50/40 border border-sky-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
-                        <div className="space-y-1 flex-1">
-                          <div className="flex items-center space-x-2 text-sky-950 font-bold text-xs">
-                            <UploadCloud className="w-4 h-4 text-sky-600 shrink-0" />
-                            <span>Googleシートを初期化して書込</span>
-                            <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 border border-sky-300 font-normal">端末優先</span>
+                        {/* 3. Googleシートを初期化して書込 */}
+                        <div className="bg-sky-50/40 border border-sky-200 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs rounded-xs">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center space-x-2 text-sky-950 font-bold text-xs">
+                              <UploadCloud className="w-4 h-4 text-sky-600 shrink-0" />
+                              <span>Googleシートを初期化して書込</span>
+                              <span className="text-[10px] bg-sky-100 text-sky-800 px-1.5 py-0.5 border border-sky-300 font-normal">端末優先</span>
+                            </div>
+                            <p className="text-[11px] text-sky-900/80 leading-relaxed">
+                              Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込みます。
+                            </p>
                           </div>
-                          <p className="text-[11px] text-sky-900/80 leading-relaxed">
-                            Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込みます。
-                          </p>
+                          <button
+                            type="button"
+                            onClick={handleInitiateCleanWrite}
+                            disabled={loading}
+                            className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-sky-50 hover:bg-sky-100 disabled:opacity-50 text-sky-800 border border-sky-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
+                            title="Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込みます"
+                          >
+                            <UploadCloud className="w-3.5 h-3.5 text-sky-600" />
+                            <span>Googleシートを初期化して書込</span>
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={handleInitiateCleanWrite}
-                          disabled={loading}
-                          className="w-full sm:w-auto sm:min-w-[210px] py-2.5 px-4 bg-sky-50 hover:bg-sky-100 disabled:opacity-50 text-sky-800 border border-sky-300 font-bold text-xs flex items-center justify-center space-x-2 transition-colors cursor-pointer shadow-xs rounded-xs whitespace-nowrap shrink-0"
-                          title="Googleシートのデータを完全消去して端末側のデータを「寺院管理・檀家過去帳データ」に書き込みます"
-                        >
-                          <UploadCloud className="w-3.5 h-3.5 text-sky-600" />
-                          <span>Googleシートを初期化して書込</span>
-                        </button>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ) : (
                   /* ---------------------------------------------------- */
@@ -1019,7 +1186,9 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   spreadsheetInfo && (
                     <div className="pt-2 border-t border-[#EBE7DF] space-y-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-[#666666]">同期先スプレッドシート</span>
+                        <span className="font-bold text-[#666666]">
+                          {isSharedMode ? '接続中・共有スプレッドシート' : '同期先スプレッドシート'}
+                        </span>
                         <div className="flex items-center space-x-2">
                           <button
                             type="button"
@@ -1044,55 +1213,81 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                       <div className="bg-white p-2 border border-[#D1CEC7] flex items-center space-x-2">
                         <Table className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                         <div className="overflow-hidden leading-tight flex-1">
-                          <div className="font-bold text-[#1A1A1A] truncate text-xs">寺院管理・檀家過去帳データ</div>
+                          <div className="font-bold text-[#1A1A1A] truncate text-xs">
+                            {isSharedMode ? '共有スプレッドシート（共同管理データ）' : '寺院管理・檀家過去帳データ'}
+                          </div>
                           <div className="text-[9px] text-[#888888] font-mono truncate">ID: {spreadsheetInfo.id}</div>
                         </div>
                       </div>
 
-                      {/* 接続中だが初期化読込・初期化書込をしたい時のための補助アコーディオン */}
-                      <div className="pt-1">
-                        <details className="text-[11px] text-[#666666] border border-[#E5E0D8] bg-[#FAF8F5] p-2 rounded-xs group">
-                          <summary className="font-bold text-gray-700 cursor-pointer select-none flex items-center justify-between">
-                            <span>データの初期化再同期（端末初期化 / シート初期化）</span>
-                            <span className="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
-                          </summary>
-                          <div className="pt-2.5 space-y-2 border-t border-[#E5E0D8] mt-2">
-                            <div className="flex items-center justify-between gap-2 bg-rose-50/60 border border-rose-200 p-2 rounded-xs">
-                              <div>
-                                <div className="font-bold text-rose-900">端末データを初期化して読込</div>
-                                <div className="text-[10px] text-rose-800">端末を初期化し、シートのデータを取り込み直します</div>
+                      {/* 共有モード時の操作導線 */}
+                      {isSharedMode ? (
+                        <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleReconnectSharedSheet}
+                            disabled={loading}
+                            className="py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer rounded-xs"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                            <span>最新状態に再同期・再接続</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleConfirmResetToInitialStartup}
+                            disabled={loading}
+                            className="py-2 px-3 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 font-bold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer rounded-xs"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
+                            <span>連携を中止して初期状態に戻る</span>
+                          </button>
+                        </div>
+                      ) : (
+                        /* 通常モード：初期化再同期アコーディオン */
+                        <div className="pt-1">
+                          <details className="text-[11px] text-[#666666] border border-[#E5E0D8] bg-[#FAF8F5] p-2 rounded-xs group">
+                            <summary className="font-bold text-gray-700 cursor-pointer select-none flex items-center justify-between">
+                              <span>データの初期化再同期（端末初期化 / シート初期化）</span>
+                              <span className="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                            </summary>
+                            <div className="pt-2.5 space-y-2 border-t border-[#E5E0D8] mt-2">
+                              <div className="flex items-center justify-between gap-2 bg-rose-50/60 border border-rose-200 p-2 rounded-xs">
+                                <div>
+                                  <div className="font-bold text-rose-900">端末データを初期化して読込</div>
+                                  <div className="text-[10px] text-rose-800">端末を初期化し、シートのデータを取り込み直します</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowResetAndLoginModal(true)}
+                                  className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 font-bold text-[10px] shrink-0 cursor-pointer"
+                                >
+                                  実行
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => setShowResetAndLoginModal(true)}
-                                className="px-2 py-1 bg-rose-100 hover:bg-rose-200 text-rose-900 border border-rose-300 font-bold text-[10px] shrink-0 cursor-pointer"
-                              >
-                                実行
-                              </button>
-                            </div>
-                            <div className="flex items-center justify-between gap-2 bg-sky-50/60 border border-sky-200 p-2 rounded-xs">
-                              <div>
-                                <div className="font-bold text-sky-900">Googleシートを初期化して書込</div>
-                                <div className="text-[10px] text-sky-800">シート側を消去し、端末データで新規作成・上書きします</div>
+                              <div className="flex items-center justify-between gap-2 bg-sky-50/60 border border-sky-200 p-2 rounded-xs">
+                                <div>
+                                  <div className="font-bold text-sky-900">Googleシートを初期化して書込</div>
+                                  <div className="text-[10px] text-sky-800">シート側を消去し、端末データで新規作成・上書きします</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleInitiateCleanWrite}
+                                  className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-bold text-[10px] shrink-0 cursor-pointer"
+                                >
+                                  実行
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={handleInitiateCleanWrite}
-                                className="px-2 py-1 bg-sky-100 hover:bg-sky-200 text-sky-900 border border-sky-300 font-bold text-[10px] shrink-0 cursor-pointer"
-                              >
-                                実行
-                              </button>
                             </div>
-                          </div>
-                        </details>
-                      </div>
+                          </details>
+                        </div>
+                      )}
                     </div>
                   )
                 )}
               </div>
 
-              {/* ==================== GOOGLE SHEET SHARING & COLLABORATION SECTION ==================== */}
-              {user && spreadsheetInfo && (
+              {/* ==================== GOOGLE SHEET SHARING & COLLABORATION SECTION (通常モードのみ) ==================== */}
+              {!isSharedMode && user && spreadsheetInfo && (
                 <div className="border border-[#D4AF37]/60 bg-white p-3.5 sm:p-4 space-y-3 shadow-2xs">
                   {/* Section Title */}
                   <div className="flex items-center justify-between border-b border-[#EBE7DF] pb-2">
@@ -1629,6 +1824,87 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
               >
                 <Check className="w-4 h-4" />
                 <span>OK</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shared Mode Disconnect Choice Modal (共有モード専用：選択肢①または選択肢②のみ) */}
+      {showSharedDisconnectChoiceModal && (
+        <div className="fixed inset-0 z-70 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 font-sans animate-fade-in">
+          <div className="bg-white border-2 border-[#D4AF37] p-5 sm:p-6 max-w-lg w-full space-y-4 shadow-2xl rounded-xs">
+            <div className="flex items-center space-x-2.5 text-[#1A1A1A] font-bold text-base border-b border-[#D4AF37]/50 pb-2.5">
+              <div className="p-1.5 bg-emerald-100 text-emerald-800 rounded-xs">
+                <RefreshCw className="w-5 h-5" />
+              </div>
+              <span className="font-serif">共有データの連携操作の選択</span>
+            </div>
+
+            <p className="text-xs text-[#555555] leading-relaxed">
+              現在、共有スプレッドシートのデータに接続しています。実行したい操作を選択してください（個人のGoogleドライブとの混同や新規シート作成は行われません）。
+            </p>
+
+            <div className="space-y-3 pt-1">
+              {/* 選択肢①: 共有データと再接続 */}
+              <div className="bg-emerald-50/80 border-2 border-emerald-500 p-3.5 space-y-2 rounded-xs">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-emerald-950 text-xs sm:text-sm flex items-center gap-1.5">
+                    <span>選択肢①: 共有データと再接続</span>
+                    <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.2 rounded-xs font-normal">共有シートに再接続</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-emerald-900/90 leading-relaxed">
+                  指定された共有スプレッドシートに再接続し、最新の共同管理データを同期して作業を継続します。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSharedDisconnectChoiceModal(false);
+                    handleReconnectSharedSheet();
+                  }}
+                  disabled={loading}
+                  className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer rounded-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>「共有データと再接続」を実行</span>
+                </button>
+              </div>
+
+              {/* 選択肢②: 連携を中止して初期状態に戻る */}
+              <div className="bg-[#FAF9F5] border border-gray-400 p-3.5 space-y-2 rounded-xs">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-gray-900 text-xs sm:text-sm flex items-center gap-1.5">
+                    <span>選択肢②: 連携を中止して初期状態に戻る</span>
+                    <span className="text-[10px] bg-gray-600 text-white px-1.5 py-0.2 rounded-xs font-normal">ブラウザ更新・初期化</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  共有データとの接続を終了し、端末内の一時キャッシュを消去して初期起動画面（PC読込・通常連携・新規立ち上げ等）に戻ります。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSharedDisconnectChoiceModal(false);
+                    handleConfirmResetToInitialStartup();
+                  }}
+                  disabled={loading}
+                  className="w-full py-2 px-3 bg-white hover:bg-gray-100 disabled:opacity-50 text-gray-800 border border-gray-400 font-bold text-xs flex items-center justify-center space-x-1.5 shadow-xs transition-colors cursor-pointer rounded-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-gray-600" />
+                  <span>「連携を中止して初期状態に戻る」を実行</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Cancel / Close Action */}
+            <div className="flex justify-end pt-2 border-t border-[#E5E0D8]">
+              <button
+                type="button"
+                onClick={() => setShowSharedDisconnectChoiceModal(false)}
+                className="px-4 py-1.5 bg-[#F2EFE9] border border-[#D1CEC7] text-xs font-bold text-[#555555] hover:bg-[#E5E0D8] transition-colors cursor-pointer text-center"
+              >
+                キャンセル（閉じる）
               </button>
             </div>
           </div>
