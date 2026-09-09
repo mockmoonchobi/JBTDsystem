@@ -12,7 +12,8 @@ import {
   TempleAnnualEvent,
   Priest,
   DeletedRecordEntry,
-  BatchAccountingData
+  BatchAccountingData,
+  DisasterMemorialEvent
 } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, INITIAL_TEMPLE_INFO } from '../data/initialData';
 import { 
@@ -663,6 +664,7 @@ export async function ensureAllSheetsExist(
           '出納・会計',
           '案内文テンプレート',
           '一括会計受付',
+          '戦没・災害物故者命日設定',
           '操作・削除履歴'
         ]
       : [
@@ -686,6 +688,7 @@ export async function ensureAllSheetsExist(
       if (t === '法事予約' && existingTitles.includes('法事・予約一覧')) return false;
       if (t === '寺院ToDo' && existingTitles.includes('寺院タスク・ToDo')) return false;
       if (t === '操作・削除履歴' && existingTitles.some((s) => ['操作・削除履歴', '削除履歴', '操作履歴', '削除ログ'].includes(s))) return false;
+      if (t === '戦没・災害物故者命日設定' && existingTitles.some((s) => ['戦没・災害物故者命日設定', '戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定'].includes(s))) return false;
       return true;
     });
 
@@ -975,6 +978,7 @@ export async function exportToSheets(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: BatchAccountingData;
+    disasterEvents?: DisasterMemorialEvent[];
     targetTablesOnly?: string[];
   }
 ): Promise<void> {
@@ -1022,6 +1026,11 @@ export async function exportToSheets(
     // Also match households aliases
     if ((sheetName === '檀家名簿' || sheetName === '門徒名簿') &&
         (targetTablesFilter.has('檀家名簿') || targetTablesFilter.has('門徒名簿') || targetTablesFilter.has('世帯名簿'))) {
+      return true;
+    }
+    // Also match disaster and war memorial settings aliases
+    if (['戦没・災害物故者命日設定', '戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定'].includes(sheetName) &&
+        (targetTablesFilter.has('戦没・災害物故者命日設定') || targetTablesFilter.has('戦没災害物故者命日設定') || targetTablesFilter.has('災害物故者命日設定') || targetTablesFilter.has('戦没物故者命日設定') || targetTablesFilter.has('戦没・災害物故者') || targetTablesFilter.has('災害物故者') || targetTablesFilter.has('戦没者設定') || targetTablesFilter.has('災害物故者設定') || targetTablesFilter.has('物故者設定') || targetTablesFilter.has('戦没・災害物故者設定'))) {
       return true;
     }
     return false;
@@ -1834,7 +1843,7 @@ export async function exportToSheets(
   addChunkedUpdates('操作・削除履歴', [deletedHeaders, ...deletedRows]);
 
   // 15. Disaster & War Memorial Events (戦没・災害物故者命日設定)
-  const disasterEvents = getSavedDisasterMemorialEvents();
+  const disasterEvents = exportOptions?.disasterEvents || getSavedDisasterMemorialEvents();
   const { headers: disasterHeaders, rows: disasterRows } = convertDisasterEventsToRows(disasterEvents);
   addChunkedUpdates('戦没・災害物故者命日設定', [disasterHeaders, ...disasterRows]);
 
@@ -1895,6 +1904,10 @@ export async function exportToSheets(
   const remapSheetName = (name: string): string => {
     if (name === '法事予約' && existingTitles.includes('法事・予約一覧') && !existingTitles.includes('法事予約')) return '法事・予約一覧';
     if (name === '寺院ToDo' && existingTitles.includes('寺院タスク・ToDo') && !existingTitles.includes('寺院ToDo')) return '寺院タスク・ToDo';
+    if (name === '戦没・災害物故者命日設定') {
+      const alias = existingTitles.find((s) => ['戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定'].includes(s));
+      if (alias && !existingTitles.includes('戦没・災害物故者命日設定')) return alias;
+    }
     return name;
   };
   const remappedUpdateDataList = updateDataList.map((item) => {
@@ -1980,6 +1993,7 @@ export async function exportSpecificTablesToSheets(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: BatchAccountingData;
+    disasterEvents?: DisasterMemorialEvent[];
   }
 ): Promise<void> {
   return exportToSheets(
@@ -2016,6 +2030,7 @@ export interface SheetsImportResult {
   priests?: Priest[];
   deletedRecords?: DeletedRecordEntry[];
   batchAccountingData?: BatchAccountingData;
+  disasterEvents?: DisasterMemorialEvent[];
   hasAnyData: boolean;
   totalRecordsCount: number;
 }
@@ -3582,12 +3597,14 @@ export async function importFromSheets(
   }
 
   // 15. 戦没・災害物故者命日設定
-  const disasterSheetName = findSheet(['戦没・災害物故者命日設定', '戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定']);
+  const disasterSheetName = findSheet(['戦没・災害物故者命日設定', '戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定']);
   const { headers: disasterHeaders, rows: disasterRows } = getSheetDataByName(disasterSheetName);
+  let parsedDisasterEvents: DisasterMemorialEvent[] | undefined = undefined;
   if (disasterHeaders.length > 0 && disasterRows.length > 0) {
-    const parsedDisasterEvents = parseDisasterEventsFromRows([disasterHeaders, ...disasterRows]);
-    if (parsedDisasterEvents.length > 0) {
-      saveDisasterMemorialEvents(parsedDisasterEvents);
+    const events = parseDisasterEventsFromRows([disasterHeaders, ...disasterRows]);
+    if (events.length > 0) {
+      parsedDisasterEvents = events;
+      saveDisasterMemorialEvents(events, false);
     }
   }
 
@@ -3598,7 +3615,8 @@ export async function importFromSheets(
     finalTempleTodos.length +
     finalTransactions.length +
     finalFamilyMembers.length +
-    parsedPriests.length;
+    parsedPriests.length +
+    (parsedDisasterEvents ? parsedDisasterEvents.length : 0);
 
   const hasAnyData =
     totalRecordsCount > 0 ||
@@ -3607,6 +3625,7 @@ export async function importFromSheets(
     parsedPriests.length > 0 ||
     parsedDeletedRecords.length > 0 ||
     Boolean(parsedBatchAccountingData) ||
+    Boolean(parsedDisasterEvents && parsedDisasterEvents.length > 0) ||
     Object.keys(templeMasterOptionsMap).length > 0;
 
   return {
@@ -3624,6 +3643,7 @@ export async function importFromSheets(
     priests: parsedPriests.length > 0 ? parsedPriests : undefined,
     deletedRecords: parsedDeletedRecords.length > 0 ? parsedDeletedRecords : undefined,
     batchAccountingData: parsedBatchAccountingData,
+    disasterEvents: parsedDisasterEvents,
     hasAnyData,
     totalRecordsCount,
   };

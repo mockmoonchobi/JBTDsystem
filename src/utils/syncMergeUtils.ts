@@ -9,7 +9,8 @@ import {
   TempleInfo,
   MasterOptions,
   Priest,
-  DeletedRecordEntry
+  DeletedRecordEntry,
+  DisasterMemorialEvent
 } from '../types';
 import { SheetsImportResult } from '../lib/googleSheets';
 import { INITIAL_TEMPLE_INFO, EMPTY_MASTER_OPTIONS } from '../data/initialData';
@@ -68,6 +69,7 @@ export interface MergedDatasetResult {
   noticeTemplates?: { higan: string; niibon: string };
   priests?: Priest[];
   deletedRecords?: DeletedRecordEntry[];
+  disasterEvents?: DisasterMemorialEvent[];
   stats: SyncMergeStats;
   summaryMessage: string;
   hasLocalChanges: boolean;
@@ -648,6 +650,7 @@ export function mergeDatasetsWithAuditPriority(
     priests?: Priest[];
     deletedRecords?: DeletedRecordEntry[];
     batchAccountingData?: any;
+    disasterEvents?: DisasterMemorialEvent[];
   },
   remoteData: SheetsImportResult
 ): MergedDatasetResult {
@@ -892,6 +895,51 @@ export function mergeDatasetsWithAuditPriority(
     (!remoteData.batchAccountingData?.lastSavedAt || localState.batchAccountingData.lastSavedAt > remoteData.batchAccountingData.lastSavedAt)
   );
 
+  // Merge Disaster & War Memorial Events (戦没・災害物故者命日設定)
+  let mergedDisasterEvents: DisasterMemorialEvent[] | undefined = undefined;
+  let hasLocalDisasterUpdate = false;
+  const localDisasterList = localState.disasterEvents;
+  const remoteDisasterList = remoteData.disasterEvents;
+
+  if (localDisasterList || remoteDisasterList) {
+    const localEvents = localDisasterList || [];
+    const remoteEvents = remoteDisasterList || [];
+    const eventMap = new Map<string, DisasterMemorialEvent>();
+    const localKeys = new Set<string>();
+
+    const getKey = (ev: DisasterMemorialEvent) => ev.id || `${ev.date}_${ev.name}`;
+
+    for (const ev of localEvents) {
+      const k = getKey(ev);
+      eventMap.set(k, ev);
+      localKeys.add(k);
+    }
+
+    for (const rEv of remoteEvents) {
+      const k = getKey(rEv);
+      const lEv = eventMap.get(k);
+      if (!lEv) {
+        eventMap.set(k, rEv);
+      } else {
+        const lTs = getRecordAuditTimestamp(lEv);
+        const rTs = getRecordAuditTimestamp(rEv);
+        if (rTs > lTs) {
+          eventMap.set(k, rEv);
+        } else if (lTs > rTs) {
+          hasLocalDisasterUpdate = true;
+        }
+      }
+    }
+
+    for (const lKey of localKeys) {
+      if (!remoteEvents.some((r) => getKey(r) === lKey)) {
+        hasLocalDisasterUpdate = true;
+      }
+    }
+
+    mergedDisasterEvents = Array.from(eventMap.values());
+  }
+
   const hasLocalChanges =
     totalLocalNewer > 0 ||
     totalLocalAdded > 0 ||
@@ -900,7 +948,8 @@ export function mergeDatasetsWithAuditPriority(
     newlyDeletedTodoLogs.length > 0 ||
     hasLocalTempleInfoUpdate ||
     hasLocalNewTemples ||
-    hasLocalBatchAccountingUpdate;
+    hasLocalBatchAccountingUpdate ||
+    hasLocalDisasterUpdate;
 
   const stats: SyncMergeStats = {
     householdsUpdated: hhMerge.updatedCount,
@@ -967,6 +1016,7 @@ export function mergeDatasetsWithAuditPriority(
     noticeTemplates: mergedNoticeTemplates,
     priests: mergedPriests,
     deletedRecords: mergedDeletedRecords,
+    disasterEvents: mergedDisasterEvents,
     stats,
     summaryMessage,
     hasLocalChanges,

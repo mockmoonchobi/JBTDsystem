@@ -72,8 +72,13 @@ import {
   TempleTodo,
   Priest,
   DeletedRecordEntry,
-  BatchAccountingData
+  BatchAccountingData,
+  DisasterMemorialEvent
 } from './types';
+import {
+  getSavedDisasterMemorialEvents,
+  saveDisasterMemorialEvents
+} from './utils/disasterMemorialUtils';
 import {
   getSavedNoticeTemplates,
   saveNoticeTemplates,
@@ -238,7 +243,22 @@ export default function App() {
   const [priests, setPriests] = useState<Priest[]>([]);
   const [batchAccountingData, setBatchAccountingData] = useState<BatchAccountingData | null>(() => getSavedBatchAccountingData());
   const [deletedRecords, setDeletedRecords] = useState<DeletedRecordEntry[]>(() => loadDeletedRecordsLog());
+  const [disasterEvents, setDisasterEvents] = useState<DisasterMemorialEvent[]>(() => getSavedDisasterMemorialEvents());
   const [isOperationHistoryModalOpen, setIsOperationHistoryModalOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleDisasterUpdate = (e: any) => {
+      const updated = e?.detail || getSavedDisasterMemorialEvents();
+      setDisasterEvents(updated);
+      if (syncStateRef.current) {
+        syncStateRef.current.disasterEvents = updated;
+      }
+    };
+    window.addEventListener('disasterMemorialEventsUpdated', handleDisasterUpdate as EventListener);
+    return () => {
+      window.removeEventListener('disasterMemorialEventsUpdated', handleDisasterUpdate as EventListener);
+    };
+  }, []);
 
   const refreshDeletedRecords = useCallback(() => {
     const logs = loadDeletedRecordsLog();
@@ -1379,6 +1399,7 @@ export default function App() {
           noticeTemplates: { higan: '', niibon: '' },
           priests: [],
           deletedRecords: [],
+          disasterEvents: [],
         }
       : {
           templeInfo: syncStateRef.current.templeInfo || templeInfo,
@@ -1393,6 +1414,7 @@ export default function App() {
           templeMasterOptionsMap: syncStateRef.current.templeMasterOptionsMap || templeMasterOptionsMap,
           noticeTemplates: syncStateRef.current.noticeTemplates || noticeTemplates,
           priests: syncStateRef.current.priests || priests,
+          disasterEvents: syncStateRef.current.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
         };
 
     const mergeResult = mergeDatasetsWithAuditPriority(currentLocalState, remoteData);
@@ -1410,6 +1432,7 @@ export default function App() {
     if (mergeResult.templeMasterOptionsMap) syncStateRef.current.templeMasterOptionsMap = mergeResult.templeMasterOptionsMap;
     if (mergeResult.priests) syncStateRef.current.priests = mergeResult.priests;
     if (mergeResult.deletedRecords) syncStateRef.current.deletedRecords = mergeResult.deletedRecords;
+    if (mergeResult.disasterEvents) syncStateRef.current.disasterEvents = mergeResult.disasterEvents;
 
     // 1. Households
     setHouseholds(mergeResult.households);
@@ -1508,6 +1531,18 @@ export default function App() {
       syncStateRef.current.deletedRecords = [];
     }
 
+    // 14. Disaster & War Memorial Events
+    if (mergeResult.disasterEvents) {
+      setDisasterEvents(mergeResult.disasterEvents);
+      saveDisasterMemorialEvents(mergeResult.disasterEvents, false);
+      syncStateRef.current.disasterEvents = mergeResult.disasterEvents;
+    } else if (isClean) {
+      const cleanEvents = remoteData.disasterEvents || [];
+      setDisasterEvents(cleanEvents);
+      saveDisasterMemorialEvents(cleanEvents, false);
+      syncStateRef.current.disasterEvents = cleanEvents;
+    }
+
     if (isClean) {
       const mainTemple = (mergeResult.temples && mergeResult.temples.find((t) => t.isMain)) || mergeResult.temples?.[0];
       if (mainTemple?.id) {
@@ -1522,7 +1557,7 @@ export default function App() {
     }, 2000);
 
     return mergeResult;
-  }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, noticeTemplates, priests, deletedRecords]);
+  }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, noticeTemplates, priests, deletedRecords, disasterEvents]);
 
   const isImportingRef = useRef(false);
   const syncStateRef = useRef({
@@ -1540,6 +1575,7 @@ export default function App() {
     priests,
     batchAccountingData,
     deletedRecords,
+    disasterEvents,
   });
 
   useEffect(() => {
@@ -1558,8 +1594,9 @@ export default function App() {
       priests,
       batchAccountingData,
       deletedRecords,
+      disasterEvents,
     };
-  }, [templeInfo, temples, households, pastRecords, memorialServices, transactions, familyMembers, masterOptions, noticeTemplates, templeTodos, templeMasterOptionsMap, priests, batchAccountingData, deletedRecords]);
+  }, [templeInfo, temples, households, pastRecords, memorialServices, transactions, familyMembers, masterOptions, noticeTemplates, templeTodos, templeMasterOptionsMap, priests, batchAccountingData, deletedRecords, disasterEvents]);
 
   const applyRemoteSheetsDataRef = useRef(applyRemoteSheetsData);
   useEffect(() => {
@@ -1670,6 +1707,7 @@ export default function App() {
             priests: syncStateRef.current.priests,
             batchAccountingData: syncStateRef.current.batchAccountingData,
             deletedRecords: syncStateRef.current.deletedRecords,
+            disasterEvents: syncStateRef.current.disasterEvents,
           });
           setSyncStatus('synced');
           setSyncErrorMessage(null);
@@ -1711,6 +1749,7 @@ export default function App() {
                   priests: mergeResult.priests || state.priests,
                   deletedRecords: loadDeletedRecordsLog(),
                   batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                  disasterEvents: mergeResult.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
                 }
               );
             });
@@ -1738,6 +1777,7 @@ export default function App() {
                 priests: state.priests,
                 deletedRecords: loadDeletedRecordsLog(),
                 batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                disasterEvents: disasterEvents || getSavedDisasterMemorialEvents(),
               }
             );
           });
@@ -1780,6 +1820,7 @@ export default function App() {
                   priests: backup.priests || state.priests,
                   deletedRecords: loadDeletedRecordsLog(),
                   batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                  disasterEvents: disasterEvents || getSavedDisasterMemorialEvents(),
                 }
               );
             });
@@ -1804,6 +1845,7 @@ export default function App() {
                   priests: state.priests,
                   deletedRecords: loadDeletedRecordsLog(),
                   batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+                  disasterEvents: disasterEvents || getSavedDisasterMemorialEvents(),
                 }
               );
             });
@@ -1827,6 +1869,7 @@ export default function App() {
           priests: syncStateRef.current.priests,
           batchAccountingData: syncStateRef.current.batchAccountingData,
           deletedRecords: syncStateRef.current.deletedRecords,
+          disasterEvents: syncStateRef.current.disasterEvents,
         });
         setSyncStatus('synced');
         setSyncErrorMessage(null);
@@ -1899,6 +1942,7 @@ export default function App() {
           priests: state.priests,
           deletedRecords: [],
           batchAccountingData: state.batchAccountingData || getSavedBatchAccountingData() || undefined,
+          disasterEvents: state.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
         }
       );
 
@@ -1919,6 +1963,7 @@ export default function App() {
         priests: state.priests,
         batchAccountingData: state.batchAccountingData,
         deletedRecords: [],
+        disasterEvents: state.disasterEvents || disasterEvents,
       });
       setSyncStatus('synced');
       setSyncErrorMessage(null);
@@ -2053,6 +2098,7 @@ export default function App() {
             priests: state.priests,
             deletedRecords: loadDeletedRecordsLog(),
             batchAccountingData: state.batchAccountingData !== undefined ? state.batchAccountingData : (getSavedBatchAccountingData() || undefined),
+            disasterEvents: state.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
           }
         );
       });
@@ -2156,6 +2202,7 @@ export default function App() {
         priests: curState.priests || priests,
         deletedRecords: curState.deletedRecords || deletedRecords,
         batchAccountingData: curState.batchAccountingData !== undefined ? curState.batchAccountingData : (getSavedBatchAccountingData() || undefined),
+        disasterEvents: curState.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
       };
 
       const payloadSig = computePayloadSignature(exportPayload);
@@ -2193,6 +2240,7 @@ export default function App() {
               priests: exportPayload.priests,
               deletedRecords: loadDeletedRecordsLog(),
               batchAccountingData: exportPayload.batchAccountingData !== undefined ? exportPayload.batchAccountingData : (getSavedBatchAccountingData() || undefined),
+              disasterEvents: exportPayload.disasterEvents,
             }
           );
         });
@@ -2227,7 +2275,7 @@ export default function App() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, isInitialLoaded]);
+  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, disasterEvents, isInitialLoaded]);
 
   // ★ バックグラウンド操作履歴監視（約10秒間隔で「操作・削除履歴」シートのみを軽量監視）
   // 画面に「データ連携処理中」を出さず、他スタッフ・別端末からのデータ更新が検出されたらサイレントに自動同期
@@ -2370,6 +2418,7 @@ export default function App() {
         priests,
         batchAccountingData,
         deletedRecords: loadDeletedRecordsLog(),
+        disasterEvents: disasterEvents || getSavedDisasterMemorialEvents(),
       };
 
       let exportNeeded = true;
@@ -2389,6 +2438,7 @@ export default function App() {
           priests: merged.priests || priests,
           batchAccountingData: remoteData.batchAccountingData || batchAccountingData,
           deletedRecords: loadDeletedRecordsLog(),
+          disasterEvents: merged.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
         };
         exportNeeded = merged.hasLocalChanges;
         recordHistory(`Googleシートと日時照会同期完了: ${merged.summaryMessage}`);
@@ -2415,6 +2465,7 @@ export default function App() {
               priests: exportPayload.priests,
               deletedRecords: loadDeletedRecordsLog(),
               batchAccountingData: exportPayload.batchAccountingData || getSavedBatchAccountingData() || undefined,
+              disasterEvents: exportPayload.disasterEvents,
             }
           );
         });
@@ -2487,6 +2538,7 @@ export default function App() {
             templeMasterOptionsMap: merged.templeMasterOptionsMap || templeMasterOptionsMap,
             priests: merged.priests || priests,
             deletedRecords: loadDeletedRecordsLog(),
+            disasterEvents: merged.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
           }
         );
       });

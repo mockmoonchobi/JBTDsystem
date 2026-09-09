@@ -105,7 +105,7 @@ export function getSavedDisasterMemorialEvents(): DisasterMemorialEvent[] {
 /**
  * 戦没・災害物故者命日一覧を保存
  */
-export function saveDisasterMemorialEvents(events: DisasterMemorialEvent[]): void {
+export function saveDisasterMemorialEvents(events: DisasterMemorialEvent[], updateAudit: boolean = true): void {
   if (typeof window === 'undefined') return;
   try {
     const audit = getCurrentAuditFields();
@@ -117,8 +117,8 @@ export function saveDisasterMemorialEvents(events: DisasterMemorialEvent[]): voi
       notes: ev.notes?.trim() || '',
       createdDate: ev.createdDate || audit.date,
       createdTime: ev.createdTime || audit.time,
-      updatedDate: audit.date,
-      updatedTime: audit.time,
+      updatedDate: updateAudit ? audit.date : (ev.updatedDate || audit.date),
+      updatedTime: updateAudit ? audit.time : (ev.updatedTime || audit.time),
     }));
     localStorage.setItem(DISASTER_MEMORIAL_STORAGE_KEY, JSON.stringify(sanitized));
     window.dispatchEvent(new CustomEvent('disasterMemorialEventsUpdated', { detail: sanitized }));
@@ -250,9 +250,9 @@ export function parseDisasterEventsFromRows(rows: (string | number)[][]): Disast
 
   const headers = (rows[0] || []).map((h) => String(h || '').trim());
   const idIdx = headers.findIndex((h) => h.includes('ID') || h.includes('id'));
-  const dateIdx = headers.findIndex((h) => h.includes('年月日') || h.includes('命日') || h.includes('日付'));
-  const nameIdx = headers.findIndex((h) => h.includes('対象名称') || h.includes('名称') || h.includes('精霊名'));
-  const notesIdx = headers.findIndex((h) => h.includes('備考') || h.includes('由来') || h.includes('メモ'));
+  const dateIdx = headers.findIndex((h) => h.includes('年月日') || h.includes('命日') || h.includes('日付') || h.includes('発生日') || h.includes('事故日'));
+  const nameIdx = headers.findIndex((h) => h.includes('対象名称') || h.includes('名称') || h.includes('精霊名') || h.includes('名前') || h.includes('対象'));
+  const notesIdx = headers.findIndex((h) => h.includes('備考') || h.includes('由来') || h.includes('メモ') || h.includes('詳細'));
   const cDateIdx = headers.findIndex((h) => h.includes('作成日'));
   const cTimeIdx = headers.findIndex((h) => h.includes('作成時間'));
   const uDateIdx = headers.findIndex((h) => h.includes('修正日') || h.includes('更新日'));

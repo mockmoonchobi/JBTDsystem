@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData, DeletedRecordEntry } from '../types';
+import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData, DeletedRecordEntry, DisasterMemorialEvent } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, INITIAL_TEMPLE_INFO } from '../data/initialData';
 import { 
   getSavedNoticeTemplates, 
@@ -27,6 +27,12 @@ import {
   reconstructBatchAccountingData
 } from './batchAccountingUtils';
 import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH, normalizeLogOperator } from './deletedRecordsLog';
+import {
+  getSavedDisasterMemorialEvents,
+  saveDisasterMemorialEvents,
+  convertDisasterEventsToRows,
+  parseDisasterEventsFromRows
+} from './disasterMemorialUtils';
 
 export interface ExportToExcelOptions {
   targetTempleId?: string | 'ALL';
@@ -34,6 +40,7 @@ export interface ExportToExcelOptions {
   priests?: Priest[];
   batchAccountingData?: BatchAccountingData;
   deletedRecords?: DeletedRecordEntry[];
+  disasterEvents?: DisasterMemorialEvent[];
 }
 
 export function exportToExcel(
@@ -752,11 +759,20 @@ export function exportToExcel(
   const wsDeleted = XLSX.utils.aoa_to_sheet([deletedHeaders, ...deletedRows]);
   XLSX.utils.book_append_sheet(wb, wsDeleted, '操作・削除履歴');
 
+  // 14. 戦没・災害物故者命日設定
+  const disasterList = exportOptions?.disasterEvents || getSavedDisasterMemorialEvents();
+  const { headers: disasterHeaders, rows: disasterRows } = convertDisasterEventsToRows(disasterList);
+  const wsDisaster = XLSX.utils.aoa_to_sheet([disasterHeaders, ...disasterRows]);
+  XLSX.utils.book_append_sheet(wb, wsDisaster, '戦没・災害物故者命日設定');
+
   // Auto column widths
-  const allSheets = [wsTemples, wsHouseholds, wsFamily, wsPast, wsMemorial, wsTodos, wsTransactions, wsPriests, wsBatchConfig, wsBatch, wsDeleted];
+  const allSheets = [wsTemples, wsHouseholds, wsFamily, wsPast, wsMemorial, wsTodos, wsTransactions, wsPriests, wsBatchConfig, wsBatch, wsDeleted, wsDisaster];
   allSheets.forEach((ws) => {
     ws['!cols'] = [{ wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 25 }, { wch: 30 }, { wch: 20 }];
   });
+  wsDisaster['!cols'] = [
+    { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 24 }, { wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }
+  ];
   wsDeleted['!cols'] = [
     { wch: 14 },
     { wch: 10 },
@@ -853,6 +869,7 @@ export async function importFromExcel(
   priests?: Priest[];
   batchAccountingData?: BatchAccountingData;
   deletedRecords?: DeletedRecordEntry[];
+  disasterEvents?: DisasterMemorialEvent[];
 }> {
   const dataBuffer = await file.arrayBuffer();
   const wb = XLSX.read(dataBuffer, { 
@@ -2251,6 +2268,23 @@ export async function importFromExcel(
     }
   }
 
+  // 14. 戦没・災害物故者命日設定
+  const disasterSheetName = findSheet(
+    ['戦没・災害物故者命日設定', '戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定'],
+    ['命日・発生年月日', '対象名称', '設定ID', '発生日', '命日']
+  );
+  let parsedDisasterEvents: DisasterMemorialEvent[] | undefined = undefined;
+  if (disasterSheetName && wb.Sheets[disasterSheetName]) {
+    const { headers: disHeaders, rows: disRows } = getSheetDataByName(disasterSheetName);
+    if (disHeaders.length > 0 && disRows.length > 0) {
+      const parsed = parseDisasterEventsFromRows([disHeaders, ...disRows]);
+      if (parsed.length > 0) {
+        parsedDisasterEvents = parsed;
+        saveDisasterMemorialEvents(parsed, false);
+      }
+    }
+  }
+
   return {
     templeInfo,
     temples,
@@ -2265,5 +2299,6 @@ export async function importFromExcel(
     priests: parsedPriests.length > 0 ? parsedPriests : undefined,
     batchAccountingData: parsedBatchAccountingData,
     deletedRecords: parsedDeletedRecords.length > 0 ? parsedDeletedRecords : undefined,
+    disasterEvents: parsedDisasterEvents,
   };
 }
