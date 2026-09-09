@@ -1,13 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Household, MasterOptions, TempleProfile, FamilyMember } from '../../types';
-import { X, Save, Trash2, Plus, Phone, MapPin, Building2, User, UserPlus } from 'lucide-react';
+import { Household, MasterOptions, TempleProfile, TempleInfo, FamilyMember } from '../../types';
+import { X, Save, Trash2, Plus, Phone, MapPin, Building2, User, ScrollText, Coins, ChevronDown, ChevronUp, Check, Sparkles } from 'lucide-react';
 import { cleanAndNormalizeHouseholdId, generateNewHouseholdId } from '../../utils/dankaIdUtils';
+import { 
+  getTobaSlots, 
+  getHouseholdTobaApplication, 
+  setHouseholdTobaApplication, 
+  getFamilyMemberTobaApplication, 
+  setFamilyMemberTobaApplication 
+} from '../../utils/tobaUtils';
+import { getFeeSlots } from '../../utils/feeUtils';
 
 interface MobileHouseholdModalProps {
   isOpen: boolean;
   onClose: () => void;
   household: Household | null;
   masterOptions?: MasterOptions;
+  templeInfo?: TempleInfo;
+  templeMasterOptionsMap?: Record<string, MasterOptions>;
   temples?: TempleProfile[];
   activeTempleId?: string;
   existingHouseholds?: Household[];
@@ -20,6 +30,8 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
   onClose,
   household,
   masterOptions,
+  templeInfo,
+  templeMasterOptionsMap,
   temples = [],
   activeTempleId = 'temple-main',
   existingHouseholds = [],
@@ -43,17 +55,32 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
     notes: '',
     templeId: activeTempleId !== 'ALL' ? activeTempleId : 'temple-main',
     familyMembers: [],
+    isSegakiToba: false,
+    segakiTamegaki: '',
+    tobaApplications: {},
+    fee1Amount: undefined,
+    fee2Amount: undefined,
+    fee3Amount: undefined,
   });
 
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberRel, setNewMemberRel] = useState('長男');
   const [newMemberPhone, setNewMemberPhone] = useState('');
+  const [expandedMemberTobaId, setExpandedMemberTobaId] = useState<string | null>(null);
+
+  // Active temple profile and configuration
+  const currentHouseholdTempleId = formData.templeId || activeTempleId || (temples[0]?.id || 'temple-main');
+  const currentTemple = temples.find((t) => (t.id || 'temple-main') === currentHouseholdTempleId) || templeInfo || temples[0];
+
+  const configuredTobaSlots = getTobaSlots(currentTemple);
+  const configuredFeeSlots = getFeeSlots(currentTemple);
 
   useEffect(() => {
     if (household) {
       setFormData({
         ...household,
         familyMembers: household.familyMembers || [],
+        tobaApplications: household.tobaApplications || {},
       });
     } else {
       const targetTemple = activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
@@ -73,6 +100,12 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
         notes: '',
         templeId: targetTemple,
         familyMembers: [],
+        isSegakiToba: false,
+        segakiTamegaki: '',
+        tobaApplications: {},
+        fee1Amount: undefined,
+        fee2Amount: undefined,
+        fee3Amount: undefined,
       });
     }
   }, [household, isOpen, activeTempleId, masterOptions, existingHouseholds, temples]);
@@ -90,6 +123,8 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
     const finalId = cleanAndNormalizeHouseholdId(formData.id || household?.id, targetTemple, temples) || generateNewHouseholdId(targetTemple, existingHouseholds, temples);
 
     const savedData: Household = {
+      ...(household || {}),
+      ...formData,
       id: finalId,
       familyHead: formData.familyHead.trim(),
       furigana: formData.furigana?.trim() || '',
@@ -104,6 +139,24 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       status: formData.status?.trim() || '',
       notes: formData.notes?.trim() || '',
       templeId: targetTemple,
+      // 塔婆・施餓鬼関連
+      isSegakiToba: !!formData.isSegakiToba,
+      segakiTamegaki: formData.segakiTamegaki || '',
+      toba1Applied: formData.toba1Applied,
+      toba1Tamegaki: formData.toba1Tamegaki,
+      toba2Applied: formData.toba2Applied,
+      toba2Tamegaki: formData.toba2Tamegaki,
+      toba3Applied: formData.toba3Applied,
+      toba3Tamegaki: formData.toba3Tamegaki,
+      tobaApplications: formData.tobaApplications || {},
+      // 集金項目（個別金額設定）
+      fee1Amount: formData.fee1Amount !== undefined && formData.fee1Amount !== null && !isNaN(Number(formData.fee1Amount)) ? Number(formData.fee1Amount) : undefined,
+      fee2Amount: formData.fee2Amount !== undefined && formData.fee2Amount !== null && !isNaN(Number(formData.fee2Amount)) ? Number(formData.fee2Amount) : undefined,
+      fee3Amount: formData.fee3Amount !== undefined && formData.fee3Amount !== null && !isNaN(Number(formData.fee3Amount)) ? Number(formData.fee3Amount) : undefined,
+      fee1: formData.fee1Amount !== undefined && formData.fee1Amount !== null && !isNaN(Number(formData.fee1Amount)) ? Number(formData.fee1Amount) : formData.fee1,
+      fee2: formData.fee2Amount !== undefined && formData.fee2Amount !== null && !isNaN(Number(formData.fee2Amount)) ? Number(formData.fee2Amount) : formData.fee2,
+      fee3: formData.fee3Amount !== undefined && formData.fee3Amount !== null && !isNaN(Number(formData.fee3Amount)) ? Number(formData.fee3Amount) : formData.fee3,
+      // 家族構成
       familyMembers: (formData.familyMembers || []).map((fm) => ({
         ...fm,
         householdId: finalId,
@@ -123,6 +176,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       name: newMemberName.trim(),
       relationship: newMemberRel || '家族',
       phone: newMemberPhone.trim() || undefined,
+      isSegakiToba: false,
     };
     setFormData((prev) => ({
       ...prev,
@@ -137,6 +191,30 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       ...prev,
       familyMembers: (prev.familyMembers || []).filter((m) => m.id !== memberId),
     }));
+  };
+
+  const handleUpdateFamilyMember = (index: number, field: keyof FamilyMember, value: any) => {
+    setFormData((prev) => {
+      const updated = [...(prev.familyMembers || [])];
+      if ((field === 'isChiefMourner' || field === 'isSponsor') && value === true) {
+        // 施主指定は世帯内で1人のみ
+        const newMembers = updated.map((m, i) => ({
+          ...m,
+          isChiefMourner: i === index,
+          isSponsor: i === index,
+        }));
+        return { ...prev, familyMembers: newMembers };
+      } else {
+        updated[index] = { ...updated[index], [field]: value };
+        return { ...prev, familyMembers: updated };
+      }
+    });
+  };
+
+  // Quick tamegaki template insert
+  const insertTamegakiPreset = (tobaType: string, preset: string) => {
+    const updated = setHouseholdTobaApplication(formData as Household, tobaType, true, preset, currentTemple);
+    setFormData(updated);
   };
 
   return (
@@ -317,67 +395,498 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
             </div>
           </div>
 
+          {/* 塔婆申込・施餓鬼塔婆設定（世帯主） */}
+          <div className="p-3 bg-amber-50/70 border border-amber-300 rounded-xs shadow-2xs space-y-2.5">
+            <div className="flex items-center justify-between border-b border-amber-200 pb-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-amber-950 text-xs">
+                <ScrollText className="w-4 h-4 text-amber-800" />
+                <span>施餓鬼塔婆・各種塔婆申込（世帯主）</span>
+              </div>
+              <span className="text-[10px] text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded-2xs font-medium">
+                {configuredTobaSlots.length}枠
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {configuredTobaSlots.map((slot) => {
+                const tobaType = slot.name;
+                const app = getHouseholdTobaApplication(formData, tobaType, currentTemple);
+                const familySurname = (formData.familyHead || '').trim().split(/[\s　]+/)[0] || '';
+
+                return (
+                  <div key={slot.slot} className="bg-white p-2.5 border border-amber-200 rounded-xs space-y-2 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={app.applied}
+                          onChange={(e) => {
+                            const updated = setHouseholdTobaApplication(
+                              formData as Household,
+                              tobaType,
+                              e.target.checked,
+                              app.tamegaki || (familySurname ? `${familySurname}家先祖代々精霊` : '先祖代々精霊'),
+                              currentTemple
+                            );
+                            setFormData(updated);
+                          }}
+                          className="w-4 h-4 accent-[#8C2D19]"
+                        />
+                        <span className="font-bold text-xs text-[#1A1A1A]">
+                          【{tobaType}】を申し込む
+                        </span>
+                      </label>
+                      {app.applied ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-2xs border border-emerald-200">
+                          申込中
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400">未申込</span>
+                      )}
+                    </div>
+
+                    {app.applied && (
+                      <div className="pt-1.5 border-t border-amber-100 space-y-1.5">
+                        <div>
+                          <label className="block text-[11px] font-bold text-amber-950 mb-1">
+                            為書き（回向対象・戒名等）:
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={`例: ${familySurname || '〇〇'}家先祖代々精霊、為 亡父〇〇 など`}
+                            value={app.tamegaki || ''}
+                            onChange={(e) => {
+                              const updated = setHouseholdTobaApplication(
+                                formData as Household,
+                                tobaType,
+                                true,
+                                e.target.value,
+                                currentTemple
+                              );
+                              setFormData(updated);
+                            }}
+                            className="w-full p-2 bg-amber-50/20 border border-[#8C2D19] rounded-xs text-xs font-serif font-bold text-[#1A1A1A] focus:outline-none focus:bg-white"
+                          />
+                        </div>
+
+                        {/* Quick Preset Buttons */}
+                        <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                          <span className="text-gray-500 font-medium">クイック入力:</span>
+                          {familySurname && (
+                            <button
+                              type="button"
+                              onClick={() => insertTamegakiPreset(tobaType, `${familySurname}家先祖代々精霊`)}
+                              className="px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-2xs cursor-pointer font-bold"
+                            >
+                              +{familySurname}家先祖代々
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => insertTamegakiPreset(tobaType, '先祖代々精霊')}
+                            className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-2xs cursor-pointer"
+                          >
+                            +先祖代々精霊
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertTamegakiPreset(tobaType, app.tamegaki ? `${app.tamegaki}、為 亡父` : '為 亡父')}
+                            className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-2xs cursor-pointer"
+                          >
+                            +為 亡父
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => insertTamegakiPreset(tobaType, app.tamegaki ? `${app.tamegaki}、為 亡母` : '為 亡母')}
+                            className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-2xs cursor-pointer"
+                          >
+                            +為 亡母
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 集金項目設定（護持会費・墓地管理費・境内整備費等） */}
+          <div className="p-3 bg-emerald-50/70 border border-emerald-300 rounded-xs shadow-2xs space-y-2.5">
+            <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-emerald-950 text-xs">
+                <Coins className="w-4 h-4 text-emerald-800" />
+                <span>集金項目・個別金額設定</span>
+              </div>
+              <span className="text-[10px] text-emerald-800 bg-emerald-100/80 px-1.5 py-0.5 rounded-2xs font-medium">
+                護持会費・管理費等
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {/* 集金項目１ */}
+              {(() => {
+                const name = currentTemple?.feeType1 || '集金項目１ (護持会費等)';
+                const cat = currentTemple?.feeType1Category || '護持会費';
+                const defAmt = currentTemple?.feeType1DefaultAmount;
+                const currentVal = formData.fee1Amount !== undefined ? formData.fee1Amount : (formData.fee1 !== undefined && formData.fee1 !== '' ? Number(formData.fee1) : undefined);
+
+                return (
+                  <div className="bg-white p-2.5 border border-emerald-200 rounded-xs shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-bold text-xs text-emerald-950 truncate" title={name}>
+                        【第1枠】{name}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-2xs font-bold">
+                          {cat}
+                        </span>
+                        {defAmt !== undefined && (
+                          <span className="text-[10px] text-gray-500 font-mono">
+                            (標準: ¥{defAmt.toLocaleString()})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-bold">¥</span>
+                        <input
+                          type="number"
+                          placeholder={defAmt !== undefined ? `標準額: ${defAmt}` : '世帯個別金額 (空欄可)'}
+                          value={currentVal ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : Number(e.target.value);
+                            setFormData({ ...formData, fee1Amount: val, fee1: val });
+                          }}
+                          className="w-full pl-6 pr-2 py-1.5 bg-[#FAF9F5] border border-[#D1CEC7] rounded-xs text-xs font-mono font-bold text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-none"
+                        />
+                      </div>
+                      {defAmt !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, fee1Amount: defAmt, fee1: defAmt })}
+                          className="px-2 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-xs text-[11px] font-bold shrink-0 cursor-pointer"
+                          title="寺院標準金額を反映"
+                        >
+                          標準適用
+                        </button>
+                      )}
+                      {currentVal !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, fee1Amount: undefined, fee1: undefined })}
+                          className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 rounded-xs text-[11px] shrink-0 cursor-pointer"
+                          title="金額をクリア"
+                        >
+                          クリア
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 集金項目２ */}
+              {(() => {
+                const name = currentTemple?.feeType2 || '集金項目２ (墓地管理費等)';
+                const cat = currentTemple?.feeType2Category || '墓地管理費';
+                const defAmt = currentTemple?.feeType2DefaultAmount;
+                const currentVal = formData.fee2Amount !== undefined ? formData.fee2Amount : (formData.fee2 !== undefined && formData.fee2 !== '' ? Number(formData.fee2) : undefined);
+
+                return (
+                  <div className="bg-white p-2.5 border border-emerald-200 rounded-xs shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-bold text-xs text-emerald-950 truncate" title={name}>
+                        【第2枠】{name}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-2xs font-bold">
+                          {cat}
+                        </span>
+                        {defAmt !== undefined && (
+                          <span className="text-[10px] text-gray-500 font-mono">
+                            (標準: ¥{defAmt.toLocaleString()})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-bold">¥</span>
+                        <input
+                          type="number"
+                          placeholder={defAmt !== undefined ? `標準額: ${defAmt}` : '世帯個別金額 (空欄可)'}
+                          value={currentVal ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : Number(e.target.value);
+                            setFormData({ ...formData, fee2Amount: val, fee2: val });
+                          }}
+                          className="w-full pl-6 pr-2 py-1.5 bg-[#FAF9F5] border border-[#D1CEC7] rounded-xs text-xs font-mono font-bold text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-none"
+                        />
+                      </div>
+                      {defAmt !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, fee2Amount: defAmt, fee2: defAmt })}
+                          className="px-2 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-xs text-[11px] font-bold shrink-0 cursor-pointer"
+                          title="寺院標準金額を反映"
+                        >
+                          標準適用
+                        </button>
+                      )}
+                      {currentVal !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, fee2Amount: undefined, fee2: undefined })}
+                          className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 rounded-xs text-[11px] shrink-0 cursor-pointer"
+                          title="金額をクリア"
+                        >
+                          クリア
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 集金項目３ */}
+              {(() => {
+                const name = currentTemple?.feeType3 || '集金項目３ (境内整備費等)';
+                const cat = currentTemple?.feeType3Category || '特別寄付';
+                const defAmt = currentTemple?.feeType3DefaultAmount;
+                const currentVal = formData.fee3Amount !== undefined ? formData.fee3Amount : (formData.fee3 !== undefined && formData.fee3 !== '' ? Number(formData.fee3) : undefined);
+
+                return (
+                  <div className="bg-white p-2.5 border border-emerald-200 rounded-xs shadow-2xs space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-bold text-xs text-emerald-950 truncate" title={name}>
+                        【第3枠】{name}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-2xs font-bold">
+                          {cat}
+                        </span>
+                        {defAmt !== undefined && (
+                          <span className="text-[10px] text-gray-500 font-mono">
+                            (標準: ¥{defAmt.toLocaleString()})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-500 font-bold">¥</span>
+                        <input
+                          type="number"
+                          placeholder={defAmt !== undefined ? `標準額: ${defAmt}` : '世帯個別金額 (空欄可)'}
+                          value={currentVal ?? ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? undefined : Number(e.target.value);
+                            setFormData({ ...formData, fee3Amount: val, fee3: val });
+                          }}
+                          className="w-full pl-6 pr-2 py-1.5 bg-[#FAF9F5] border border-[#D1CEC7] rounded-xs text-xs font-mono font-bold text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-none"
+                        />
+                      </div>
+                      {defAmt !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, fee3Amount: defAmt, fee3: defAmt })}
+                          className="px-2 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 rounded-xs text-[11px] font-bold shrink-0 cursor-pointer"
+                          title="寺院標準金額を反映"
+                        >
+                          標準適用
+                        </button>
+                      )}
+                      {currentVal !== undefined && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, fee3Amount: undefined, fee3: undefined })}
+                          className="px-2 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300 rounded-xs text-[11px] shrink-0 cursor-pointer"
+                          title="金額をクリア"
+                        >
+                          クリア
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
           {/* Family Members Section */}
-          <div className="p-3 bg-[#FAF7F0] border border-[#D4AF37]/60 rounded-xs space-y-2">
-            <label className="block font-bold text-[#8C2D19] flex items-center justify-between">
-              <span>👨‍👩‍👧 家族構成 ({formData.familyMembers?.length || 0}名)</span>
-            </label>
+          <div className="p-3 bg-[#FAF7F0] border border-[#D4AF37]/60 rounded-xs space-y-2.5">
+            <div className="flex items-center justify-between border-b border-[#D4AF37]/40 pb-1.5">
+              <label className="font-bold text-[#8C2D19] flex items-center gap-1.5 text-xs">
+                <span>👨‍👩‍👧 家族構成 ({formData.familyMembers?.length || 0}名)</span>
+              </label>
+              <span className="text-[10px] text-gray-500">個別塔婆申込・施主指定可</span>
+            </div>
 
             {/* List of existing members */}
             {formData.familyMembers && formData.familyMembers.length > 0 && (
-              <div className="space-y-1">
-                {formData.familyMembers.map((m) => (
-                  <div
-                    key={m.id}
-                    className="p-1.5 bg-white border border-[#E5E0D8] rounded-xs flex items-center justify-between text-xs"
-                  >
-                    <div>
-                      <span className="font-bold text-[#1A1A1A]">{m.name}</span>
-                      <span className="text-gray-500 ml-1.5">({m.relationship})</span>
-                      {m.phone && <span className="text-gray-600 text-[10px] ml-1.5">{m.phone}</span>}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMember(m.id)}
-                      className="p-1 text-red-500 hover:text-red-700 cursor-pointer"
+              <div className="space-y-2">
+                {formData.familyMembers.map((m, idx) => {
+                  const isMemberTobaExpanded = expandedMemberTobaId === m.id;
+                  const hasAnyMemberToba = configuredTobaSlots.some((s) => getFamilyMemberTobaApplication(m, s.name, currentTemple).applied);
+
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-2.5 bg-white border border-[#E5E0D8] rounded-xs text-xs space-y-2 shadow-2xs"
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center justify-between gap-1">
+                        <div>
+                          <span className="font-bold text-[#1A1A1A]">{m.name}</span>
+                          <span className="text-gray-500 ml-1.5">({m.relationship})</span>
+                          {m.phone && <span className="text-gray-600 text-[10px] ml-1.5">{m.phone}</span>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <label
+                            className={`px-2 py-0.5 border rounded-2xs text-[10px] font-bold cursor-pointer transition-colors flex items-center gap-1 ${
+                              m.isChiefMourner || m.isSponsor
+                                ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
+                                : 'bg-stone-50 text-stone-700 border-stone-300'
+                            }`}
+                            title="この家族を現在の施主に指定"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!(m.isChiefMourner || m.isSponsor)}
+                              onChange={(e) => handleUpdateFamilyMember(idx, 'isChiefMourner', e.target.checked)}
+                              className="sr-only"
+                            />
+                            <span>{m.isChiefMourner || m.isSponsor ? '★ 施主指定中' : '施主に指定'}</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(m.id)}
+                            className="p-1 text-red-500 hover:text-red-700 cursor-pointer"
+                            title="この家族を削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Member Toba Toggle button */}
+                      <div className="pt-1.5 border-t border-[#F0ECE1] flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedMemberTobaId(isMemberTobaExpanded ? null : m.id)}
+                          className={`text-[11px] font-bold px-2 py-1 rounded-2xs border flex items-center gap-1 cursor-pointer transition-colors ${
+                            hasAnyMemberToba
+                              ? 'bg-amber-100 text-amber-900 border-amber-300'
+                              : 'bg-stone-50 text-stone-700 border-stone-300 hover:bg-stone-100'
+                          }`}
+                        >
+                          <ScrollText className="w-3 h-3 text-amber-800" />
+                          <span>家族塔婆申込 {hasAnyMemberToba ? '【申込有】' : ''}</span>
+                          {isMemberTobaExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        </button>
+                      </div>
+
+                      {/* Member Toba Accordion Body */}
+                      {isMemberTobaExpanded && (
+                        <div className="bg-amber-50/50 p-2 border border-amber-200/80 rounded-xs space-y-2 mt-1">
+                          <div className="text-[10px] font-bold text-amber-950">
+                            {m.name} 様の塔婆申込み・為書き設定:
+                          </div>
+                          {configuredTobaSlots.map((slot) => {
+                            const tobaType = slot.name;
+                            const memApp = getFamilyMemberTobaApplication(m, tobaType, currentTemple);
+
+                            return (
+                              <div key={slot.slot} className="bg-white p-2 border border-amber-200 rounded-xs space-y-1.5">
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={memApp.applied}
+                                    onChange={(e) => {
+                                      const updatedMem = setFamilyMemberTobaApplication(
+                                        m,
+                                        tobaType,
+                                        e.target.checked,
+                                        memApp.tamegaki || `為 亡${m.relationship || '家族'}〇〇`,
+                                        currentTemple
+                                      );
+                                      const updatedList = [...(formData.familyMembers || [])];
+                                      updatedList[idx] = updatedMem;
+                                      setFormData({ ...formData, familyMembers: updatedList });
+                                    }}
+                                    className="w-3.5 h-3.5 accent-[#8C2D19]"
+                                  />
+                                  <span className="font-bold text-[11px] text-[#1A1A1A]">
+                                    【{tobaType}】
+                                  </span>
+                                </label>
+                                {memApp.applied && (
+                                  <div className="pt-1 border-t border-amber-100">
+                                    <input
+                                      type="text"
+                                      placeholder={`例: 為 亡${m.relationship || '家族'}〇〇`}
+                                      value={memApp.tamegaki || ''}
+                                      onChange={(e) => {
+                                        const updatedMem = setFamilyMemberTobaApplication(
+                                          m,
+                                          tobaType,
+                                          true,
+                                          e.target.value,
+                                          currentTemple
+                                        );
+                                        const updatedList = [...(formData.familyMembers || [])];
+                                        updatedList[idx] = updatedMem;
+                                        setFormData({ ...formData, familyMembers: updatedList });
+                                      }}
+                                      className="w-full p-1.5 bg-amber-50/20 border border-[#8C2D19] rounded-xs text-[11px] font-serif text-[#1A1A1A]"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
             {/* Add new member input */}
-            <div className="pt-1.5 border-t border-[#E5E0D8] space-y-1.5">
-              <div className="grid grid-cols-3 gap-1">
+            <div className="pt-2 border-t border-[#E5E0D8] space-y-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 <input
                   type="text"
                   placeholder="家族名"
                   value={newMemberName}
                   onChange={(e) => setNewMemberName(e.target.value)}
-                  className="col-span-2 p-1.5 border border-[#D1CEC7] bg-white text-xs"
+                  className="col-span-2 p-1.5 border border-[#D1CEC7] bg-white text-xs rounded-xs font-bold"
                 />
                 <input
                   type="text"
                   placeholder="続柄 (例: 長男)"
                   value={newMemberRel}
                   onChange={(e) => setNewMemberRel(e.target.value)}
-                  className="p-1.5 border border-[#D1CEC7] bg-white text-xs"
+                  className="p-1.5 border border-[#D1CEC7] bg-white text-xs rounded-xs"
                 />
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 <input
                   type="tel"
                   placeholder="電話番号 (任意)"
                   value={newMemberPhone}
                   onChange={(e) => setNewMemberPhone(e.target.value)}
-                  className="flex-1 p-1.5 border border-[#D1CEC7] bg-white text-xs"
+                  className="flex-1 p-1.5 border border-[#D1CEC7] bg-white text-xs rounded-xs"
                 />
                 <button
                   type="button"
                   onClick={handleAddMember}
-                  className="px-2.5 py-1.5 bg-[#8C2D19] text-white rounded-xs font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                  className="px-3 py-1.5 bg-[#8C2D19] text-white rounded-xs font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>追加</span>

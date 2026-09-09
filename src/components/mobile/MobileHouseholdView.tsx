@@ -16,10 +16,14 @@ import {
   X,
   ArrowUpDown,
   FileText,
-  Sparkles
+  Sparkles,
+  ScrollText,
+  Coins
 } from 'lucide-react';
 import { getGoogleMapsSearchUrl } from '../../utils/calendarUtils';
 import { sortHouseholdsByGojuon, getKanaRow, getKanaColumn, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, normalizeDateInput, formatJapaneseEraDate } from '../../utils/memorialCalculator';
+import { getTobaSlots, getHouseholdTobaApplication, getFamilyMemberTobaApplication } from '../../utils/tobaUtils';
+import { getFeeSlots } from '../../utils/feeUtils';
 import { MobileHouseholdModal } from './MobileHouseholdModal';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
 import { MobileKakochoTextImportModal } from './MobileKakochoTextImportModal';
@@ -448,6 +452,37 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                             {h.status}
                           </span>
                         )}
+                        {/* Toba Badge */}
+                        {(() => {
+                          const householdTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo || temples[0];
+                          const slots = getTobaSlots(householdTemple);
+                          const appliedCount = slots.filter((s) => getHouseholdTobaApplication(h, s.name, householdTemple).applied).length;
+                          if (appliedCount > 0) {
+                            return (
+                              <span className="px-2 py-0.5 bg-amber-50 text-amber-900 border border-amber-300 text-[11px] sm:text-xs font-bold rounded-2xs flex items-center gap-1">
+                                <ScrollText className="w-3 h-3 text-amber-700" />
+                                <span>塔婆申込 ({appliedCount})</span>
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
+                        {/* Fee Badge */}
+                        {(() => {
+                          const hasFee = (h.fee1Amount !== undefined && h.fee1Amount !== null) ||
+                            (h.fee2Amount !== undefined && h.fee2Amount !== null) ||
+                            (h.fee3Amount !== undefined && h.fee3Amount !== null) ||
+                            h.fee1 || h.fee2 || h.fee3;
+                          if (hasFee) {
+                            return (
+                              <span className="px-2 py-0.5 bg-emerald-50 text-emerald-900 border border-emerald-300 text-[11px] sm:text-xs font-bold rounded-2xs flex items-center gap-1">
+                                <Coins className="w-3 h-3 text-emerald-700" />
+                                <span>集金個別設定</span>
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
 
@@ -643,6 +678,91 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                       )}
                     </div>
 
+                    {/* 塔婆申込・施餓鬼塔婆情報 */}
+                    {(() => {
+                      const householdTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo || temples[0];
+                      const slots = getTobaSlots(householdTemple);
+                      const headApps = slots
+                        .map((s) => ({ slot: s, app: getHouseholdTobaApplication(h, s.name, householdTemple) }))
+                        .filter((item) => item.app.applied);
+                      
+                      const familyApps = (h.familyMembers || []).flatMap((fm) => 
+                        slots
+                          .map((s) => {
+                            const memApp = getFamilyMemberTobaApplication(fm, s.name, householdTemple);
+                            return { member: fm, slot: s, app: memApp };
+                          })
+                          .filter((item) => item.app.applied)
+                      );
+
+                      if (headApps.length === 0 && familyApps.length === 0) return null;
+
+                      return (
+                        <div className="p-2.5 bg-amber-50/60 border border-amber-200 rounded-xs space-y-1.5">
+                          <div className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                            <ScrollText className="w-3.5 h-3.5 text-amber-700" />
+                            <span>塔婆申込情報:</span>
+                          </div>
+                          <div className="space-y-1 text-xs">
+                            {headApps.map((item, idx) => (
+                              <div key={idx} className="bg-white/90 p-1.5 rounded-2xs border border-amber-200/80 flex items-baseline justify-between gap-1">
+                                <div className="font-bold text-stone-900">
+                                  【{item.slot.name}】（世帯主）
+                                </div>
+                                <div className="text-stone-700 font-serif text-[11px] truncate max-w-[60%]">
+                                  {item.app.tamegaki || '為書き指定なし'}
+                                </div>
+                              </div>
+                            ))}
+                            {familyApps.map((item, idx) => (
+                              <div key={idx} className="bg-white/90 p-1.5 rounded-2xs border border-amber-200/80 flex items-baseline justify-between gap-1">
+                                <div className="font-bold text-stone-900">
+                                  【{item.slot.name}】（{item.member.name} 様）
+                                </div>
+                                <div className="text-stone-700 font-serif text-[11px] truncate max-w-[60%]">
+                                  {item.app.tamegaki || '為書き指定なし'}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 集金項目（個別設定金額） */}
+                    {(() => {
+                      const householdTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo || temples[0];
+                      const fees = [
+                        { name: householdTemple?.feeType1 || '集金項目１', val: h.fee1Amount ?? (h.fee1 ? Number(h.fee1) : undefined), def: householdTemple?.feeType1DefaultAmount },
+                        { name: householdTemple?.feeType2 || '集金項目２', val: h.fee2Amount ?? (h.fee2 ? Number(h.fee2) : undefined), def: householdTemple?.feeType2DefaultAmount },
+                        { name: householdTemple?.feeType3 || '集金項目３', val: h.fee3Amount ?? (h.fee3 ? Number(h.fee3) : undefined), def: householdTemple?.feeType3DefaultAmount },
+                      ].filter((f) => f.val !== undefined && f.val !== null);
+
+                      if (fees.length === 0) return null;
+
+                      return (
+                        <div className="p-2.5 bg-emerald-50/60 border border-emerald-200 rounded-xs space-y-1.5">
+                          <div className="text-xs font-bold text-emerald-900 flex items-center gap-1">
+                            <Coins className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>集金項目（個別金額設定）:</span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-1 text-xs">
+                            {fees.map((f, idx) => (
+                              <div key={idx} className="bg-white/90 p-1.5 rounded-2xs border border-emerald-200/80 flex items-center justify-between">
+                                <span className="font-medium text-stone-800">{f.name}:</span>
+                                <span className="font-mono font-bold text-stone-900">
+                                  ¥{f.val?.toLocaleString()}
+                                  {f.def !== undefined && f.def !== f.val && (
+                                    <span className="text-[10px] text-gray-500 font-sans ml-1">(標準: ¥{f.def.toLocaleString()})</span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Notes */}
                     {h.notes && (
                       <div className="p-2.5 bg-white border border-[#E5E0D8] rounded-xs">
@@ -684,6 +804,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         onClose={() => setIsModalOpen(false)}
         household={editingHousehold}
         masterOptions={masterOptions}
+        templeInfo={templeInfo}
         temples={temples}
         activeTempleId={activeTempleId}
         existingHouseholds={households}
