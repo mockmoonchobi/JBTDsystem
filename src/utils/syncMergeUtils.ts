@@ -19,7 +19,8 @@ import {
   buildDeletedTimestampMap, 
   isSuppressedByDeletion, 
   mergeDeletedRecordsLogs,
-  loadDeletedRecordsLog 
+  loadDeletedRecordsLog,
+  saveDeletedRecordsLog
 } from './deletedRecordsLog';
 
 export interface SyncMergeStats {
@@ -673,6 +674,46 @@ export function mergeDatasetsWithAuditPriority(
   // 4. Merge TempleTodos
   const tdMerge = mergeGenericEntityList<TempleTodo>(localState.templeTodos || [], remoteData.templeTodos || [], deletedMap);
 
+  // Filter out any templeTodos whose associated memorial service has been deleted
+  const deletedServiceIds = new Set<string>();
+  mergedDeletedRecords.forEach((entry) => {
+    if (entry.entityType === 'memorialService' && (entry.actionType === 'delete' || entry.actionType === 'batch_delete')) {
+      if (entry.id) deletedServiceIds.add(entry.id.trim());
+    }
+  });
+
+  const cleanedMergedTodos: TempleTodo[] = [];
+  const newlyDeletedTodoLogs: DeletedRecordEntry[] = [];
+  let orphanedTodosRemovedCount = 0;
+
+  tdMerge.merged.forEach((t) => {
+    const relId = (t.relatedServiceId || (t as any).serviceId || '').trim();
+    const isServiceDeleted = relId && (deletedServiceIds.has(relId) || deletedMap.has(relId));
+    if (isServiceDeleted) {
+      orphanedTodosRemovedCount++;
+      tdMerge.suppressedCount++;
+      if (!deletedMap.has(t.id)) {
+        newlyDeletedTodoLogs.push({
+          logId: `DEL-${Date.now()}-${t.id}`,
+          id: t.id,
+          entityType: 'templeTodo',
+          label: t.title,
+          actionType: 'delete',
+          deletedAt: new Date().toISOString(),
+          deletedTimestamp: Date.now(),
+          templeId: t.templeId,
+        });
+      }
+      return;
+    }
+    cleanedMergedTodos.push(t);
+  });
+
+  if (newlyDeletedTodoLogs.length > 0) {
+    mergedDeletedRecords.push(...newlyDeletedTodoLogs);
+    saveDeletedRecordsLog(mergedDeletedRecords);
+  }
+
   // 5. Merge Transactions
   const txMerge = mergeGenericEntityList<Transaction>(localState.transactions || [], remoteData.transactions || [], deletedMap);
 
@@ -772,7 +813,7 @@ export function mergeDatasetsWithAuditPriority(
     pastRecords: prMerge.merged,
     transactions: txMerge.merged,
     memorialServices: msMerge.merged,
-    templeTodos: tdMerge.merged,
+    templeTodos: cleanedMergedTodos,
     familyMembers: fmMerge.merged,
     temples: mergedTemples,
     templeInfo: mergedTempleInfo,
@@ -855,6 +896,8 @@ export function mergeDatasetsWithAuditPriority(
     totalLocalNewer > 0 ||
     totalLocalAdded > 0 ||
     localNewLogsCount > 0 ||
+    orphanedTodosRemovedCount > 0 ||
+    newlyDeletedTodoLogs.length > 0 ||
     hasLocalTempleInfoUpdate ||
     hasLocalNewTemples ||
     hasLocalBatchAccountingUpdate;

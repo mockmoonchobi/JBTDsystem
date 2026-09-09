@@ -978,6 +978,26 @@ export async function exportToSheets(
         (targetTablesFilter.has('操作・削除履歴') || targetTablesFilter.has('操作履歴') || targetTablesFilter.has('削除履歴') || targetTablesFilter.has('履歴') || targetTablesFilter.has('操作ログ'))) {
       return true;
     }
+    // Also match memorial services aliases
+    if ((sheetName === '法事予約' || sheetName === '予定・法要' || sheetName === '法事・予約一覧' || sheetName === '法事予約一覧') &&
+        (targetTablesFilter.has('法事予約') || targetTablesFilter.has('予定・法要') || targetTablesFilter.has('法事・予約一覧') || targetTablesFilter.has('法事予約一覧') || targetTablesFilter.has('法要') || targetTablesFilter.has('予定'))) {
+      return true;
+    }
+    // Also match temple todos aliases
+    if ((sheetName === '寺院ToDo' || sheetName === '寺院タスク・ToDo' || sheetName === 'ToDo' || sheetName === 'タスク' || sheetName === 'ToDo一覧') &&
+        (targetTablesFilter.has('寺院ToDo') || targetTablesFilter.has('寺院タスク・ToDo') || targetTablesFilter.has('ToDo') || targetTablesFilter.has('タスク') || targetTablesFilter.has('ToDo一覧'))) {
+      return true;
+    }
+    // Also match past records aliases
+    if ((sheetName === '過去帳' || sheetName === '精霊過去帳') &&
+        (targetTablesFilter.has('過去帳') || targetTablesFilter.has('精霊過去帳'))) {
+      return true;
+    }
+    // Also match households aliases
+    if ((sheetName === '檀家名簿' || sheetName === '門徒名簿') &&
+        (targetTablesFilter.has('檀家名簿') || targetTablesFilter.has('門徒名簿') || targetTablesFilter.has('世帯名簿'))) {
+      return true;
+    }
     return false;
   };
 
@@ -1846,11 +1866,25 @@ export async function exportToSheets(
   }
 
   // 3. Batch update with new data in a single request for optimal speed (with automatic chunking fallback if payload is large)
+  const remapSheetName = (name: string): string => {
+    if (name === '法事予約' && existingTitles.includes('法事・予約一覧') && !existingTitles.includes('法事予約')) return '法事・予約一覧';
+    if (name === '寺院ToDo' && existingTitles.includes('寺院タスク・ToDo') && !existingTitles.includes('寺院ToDo')) return '寺院タスク・ToDo';
+    return name;
+  };
+  const remappedUpdateDataList = updateDataList.map((item) => {
+    const quoteMatch = item.range.match(/^'([^']+)'!(.*)$/);
+    if (quoteMatch) {
+      const remapped = remapSheetName(quoteMatch[1]);
+      return { ...item, range: `'${remapped.replace(/'/g, "''")}'!${quoteMatch[2]}` };
+    }
+    return item;
+  });
+
   const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
   try {
     const payload = {
       valueInputOption: 'USER_ENTERED',
-      data: updateDataList,
+      data: remappedUpdateDataList,
     };
     const res = await fetchWithRetry(updateUrl, {
       method: 'POST',

@@ -3040,18 +3040,34 @@ export default function App() {
     setMemorialServices((prev) => prev.map((s) => (s.id === service.id ? auditedService : s)));
 
     // 塔婆ToDoの自動更新/同期
-    setTempleTodos((prevTodos) =>
-      syncTobaTodosList(auditedService, prevTodos, {
-        pastRecords,
-        temples,
-        activeTempleId,
-        oldService: existing,
-      })
-    );
+    const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (syncStateRef.current.templeTodos || []);
+    const newTodos = syncTobaTodosList(auditedService, currentTodos, {
+      pastRecords,
+      temples,
+      activeTempleId,
+      oldService: existing,
+    });
+    // 既存の塔婆ToDoが削除された場合（塔婆本数が0本に変更等）、削除履歴を記録
+    if (newTodos.length < currentTodos.length) {
+      const removedTodos = currentTodos.filter((ct) => !newTodos.some((nt) => nt.id === ct.id));
+      if (removedTodos.length > 0) {
+        const deletedTodoItems = removedTodos.map((t) => ({
+          id: t.id,
+          entityType: 'templeTodo' as const,
+          label: t.title,
+          templeId: t.templeId,
+        }));
+        recordDeletedRecordsBatch(deletedTodoItems, operator, deviceInfo);
+        refreshDeletedRecords();
+      }
+    }
+    setTempleTodos(newTodos);
+    saveJsonState('temple_todos', newTodos);
+    syncStateRef.current.templeTodos = newTodos;
   };
 
   const handleDeleteService = (id: string) => {
-    const existing = memorialServices.find((s) => s.id === id);
+    const existing = memorialServices.find((s) => s.id === id) || syncStateRef.current.memorialServices?.find((s) => s.id === id);
     recordHistory(`法要を削除`);
     const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
@@ -3063,60 +3079,85 @@ export default function App() {
       operator,
       deviceInfo
     );
-    setMemorialServices((prev) => prev.filter((s) => s.id !== id));
 
-    // 関連する塔婆タスク・ToDoも連動して確実に削除
+    // 関連する塔婆タスク・ToDoも連動して確実に特定
+    const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (syncStateRef.current.templeTodos || []);
     const targetDate = existing?.scheduledDate ? (normalizeDateInput(existing.scheduledDate) || existing.scheduledDate) : null;
     const prevDate = targetDate ? getPreviousDay(targetDate) : null;
     const dharma = existing?.dharmaName?.trim();
     const deceased = existing?.deceasedName?.trim();
     const cleanMourner = existing?.chiefMourner?.replace(/(家|様)+$/g, '').trim();
 
-    const deletedTodoItems: { id: string; entityType: 'templeTodo'; label?: string; templeId?: string }[] = [];
+    const todosToDelete: TempleTodo[] = [];
+    const remainingTodos: TempleTodo[] = [];
 
-    setTempleTodos((prevTodos) =>
-      prevTodos.filter((t) => {
-        // 1. relatedServiceId が一致する場合は無条件に削除
-        if (t.relatedServiceId && t.relatedServiceId === id) {
-          deletedTodoItems.push({ id: t.id, entityType: 'templeTodo', label: t.title, templeId: t.templeId });
-          return false;
-        }
+    currentTodos.forEach((t) => {
+      // 1. relatedServiceId または serviceId が一致する場合は無条件に削除対象
+      if ((t.relatedServiceId && t.relatedServiceId === id) || ((t as any).serviceId && (t as any).serviceId === id)) {
+        todosToDelete.push(t);
+        return;
+      }
 
-        // 2. existingが存在し、塔婆作成・塔婆関連のタスクである場合
-        if (existing) {
-          const isTobaTask =
-            t.category === '塔婆揮毫' ||
-            t.category === '塔婆準備' ||
-            t.category === '塔婆' ||
-            t.title?.includes('塔婆作成') ||
-            t.title?.includes('塔婆');
+      // 2. existingが存在し、塔婆作成・塔婆関連のタスクである場合
+      if (existing) {
+        const isTobaTask =
+          t.category === '塔婆揮毫' ||
+          t.category === '塔婆準備' ||
+          t.category === '塔婆' ||
+          t.title?.includes('塔婆作成') ||
+          t.title?.includes('塔婆');
 
-          if (isTobaTask) {
-            // 日程が法要予定日またはその前日と一致
-            const dateMatch = targetDate && (t.dueDate === targetDate || t.dueDate === prevDate);
+        if (isTobaTask) {
+          // 日程が法要予定日またはその前日と一致
+          const dateMatch = targetDate && (t.dueDate === targetDate || t.dueDate === prevDate);
 
-            // 世帯が一致
-            const householdMatch = existing.householdId && t.householdId && t.householdId === existing.householdId;
+          // 世帯が一致
+          const householdMatch = existing.householdId && t.householdId && t.householdId === existing.householdId;
 
-            // 戒名・俗名・施主名がタイトルやメモ、施主名と一致
-            const nameMatch =
-              (dharma && (t.title?.includes(dharma) || t.notes?.includes(dharma))) ||
-              (deceased && (t.title?.includes(deceased) || t.notes?.includes(deceased))) ||
-              (cleanMourner && (t.title?.includes(cleanMourner) || t.householdHeadName?.includes(cleanMourner) || t.notes?.includes(cleanMourner)));
+          // 戒名・俗名・施主名がタイトルやメモ、施主名と一致
+          const nameMatch =
+            (dharma && (t.title?.includes(dharma) || t.notes?.includes(dharma))) ||
+            (deceased && (t.title?.includes(deceased) || t.notes?.includes(deceased))) ||
+            (cleanMourner && (t.title?.includes(cleanMourner) || t.householdHeadName?.includes(cleanMourner) || t.notes?.includes(cleanMourner)));
 
-            if (dateMatch && (householdMatch || nameMatch)) {
-              deletedTodoItems.push({ id: t.id, entityType: 'templeTodo', label: t.title, templeId: t.templeId });
-              return false; // 削除
-            }
+          if (dateMatch && (householdMatch || nameMatch)) {
+            todosToDelete.push(t);
+            return;
           }
         }
+      }
 
-        return true; // 保持
-      })
-    );
+      remainingTodos.push(t);
+    });
 
-    if (deletedTodoItems.length > 0) {
+    // 削除対象ToDoの削除履歴（Tombstone）を同期的に記録
+    if (todosToDelete.length > 0) {
+      const deletedTodoItems = todosToDelete.map((t) => ({
+        id: t.id,
+        entityType: 'templeTodo' as const,
+        label: t.title,
+        templeId: t.templeId,
+      }));
       recordDeletedRecordsBatch(deletedTodoItems, operator, deviceInfo);
+    }
+
+    refreshDeletedRecords();
+
+    const nextMemorials = memorialServices.filter((s) => s.id !== id);
+    setMemorialServices(nextMemorials);
+    saveJsonState('temple_memorial_services', nextMemorials);
+    syncStateRef.current.memorialServices = nextMemorials;
+
+    setTempleTodos(remainingTodos);
+    saveJsonState('temple_todos', remainingTodos);
+    syncStateRef.current.templeTodos = remainingTodos;
+
+    // Googleシート連携が有効な場合、法事予約シート、寺院ToDoシート、操作・削除履歴シートから即座に消去・更新
+    const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
+    if (savedSheetInfo) {
+      cleanWriteSpecificTablesToGoogleSheets(['法事予約', '予定・法要', '寺院ToDo', '操作・削除履歴']).catch((err) => {
+        console.warn('Failed to clean write deleted service and toba todos to sheets:', err);
+      });
     }
   };
 
@@ -3171,7 +3212,7 @@ export default function App() {
   };
 
   const handleDeleteTodo = (id: string) => {
-    const target = templeTodos.find((t) => t.id === id);
+    const target = templeTodos.find((t) => t.id === id) || syncStateRef.current.templeTodos?.find((t) => t.id === id);
     recordHistory(`タスクを削除`);
     const { operator, deviceInfo } = getCurrentOperatorInfo();
     recordDeletedRecord(
@@ -3183,7 +3224,19 @@ export default function App() {
       operator,
       deviceInfo
     );
-    setTempleTodos((prev) => prev.filter((t) => t.id !== id));
+    refreshDeletedRecords();
+
+    const nextTodos = templeTodos.filter((t) => t.id !== id);
+    setTempleTodos(nextTodos);
+    saveJsonState('temple_todos', nextTodos);
+    syncStateRef.current.templeTodos = nextTodos;
+
+    const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
+    if (savedSheetInfo) {
+      cleanWriteSpecificTablesToGoogleSheets(['寺院ToDo', '操作・削除履歴']).catch((err) => {
+        console.warn('Failed to clean write deleted todo to sheets:', err);
+      });
+    }
   };
 
   // Handlers: Family Members CRUD
