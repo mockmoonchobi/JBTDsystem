@@ -1,4 +1,7 @@
 import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
+import { SheetsExportCache } from '../utils/sheetsExportCache';
+
+const sheetsExportCache = new SheetsExportCache();
 import { 
   Household, 
   PastRecord, 
@@ -32,7 +35,7 @@ import {
   mergeMasterOptionsWithData, 
   getTempleMasterOptions 
 } from '../utils/masterOptionsUtils';
-import { getAuditRowValues, normalizeAuditDate, normalizeAuditTime, getCurrentAuditFields } from '../utils/auditUtils';
+import { normalizeAuditDate, normalizeAuditTime, getCurrentAuditFields } from '../utils/auditUtils';
 import { sanitizeAppDataset } from '../utils/sanitizeDataUtils';
 import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH, normalizeLogOperator } from '../utils/deletedRecordsLog';
 import { 
@@ -963,6 +966,16 @@ export async function clearAllSpreadsheetData(
 }
 
 // Export all app data to Google Sheets (matching Excel specification exactly)
+// Exporting must not manufacture a new audit time for legacy records on every
+// sync: that would make unchanged tables appear dirty and invent edit history.
+function getExportAuditRowValues(item: { createdDate?: string; createdTime?: string; updatedDate?: string; updatedTime?: string; createdAt?: string }): [string, string, string, string] {
+  const createdDate = normalizeAuditDate(item.createdDate || item.createdAt || '');
+  const createdTime = item.createdTime ? normalizeAuditTime(item.createdTime)
+    : item.createdAt && (item.createdAt.includes('T') || item.createdAt.includes(' ')) ? normalizeAuditTime(item.createdAt) : '';
+  return [createdDate, createdTime, item.updatedDate ? normalizeAuditDate(item.updatedDate) : createdDate,
+    item.updatedTime ? normalizeAuditTime(item.updatedTime) : createdTime];
+}
+
 export async function exportToSheets(
   accessToken: string,
   spreadsheetId: string,
@@ -983,6 +996,7 @@ export async function exportToSheets(
     batchAccountingData?: BatchAccountingData;
     disasterEvents?: DisasterMemorialEvent[];
     targetTablesOnly?: string[];
+    onlyChangedTables?: boolean;
   }
 ): Promise<void> {
   const targetTablesFilter = exportOptions?.targetTablesOnly && exportOptions.targetTablesOnly.length > 0
@@ -1096,13 +1110,17 @@ export async function exportToSheets(
   };
 
   // Filter datasets if individual temple export is specified
+  const householdById = new Map<string, Household>();
+  for (const household of households) {
+    if (!householdById.has(household.id)) householdById.set(household.id, household);
+  }
   const filteredHouseholds = isIndividualExport
     ? households.filter((h) => (h.templeId || 'temple-main') === targetTempleId)
     : households;
 
   const filteredPastRecords = isIndividualExport
     ? pastRecords.filter((r) => {
-        const hh = households.find((h) => h.id === r.householdId);
+        const hh = householdById.get(r.householdId);
         const effectiveId = r.templeId || hh?.templeId || 'temple-main';
         return effectiveId === targetTempleId;
       })
@@ -1279,7 +1297,7 @@ export async function exportToSheets(
   ];
 
   const householdRows = filteredHouseholds.map((h) => {
-    const [cDate, cTime, uDate, uTime] = getAuditRowValues(h);
+    const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(h);
     const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
     const tobaApp1 = getHouseholdSponsorTobaApplication(h, '塔婆申込１', hhTemple);
     const tobaApp2 = getHouseholdSponsorTobaApplication(h, '塔婆申込２', hhTemple);
@@ -1365,7 +1383,7 @@ export async function exportToSheets(
   filteredHouseholds.forEach((h) => {
     const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
     (h.familyMembers || []).forEach((fm, idx) => {
-      const [cDate, cTime, uDate, uTime] = getAuditRowValues(fm);
+      const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(fm);
       const fmApp1 = getFamilyMemberTobaApplication(fm, '塔婆申込１', hhTemple);
       const fmApp2 = getFamilyMemberTobaApplication(fm, '塔婆申込２', hhTemple);
       const fmApp3 = getFamilyMemberTobaApplication(fm, '塔婆申込３', hhTemple);
@@ -1428,9 +1446,9 @@ export async function exportToSheets(
   ];
 
   const pastRows = filteredPastRecords.map((r) => {
-    const hh = households.find((h) => h.id === r.householdId);
+    const hh = householdById.get(r.householdId);
     const effectiveTempleId = r.templeId || hh?.templeId;
-    const [cDate, cTime, uDate, uTime] = getAuditRowValues(r);
+    const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(r);
     return [
       r.id,
       getTempleLabel(effectiveTempleId),
@@ -1487,7 +1505,7 @@ export async function exportToSheets(
   ];
 
   const memorialRows = filteredMemorialServices.map((s) => {
-    const [cDate, cTime, uDate, uTime] = getAuditRowValues(s);
+    const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(s);
     return [
       s.id,
       getTempleLabel(s.templeId),
@@ -1544,7 +1562,7 @@ export async function exportToSheets(
   ];
 
   const todoRows = filteredTodos.map((t) => {
-    const [cDate, cTime, uDate, uTime] = getAuditRowValues(t);
+    const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(t);
     return [
       t.id,
       getTempleLabel(t.templeId),
@@ -1588,7 +1606,7 @@ export async function exportToSheets(
   ];
 
   const transactionRows = filteredTransactions.map((t) => {
-    const [cDate, cTime, uDate, uTime] = getAuditRowValues(t);
+    const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(t);
     return [
       t.id,
       getTempleLabel(t.templeId),
@@ -1848,25 +1866,55 @@ export async function exportToSheets(
 
   // Only managed tables present in this export are replaced. The clear and
   // writes share one atomic request: a rejected write never leaves empty tables.
-  const { sheets } = await ensureAllSheetsExist(accessToken, spreadsheetId, temples, exportOptions, sheetCapacities);
-  const requests = buildSheetReplacementRequests(updateDataList, sheets);
-  if (requests.length > 0) {
-    const response = await fetchWithRetry(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requests }),
-      }, 3, 600, 45000
-    );
-    if (!response.ok) {
-      handleGoogleApiError(response, await response.json().catch(() => ({})), 'Google スプレッドシートへの書き込みに失敗しました');
+  const plan = sheetsExportCache.plan(
+    `${spreadsheetId}:${exportOptions?.targetTempleId || 'ALL'}`,
+    updateDataList.map(update => {
+      const isConfig = update.range.startsWith("'一括会計設定'!");
+      const isReception = update.range.startsWith("'一括会計受付'!");
+      if (!isConfig && !isReception) return update;
+      const source = isConfig ? activeBatchConfig : activeBatchData;
+      const headers = isConfig ? batchConfigHeaders : batchHeaders;
+      return { ...update, comparisonValues: update.values.map((row, index) => {
+        if (index === 0 && update.range.endsWith('!A1')) return row;
+        // Ignore only generated fallbacks, retaining real saved dates in the
+        // comparison. The actual spreadsheet output keeps its existing format.
+        return row.map((value, column) => {
+          if (headers[column] === '受付日付' && !source?.configDate) return '';
+          if (headers[column] === '最終更新日時' && !source?.lastSavedAt) return '';
+          return value;
+        });
+      }) };
+    }),
+    exportOptions?.onlyChangedTables === true,
+  );
+  if (plan.updates.length === 0) return;
+  try {
+    const { sheets } = await ensureAllSheetsExist(accessToken, spreadsheetId, temples, exportOptions,
+      sheetCapacities.filter(cap => plan.changed.has(cap.sheetName)));
+    const requests = buildSheetReplacementRequests(plan.updates, sheets);
+    if (requests.length > 0) {
+      const response = await fetchWithRetry(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requests }),
+        }, 3, 600, 45000
+      );
+      if (!response.ok) {
+        handleGoogleApiError(response, await response.json().catch(() => ({})), 'Google スプレッドシートへの書き込みに失敗しました');
+      }
+      // Do not fall back to separately clearing/writing chunks on failure.
     }
-    // Do not fall back to separately clearing/writing chunks on failure.
+    plan.commit();
+  } catch (error) {
+    // A timeout can leave the server outcome unknown. Never reuse that baseline.
+    sheetsExportCache.invalidate();
+    throw error;
   }
 
   // 檀家名簿の書き込みが含まれている場合、緯度・経度の列書式を確実に数値形式（0.000000）にフォーマットして日付化を防止
-  if (!targetTablesFilter || shouldIncludeSheet('檀家名簿')) {
+  if (plan.changed.has('檀家名簿')) {
     await formatHouseholdCoordinatesInSheets(accessToken, spreadsheetId).catch((err) => {
       console.warn('formatHouseholdCoordinatesInSheets warning:', err);
     });
@@ -1948,6 +1996,8 @@ export async function importFromSheets(
     priests?: Priest[];
   }
 ): Promise<SheetsImportResult> {
+  // The remote workbook may have changed on another device or directly in Sheets.
+  sheetsExportCache.invalidate();
   // 1. Fetch spreadsheet metadata including gridProperties (rowCount, columnCount) to safely paginate large sheets
   const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties(sheetId,title,gridProperties)`;
   const metaRes = await fetchWithRetry(metaUrl, {

@@ -2151,6 +2151,22 @@ export function sortHouseholds(
   activeFeeSlot?: 1 | 2 | 3 | string,
   transactions?: Transaction[]
 ): Household[] {
+  // Index once per sort, then evaluate each household once rather than scanning
+  // the entire past-record table inside every comparator invocation.
+  const niibonRanks = new Map<string, number>();
+  if (sortKey === 'niibon') {
+    const recordsByHousehold = new Map<string, PastRecord[]>();
+    for (const record of pastRecords || []) {
+      const records = recordsByHousehold.get(record.householdId);
+      if (records) records.push(record);
+      else recordsByHousehold.set(record.householdId, [record]);
+    }
+    const currentYear = new Date().getFullYear();
+    for (const household of households) {
+      const status = getHouseholdNiibonStatus(recordsByHousehold.get(household.id) || [], household.id, bonSeason || '8月盆', currentYear);
+      niibonRanks.set(household.id, status.isCurrentYearNiibon ? 1 : status.isNextYearNiibon ? 2 : 3);
+    }
+  }
   return [...households].sort((a, b) => {
     let cmp = 0;
 
@@ -2223,15 +2239,8 @@ export function sortHouseholds(
         cmp = (a.district || '').localeCompare(b.district || '', 'ja');
       }
     } else if (sortKey === 'niibon') {
-      const statusA = getHouseholdNiibonStatus(pastRecords || [], a.id, (bonSeason as any) || '8月盆');
-      const statusB = getHouseholdNiibonStatus(pastRecords || [], b.id, (bonSeason as any) || '8月盆');
-      const getRank = (st: typeof statusA) => {
-        if (st.isCurrentYearNiibon) return 1;
-        if (st.isNextYearNiibon) return 2;
-        return 3;
-      };
-      const rankA = getRank(statusA);
-      const rankB = getRank(statusB);
+      const rankA = niibonRanks.get(a.id)!;
+      const rankB = niibonRanks.get(b.id)!;
       cmp = rankA - rankB;
       if (cmp === 0) {
         cmp = compareHouseholdsGojuon(a, b);
@@ -3090,4 +3099,3 @@ export function resolveSpiritMemorialType(
 
   return '追善供養';
 }
-

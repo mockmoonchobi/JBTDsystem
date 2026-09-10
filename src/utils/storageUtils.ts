@@ -287,7 +287,7 @@ export const safeStorage = {
     }
   },
 
-  setItem(key: string, value: string): boolean {
+  setItem(key: string, value: string, mirrorToIDB = true): boolean {
     // Large table data must NOT go to localStorage to prevent quota exhaustion and truncation bugs
     if (TABLE_STORAGE_KEYS.has(key)) {
       // Purge any stale entry in localStorage if present
@@ -303,7 +303,7 @@ export const safeStorage = {
       if (typeof window === 'undefined' || !window.localStorage) return false;
       window.localStorage.setItem(key, value);
       // Also mirror to IndexedDB asynchronously
-      idbSet(key, value).catch(() => {});
+      if (mirrorToIDB) idbSet(key, value).catch(() => {});
       return true;
     } catch (e: any) {
       console.warn(
@@ -312,7 +312,7 @@ export const safeStorage = {
       );
 
       try {
-        idbSet(key, value).catch((idbErr) => {
+        if (mirrorToIDB) idbSet(key, value).catch((idbErr) => {
           console.error(`[safeStorage] IndexedDB fallback also failed for "${key}":`, idbErr);
         });
       } catch (err) {
@@ -345,10 +345,12 @@ export const safeStorage = {
   }
 };
 
-/**
- * Helper to safely save state objects.
- * Automatically routes large table datasets directly to IndexedDB to prevent 5,000-record / 5MB browser truncation.
- */
+/** Publish imported data to synchronous readers; the owning state effect saves it. */
+export function cacheJsonState<T>(key: string, data: T): void {
+  memoryStateCache.set(key, data);
+}
+
+/** Persist one typed value, routing large tables directly to IndexedDB. */
 export function saveJsonState<T>(key: string, data: T): void {
   try {
     memoryStateCache.set(key, data);
@@ -362,7 +364,8 @@ export function saveJsonState<T>(key: string, data: T): void {
     } else {
       // Small config / metadata
       const jsonStr = JSON.stringify(data);
-      safeStorage.setItem(key, jsonStr);
+      // Save the typed value once below; do not also mirror its JSON string.
+      safeStorage.setItem(key, jsonStr, false);
       idbSet(key, data).catch(() => {});
     }
   } catch (e) {

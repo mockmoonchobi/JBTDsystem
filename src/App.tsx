@@ -49,9 +49,9 @@ import {
 import {
   safeStorage,
   saveJsonState,
+  cacheJsonState,
   loadJsonState,
   idbGet,
-  idbSet,
   idbRemove,
   idbClear,
   clearAllTerminalCache,
@@ -1292,7 +1292,6 @@ export default function App() {
         recordCount: totalLocalCount,
       };
       saveJsonState('temple_safety_snapshot', snapshot);
-      idbSet('temple_safety_snapshot', snapshot).catch((e) => console.warn('IDB safety snapshot save error:', e));
     }
   }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, disasterEvents]);
 
@@ -1379,7 +1378,6 @@ export default function App() {
         recordCount: currentLocalCount,
       };
       saveJsonState('temple_backup_before_sync', backupSnapshot);
-      idbSet('temple_backup_before_sync', backupSnapshot).catch((e) => console.warn('Backup save error:', e));
     }
 
     // 照会・競合解消: 完全初期化モードなら空のローカル状態を基準にし、スプレッドシートデータを100%取り込む
@@ -1437,29 +1435,30 @@ export default function App() {
     if (mergeResult.deletedRecords) syncStateRef.current.deletedRecords = mergeResult.deletedRecords;
     if (mergeResult.disasterEvents) syncStateRef.current.disasterEvents = mergeResult.disasterEvents;
 
+    // Keep synchronous readers current; the state effects persist each dataset once.
     // 1. Households
     setHouseholds(mergeResult.households);
-    saveJsonState('temple_households', mergeResult.households);
+    cacheJsonState('temple_households', mergeResult.households);
     
     // 2. Family Members
     setFamilyMembers(mergeResult.familyMembers);
-    saveJsonState('temple_family_members', mergeResult.familyMembers);
+    cacheJsonState('temple_family_members', mergeResult.familyMembers);
 
     // 3. Past Records
     setPastRecords(mergeResult.pastRecords);
-    saveJsonState('temple_past_records', mergeResult.pastRecords);
+    cacheJsonState('temple_past_records', mergeResult.pastRecords);
 
     // 4. Memorial Services
     setMemorialServices(mergeResult.memorialServices);
-    saveJsonState('temple_memorial_services', mergeResult.memorialServices);
+    cacheJsonState('temple_memorial_services', mergeResult.memorialServices);
 
     // 5. Todos
     setTempleTodos(mergeResult.templeTodos);
-    saveJsonState('temple_todos', mergeResult.templeTodos);
+    cacheJsonState('temple_todos', mergeResult.templeTodos);
 
     // 6. Transactions
     setTransactions(mergeResult.transactions);
-    saveJsonState('temple_transactions', mergeResult.transactions);
+    cacheJsonState('temple_transactions', mergeResult.transactions);
 
     // 7. Temples & Temple Info
     if (mergeResult.temples && mergeResult.temples.length > 0) {
@@ -2170,6 +2169,9 @@ export default function App() {
   }, []);
 
   // Continuous Auto-Sync on User Data Changes (Debounced 2.5s)
+  // A successful sync wakes edits made in flight. An error does not trigger an
+  // endless retry loop; the next edit or an explicit sync can retry it.
+  const isSyncSettled = syncStatus === 'synced';
   useEffect(() => {
     if (!isInitialLoaded) return;
 
@@ -2178,19 +2180,21 @@ export default function App() {
     }
 
     let timer: NodeJS.Timeout;
+    let cancelled = false;
 
     const performAutoSync = async () => {
       if (isCleanWritingRef.current || isSyncInProgressRef.current || isImportingRef.current) return;
       const token = await getAccessToken();
+      if (cancelled || isCleanWritingRef.current || isSyncInProgressRef.current || isImportingRef.current) return;
       const savedSheetInfo = safeStorage.getItem('temple_google_sheet_info');
       if (!token || !savedSheetInfo) return;
 
       const curState = syncStateRef.current;
-      const currentHouseholds = (households && households.length > 0) ? households : (curState.households || []);
-      const currentPastRecords = (pastRecords && pastRecords.length > 0) ? pastRecords : (curState.pastRecords || []);
-      const currentMemorials = (memorialServices && memorialServices.length > 0) ? memorialServices : (curState.memorialServices || []);
-      const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (curState.templeTodos || []);
-      const currentTransactions = (transactions && transactions.length > 0) ? transactions : (curState.transactions || []);
+      const currentHouseholds = curState.households;
+      const currentPastRecords = curState.pastRecords;
+      const currentMemorials = curState.memorialServices;
+      const currentTodos = curState.templeTodos;
+      const currentTransactions = curState.transactions;
 
       const exportPayload = {
         templeInfo: curState.templeInfo || templeInfo,
@@ -2204,7 +2208,7 @@ export default function App() {
         temples: (curState.temples && curState.temples.length > 0) ? curState.temples : temples,
         templeMasterOptionsMap: curState.templeMasterOptionsMap || templeMasterOptionsMap,
         priests: curState.priests || priests,
-        deletedRecords: curState.deletedRecords || deletedRecords,
+        deletedRecords: loadDeletedRecordsLog(),
         batchAccountingData: curState.batchAccountingData !== undefined ? curState.batchAccountingData : (getSavedBatchAccountingData() || undefined),
         disasterEvents: curState.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
       };
@@ -2240,9 +2244,10 @@ export default function App() {
             exportPayload.temples,
             {
               targetTempleId: 'ALL',
+              onlyChangedTables: true,
               templeMasterOptionsMap: exportPayload.templeMasterOptionsMap,
               priests: exportPayload.priests,
-              deletedRecords: loadDeletedRecordsLog(),
+              deletedRecords: exportPayload.deletedRecords,
               batchAccountingData: exportPayload.batchAccountingData !== undefined ? exportPayload.batchAccountingData : (getSavedBatchAccountingData() || undefined),
               disasterEvents: exportPayload.disasterEvents,
             }
@@ -2277,9 +2282,10 @@ export default function App() {
     }, 2500);
 
     return () => {
+      cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, disasterEvents, isInitialLoaded]);
+  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, disasterEvents, isInitialLoaded, isSyncSettled]);
 
   // ★ バックグラウンド操作履歴監視（約10秒間隔で「操作・削除履歴」シートのみを軽量監視）
   // 画面に「データ連携処理中」を出さず、他スタッフ・別端末からのデータ更新が検出されたらサイレントに自動同期
