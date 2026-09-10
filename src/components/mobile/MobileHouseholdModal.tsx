@@ -211,12 +211,6 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
     });
   };
 
-  // Quick tamegaki template insert
-  const insertTamegakiPreset = (tobaType: string, preset: string) => {
-    const updated = setHouseholdTobaApplication(formData as Household, tobaType, true, preset, currentTemple);
-    setFormData(updated);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/70 overflow-hidden">
       <div className="bg-[#FAF8F5] flex-1 flex flex-col max-w-lg w-full mx-auto shadow-2xl h-full">
@@ -425,7 +419,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
                               formData as Household,
                               tobaType,
                               e.target.checked,
-                              app.tamegaki || (familySurname ? `${familySurname}家先祖代々精霊` : '先祖代々精霊'),
+                              app.tamegaki || '',
                               currentTemple
                             );
                             setFormData(updated);
@@ -467,41 +461,6 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
                             }}
                             className="w-full p-2 bg-amber-50/20 border border-[#8C2D19] rounded-xs text-xs font-serif font-bold text-[#1A1A1A] focus:outline-none focus:bg-white"
                           />
-                        </div>
-
-                        {/* Quick Preset Buttons */}
-                        <div className="flex flex-wrap items-center gap-1 text-[10px]">
-                          <span className="text-gray-500 font-medium">クイック入力:</span>
-                          {familySurname && (
-                            <button
-                              type="button"
-                              onClick={() => insertTamegakiPreset(tobaType, `${familySurname}家先祖代々精霊`)}
-                              className="px-1.5 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-2xs cursor-pointer font-bold"
-                            >
-                              +{familySurname}家先祖代々
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => insertTamegakiPreset(tobaType, '先祖代々精霊')}
-                            className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-2xs cursor-pointer"
-                          >
-                            +先祖代々精霊
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => insertTamegakiPreset(tobaType, app.tamegaki ? `${app.tamegaki}、為 亡父` : '為 亡父')}
-                            className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-2xs cursor-pointer"
-                          >
-                            +為 亡父
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => insertTamegakiPreset(tobaType, app.tamegaki ? `${app.tamegaki}、為 亡母` : '為 亡母')}
-                            className="px-1.5 py-0.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 rounded-2xs cursor-pointer"
-                          >
-                            +為 亡母
-                          </button>
                         </div>
                       </div>
                     )}
@@ -811,7 +770,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
                                         m,
                                         tobaType,
                                         e.target.checked,
-                                        memApp.tamegaki || `為 亡${m.relationship || '家族'}〇〇`,
+                                        memApp.tamegaki || '',
                                         currentTemple
                                       );
                                       const updatedList = [...(formData.familyMembers || [])];

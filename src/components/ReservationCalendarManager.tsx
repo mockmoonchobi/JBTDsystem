@@ -82,6 +82,7 @@ import {
 import { DateInputWithEra, TimeSelectorInput } from './DateTimeInputs';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { MobileServiceModal } from './mobile/MobileServiceModal';
+import { DaySchedulePrintModal } from './DaySchedulePrintModal';
 import {
   generateGoogleCalendarUrl,
   getGoogleMapsSearchUrl,
@@ -2203,6 +2204,10 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   // Todo quick filter
   const [todoFilter, setTodoFilter] = useState<'all' | 'pending' | 'completed'>('pending');
 
+  // Day Schedule Vertical Print Modal state
+  const [showDaySchedulePrintModal, setShowDaySchedulePrintModal] = useState<boolean>(false);
+  const [daySchedulePrintDate, setDaySchedulePrintDate] = useState<string>(todayStr);
+
   // Households map for fast lookup
   const householdMap = useMemo(() => {
     const map = new Map<string, Household>();
@@ -3241,6 +3246,18 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   </h3>
                 </div>
                 <div className="flex items-center gap-1.5 font-sans">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDaySchedulePrintDate(selectedDateStr);
+                      setShowDaySchedulePrintModal(true);
+                    }}
+                    className="px-2.5 py-1.5 bg-[#FAF8F5] text-[#1A1A1A] border border-[#B89F67] hover:bg-[#D4AF37] font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                    title="この日の予定を縦書き箇条書きで印刷"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-[#8C2D19]" />
+                    <span>予定印刷</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleOpenAddServiceModal(selectedDateStr)}
@@ -6160,6 +6177,16 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
           }}
         />
       )}
+      {/* MODAL: 日別予定の縦書き箇条書き印刷モーダル */}
+      <DaySchedulePrintModal
+        isOpen={showDaySchedulePrintModal}
+        onClose={() => setShowDaySchedulePrintModal(false)}
+        targetDateStr={daySchedulePrintDate}
+        services={memorialServices}
+        pastRecords={pastRecords}
+        households={households}
+        templeTodos={templeTodos}
+      />
     </div>
   );
 };

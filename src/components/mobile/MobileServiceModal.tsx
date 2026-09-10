@@ -155,6 +155,12 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       });
       if (service.memorialType?.includes('塔婆')) {
         setMajorCategory('塔婆');
+        setFormData((prev) => ({
+          ...prev,
+          scheduledTime: '終日',
+          endTime: '終日',
+          isAllDay: true,
+        }));
       } else if (['葬儀・枕経', '通夜', '葬儀', '枕経', '通夜・葬儀'].includes(service.memorialType)) {
         setMajorCategory('通夜・葬儀');
       } else if (['その他', '寺院行事', '会合', '来客', '法務その他'].includes(service.memorialType)) {
@@ -198,11 +204,17 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       setHouseholdDistrictFilter('ALL');
       setHouseholdKanaFilter('ALL');
 
+      const isInitToba = Boolean((initialMilestoneType as any)?.includes('塔婆'));
+      if (isInitToba) {
+        setMajorCategory('塔婆');
+      }
+
       setFormData({
         scheduledDate: initialDate || todayStr,
-        scheduledTime: '11:00',
-        endTime: '12:00',
-        memorialType: (initialMilestoneType as any) || '年忌法要',
+        scheduledTime: isInitToba ? '終日' : '11:00',
+        endTime: isInitToba ? '終日' : '12:00',
+        isAllDay: isInitToba,
+        memorialType: isInitToba ? '塔婆供養' : ((initialMilestoneType as any) || '年忌法要'),
         chiefMourner: defChief,
         householdId: initialHouseholdId || '',
         deceasedId: initialPastRecordId || '',
@@ -210,8 +222,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
         deceasedName: defSecular,
         venue: defaultTempleName,
         address: defAddr || defaultTempleAddr,
-        attendeeCount: 10,
-        tobaCount: (initialMilestoneType as any)?.includes('塔婆') ? 1 : 0,
+        attendeeCount: isInitToba ? 0 : 10,
+        tobaCount: isInitToba ? 1 : 0,
         tobaType: '大塔婆',
         notes: '',
         templeId: defTempleId,
@@ -413,6 +425,9 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
         attendeeCount: 0,
         tobaCount: prev.tobaCount && prev.tobaCount > 0 ? prev.tobaCount : 1,
         tobaType: prev.tobaType || '大塔婆',
+        scheduledTime: '終日',
+        endTime: '終日',
+        isAllDay: true,
       }));
       setCurrentStep('step_select_mode');
     } else {
@@ -617,8 +632,9 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       }
     }
 
-    const isAllDaySelected = formData.scheduledTime === '終日' || formData.isAllDay;
-    const finalScheduledTime = isAllDaySelected ? '終日' : (formData.scheduledTime || (majorCategory === '塔婆' ? '09:00' : '11:00'));
+    const isTobaCategory = majorCategory === '塔婆' || formData.memorialType === '塔婆供養' || Boolean(formData.memorialType?.includes('塔婆'));
+    const isAllDaySelected = isTobaCategory || formData.scheduledTime === '終日' || formData.isAllDay;
+    const finalScheduledTime = isAllDaySelected ? '終日' : (formData.scheduledTime || '11:00');
     const finalEndTime = isAllDaySelected ? '終日' : (formData.endTime || calculateEndTime(finalScheduledTime, 60));
 
     // 精霊名の要約（主精霊 + 併修精霊）
@@ -1343,69 +1359,88 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
               </div>
 
               <div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label className="block font-bold text-sm text-[#1A1A1A] mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1">
+                {majorCategory === '塔婆' ? (
+                  <div className="bg-amber-50/90 border border-amber-300 rounded-xs p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-[#8C2D19]" />
-                        時間帯 / 開始時刻
+                        <span className="font-bold text-sm text-[#8C2D19]">時間帯: 終日</span>
+                      </div>
+                      <span className="text-xs bg-[#8C2D19] text-white font-bold px-2 py-0.5 rounded-2xs">
+                        終日固定
                       </span>
-                    </label>
-                    <TimeSelectorInput
-                      value={formData.scheduledTime || (majorCategory === '塔婆' ? '終日' : '11:00')}
-                      allowAllDay={true}
-                      onChange={(val) => {
-                        const isAll = val === '終日';
-                        const newEnd = isAll ? '終日' : calculateEndTime(val, 60);
-                        setFormData({ ...formData, scheduledTime: val, endTime: newEnd, isAllDay: isAll });
-                      }}
-                      className="w-full"
-                    />
+                    </div>
+                    <p className="text-[11px] text-gray-600 mt-1">
+                      ※塔婆供養の予定は時間帯が「終日」に固定されます。
+                    </p>
                   </div>
-                  <div>
-                    <label className="block font-bold text-sm text-[#555555] mb-1">終了予定</label>
-                    <TimeSelectorInput
-                      value={formData.endTime || (formData.scheduledTime === '終日' ? '終日' : '12:00')}
-                      allowAllDay={true}
-                      onChange={(val) => setFormData({ ...formData, endTime: val })}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block font-bold text-sm text-[#1A1A1A] mb-1 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-4 h-4 text-[#8C2D19]" />
+                            時間帯 / 開始時刻
+                          </span>
+                        </label>
+                        <TimeSelectorInput
+                          value={formData.scheduledTime || '11:00'}
+                          allowAllDay={true}
+                          onChange={(val) => {
+                            const isAll = val === '終日';
+                            const newEnd = isAll ? '終日' : calculateEndTime(val, 60);
+                            setFormData({ ...formData, scheduledTime: val, endTime: newEnd, isAllDay: isAll });
+                          }}
+                          className="w-full"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-sm text-[#555555] mb-1">終了予定</label>
+                        <TimeSelectorInput
+                          value={formData.endTime || (formData.scheduledTime === '終日' ? '終日' : '12:00')}
+                          allowAllDay={true}
+                          onChange={(val) => setFormData({ ...formData, endTime: val })}
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
 
-                {/* Quick time chips including 終日 */}
-                <div className="flex flex-wrap gap-1.5 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormData({ ...formData, scheduledTime: '終日', endTime: '終日', isAllDay: true });
-                    }}
-                    className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border transition-colors ${
-                      formData.scheduledTime === '終日' || formData.isAllDay
-                        ? 'bg-[#8C2D19] text-white border-[#8C2D19] shadow-2xs'
-                        : 'bg-amber-50 text-[#8C2D19] border-amber-300 hover:bg-amber-100'
-                    }`}
-                  >
-                    終日
-                  </button>
-                  {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map((time) => (
-                    <button
-                      key={time}
-                      type="button"
-                      onClick={() => {
-                        const end = calculateEndTime(time, 60);
-                        setFormData({ ...formData, scheduledTime: time, endTime: end, isAllDay: false });
-                      }}
-                      className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border ${
-                        formData.scheduledTime === time && !formData.isAllDay
-                          ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
-                          : 'bg-[#FAF8F5] text-[#555555] border-[#D1CEC7] hover:bg-[#F3EDE2]'
-                      }`}
-                    >
-                      {time}〜
-                    </button>
-                  ))}
-                </div>
+                    {/* Quick time chips including 終日 */}
+                    <div className="flex flex-wrap gap-1.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, scheduledTime: '終日', endTime: '終日', isAllDay: true });
+                        }}
+                        className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border transition-colors ${
+                          formData.scheduledTime === '終日' || formData.isAllDay
+                            ? 'bg-[#8C2D19] text-white border-[#8C2D19] shadow-2xs'
+                            : 'bg-amber-50 text-[#8C2D19] border-amber-300 hover:bg-amber-100'
+                        }`}
+                      >
+                        終日
+                      </button>
+                      {['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'].map((time) => (
+                        <button
+                          key={time}
+                          type="button"
+                          onClick={() => {
+                            const end = calculateEndTime(time, 60);
+                            setFormData({ ...formData, scheduledTime: time, endTime: end, isAllDay: false });
+                          }}
+                          className={`px-3 py-1.5 rounded-xs text-xs font-bold cursor-pointer border ${
+                            formData.scheduledTime === time && !formData.isAllDay
+                              ? 'bg-[#8C2D19] text-white border-[#8C2D19]'
+                              : 'bg-[#FAF8F5] text-[#555555] border-[#D1CEC7] hover:bg-[#F3EDE2]'
+                          }`}
+                        >
+                          {time}〜
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1459,10 +1494,15 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                           if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
                             curTobaItems[0] = { ...curTobaItems[0], memorialType: type };
                           }
+                          const isToba = type === '塔婆供養';
+                          if (isToba) {
+                            setMajorCategory('塔婆');
+                          }
                           setFormData({
                             ...formData,
                             memorialType: type as any,
                             tobaItems: curTobaItems,
+                            ...(isToba ? { scheduledTime: '終日', endTime: '終日', isAllDay: true, tobaCount: formData.tobaCount && formData.tobaCount > 0 ? formData.tobaCount : 1 } : {}),
                           });
                         }}
                         className={`py-2 px-1 rounded-xs text-xs font-bold border transition-colors cursor-pointer text-center ${

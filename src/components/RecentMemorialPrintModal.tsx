@@ -38,7 +38,7 @@ function getKijitsuHeadLabel(item: DailyMemorialItem): string {
   if (label.includes('四七日')) return '四七日';
   if (label.includes('五七日') || label.includes('三十五日')) return '五七日';
   if (label.includes('六七日')) return '六七日';
-  if (label.includes('七七日') || label.includes('四十九日')) return '四十九日';
+  if (label.includes('七七日') || label.includes('四十九日')) return '七七日';
   if (label.includes('百ヶ日')) return '百ヶ日';
   const match = label.match(/([一二三四五六七八九十百千]+回忌)/);
   if (match) return match[1];
@@ -293,7 +293,7 @@ export const RecentMemorialPrintModal: React.FC<RecentMemorialPrintModalProps> =
       const disasterMatch = getDisasterMemorialForDate(disasterEvents, day.date);
       const dayDateTitle = disasterMatch
         ? `${day.dateTitleKanji}　${disasterMatch.titleReplacement}`
-        : `${day.dateTitleKanji} 供養精霊`;
+        : day.dateTitleKanji;
       
       // If we are starting a day and there's less than 2 columns remaining on current page (need at least date + 1 spirit/empty), start new page
       if (currentCols.length > 0 && currentCols.length + 2 > maxColsPerPage) {
