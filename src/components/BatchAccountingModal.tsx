@@ -12,7 +12,9 @@ import {
   Users,
   Save,
   Clock,
-  Trash2
+  Trash2,
+  Filter,
+  Check
 } from 'lucide-react';
 import { Household, Transaction, MasterOptions, TempleInfo, TransactionCategory, BatchAccountingData, HouseholdBatchEntry, BatchAccountingConfig } from '../types';
 import { formatCurrency, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions } from '../utils/memorialCalculator';
@@ -290,14 +292,21 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   // 3. Filter & Search State
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedKana, setSelectedKana] = useState<string>('すべて');
-  const [filterType, setFilterType] = useState<'all' | 'segakiOnly' | 'tanagyoOnly' | 'enteredOnly'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'enteredOnly'>('all');
+
+  // 塔婆絞り込みポップアップ用ステート
+  const [isTobaFilterModalOpen, setIsTobaFilterModalOpen] = useState<boolean>(false);
+  const [tobaFilter, setTobaFilter] = useState<'all' | 'anyToba' | 'segakiOnly' | 'toba1Only' | 'toba2Only' | 'toba3Only'>('all');
+
+  // 集金項目絞り込みポップアップ用ステート
+  const [isFeeFilterModalOpen, setIsFeeFilterModalOpen] = useState<boolean>(false);
+  const [selectedFeeFilters, setSelectedFeeFilters] = useState<string[]>([]);
 
   const [isSuccessToast, setIsSuccessToast] = useState<string | null>(null);
 
-  // Helper to determine specific household amount for a column
-  const getHouseholdDefaultAmount = (h: Household, colIndex: 1 | 2 | 3): number | '' => {
+  // Helper to determine if a household has an explicitly registered individual amount for a column
+  const getHouseholdCustomFee = (h: Household, colIndex: 1 | 2 | 3): number | null => {
     const note = colIndex === 1 ? notes1 : colIndex === 2 ? notes2 : notes3;
-    const globalDefault = colIndex === 1 ? defaultAmount1 : colIndex === 2 ? defaultAmount2 : defaultAmount3;
 
     // Check if column note corresponds to feeType1
     if (note && templeInfo?.feeType1 && note.includes(templeInfo.feeType1.trim())) {
@@ -329,18 +338,36 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       }
     }
 
-    // Fallback: column 2 often matches fee1, column 3 matches fee2 if feeTypes not strictly set
-    if (colIndex === 2 && (note.includes('護持会費') || note.includes('会費'))) {
+    // Fallback: column note includes '護持会費' or '会費' -> maps to fee1
+    if (note && (note.includes('護持会費') || note.includes('会費'))) {
       if (h.fee1Amount !== undefined && h.fee1Amount !== null && Number(h.fee1Amount) > 0) {
         return Number(h.fee1Amount);
       }
-    }
-    if (colIndex === 3 && (note.includes('墓地') || note.includes('管理費'))) {
-      if (h.fee2Amount !== undefined && h.fee2Amount !== null && Number(h.fee2Amount) > 0) {
-        return Number(h.fee2Amount);
+      if (h.fee1 !== undefined && h.fee1 !== null && Number(h.fee1) > 0) {
+        return Number(h.fee1);
       }
     }
 
+    // Fallback: column note includes '墓地' or '管理費' -> maps to fee2
+    if (note && (note.includes('墓地') || note.includes('管理費'))) {
+      if (h.fee2Amount !== undefined && h.fee2Amount !== null && Number(h.fee2Amount) > 0) {
+        return Number(h.fee2Amount);
+      }
+      if (h.fee2 !== undefined && h.fee2 !== null && Number(h.fee2) > 0) {
+        return Number(h.fee2);
+      }
+    }
+
+    return null;
+  };
+
+  // Helper to determine specific household amount for a column
+  const getHouseholdDefaultAmount = (h: Household, colIndex: 1 | 2 | 3): number | '' => {
+    const custom = getHouseholdCustomFee(h, colIndex);
+    if (custom !== null) {
+      return custom;
+    }
+    const globalDefault = colIndex === 1 ? defaultAmount1 : colIndex === 2 ? defaultAmount2 : defaultAmount3;
     return globalDefault;
   };
 
@@ -561,18 +588,18 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         const districtMatch = (h.district || '').toLowerCase().includes(query);
         const notesMatch = (h.notes || '').toLowerCase().includes(query);
         
-        // 施餓鬼塔婆・棚経検索
+        // 塔婆検索
         const segakiHeadMatch = (h.segakiTamegaki || '').toLowerCase().includes(query) || (h.isSegakiToba && '施餓鬼塔婆'.includes(query));
         const segakiMemberMatch = h.familyMembers?.some(m => 
           (m.name || '').toLowerCase().includes(query) ||
           (m.segakiTamegaki || '').toLowerCase().includes(query) ||
           (m.isSegakiToba && '施餓鬼塔婆'.includes(query))
         );
-        const tanagyoMatch = (h.tanagyoAddress || '').toLowerCase().includes(query) ||
-          (h.tanagyoNotes || '').toLowerCase().includes(query) ||
-          (h.tanagyoMonthlyVisit && '棚経'.includes(query));
+        const toba1Match = Boolean(templeInfo?.tobaType1 && h.toba1Applied && templeInfo.tobaType1.toLowerCase().includes(query));
+        const toba2Match = Boolean(templeInfo?.tobaType2 && h.toba2Applied && templeInfo.tobaType2.toLowerCase().includes(query));
+        const toba3Match = Boolean(templeInfo?.tobaType3 && h.toba3Applied && templeInfo.tobaType3.toLowerCase().includes(query));
 
-        const matchesQuery = nameMatch || kanaMatch || idMatch || typeMatch || statusMatch || districtMatch || notesMatch || segakiHeadMatch || segakiMemberMatch || tanagyoMatch;
+        const matchesQuery = nameMatch || kanaMatch || idMatch || typeMatch || statusMatch || districtMatch || notesMatch || segakiHeadMatch || segakiMemberMatch || toba1Match || toba2Match || toba3Match;
         if (!matchesQuery) return false;
       }
 
@@ -588,12 +615,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       }
 
       // 3. Quick Type Filter
-      if (filterType === 'segakiOnly') {
-        const hasSegaki = h.isSegakiToba || h.familyMembers?.some((m) => m.isSegakiToba);
-        if (!hasSegaki) return false;
-      } else if (filterType === 'tanagyoOnly') {
-        if (!h.tanagyoMonthlyVisit) return false;
-      } else if (filterType === 'enteredOnly') {
+      if (filterType === 'enteredOnly') {
         const entry = entries[h.id];
         const isEntered = entry && (
           (isCol1Active && entry.check1 && entry.amount1 !== '') ||
@@ -601,6 +623,40 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
           (isCol3Active && entry.check3 && entry.amount3 !== '')
         );
         if (!isEntered) return false;
+      }
+
+      // 4. 塔婆絞り込みフィルター
+      if (tobaFilter !== 'all') {
+        const isSegakiToba = Boolean(h.isSegakiToba || h.familyMembers?.some((m) => m.isSegakiToba));
+        const isToba1 = Boolean(h.toba1Applied);
+        const isToba2 = Boolean(h.toba2Applied);
+        const isToba3 = Boolean(h.toba3Applied);
+        const hasAnyTobaApp = Boolean(h.tobaApplications && Object.keys(h.tobaApplications).length > 0);
+        const hasAnyToba = isSegakiToba || isToba1 || isToba2 || isToba3 || hasAnyTobaApp;
+
+        if (tobaFilter === 'anyToba' && !hasAnyToba) return false;
+        if (tobaFilter === 'segakiOnly' && !isSegakiToba) return false;
+        if (tobaFilter === 'toba1Only' && !isToba1) return false;
+        if (tobaFilter === 'toba2Only' && !isToba2) return false;
+        if (tobaFilter === 'toba3Only' && !isToba3) return false;
+      }
+
+      // 5. 集金項目絞り込みフィルター（選択された項目のうち、いずれかに金額が入力されている檀家を抽出：OR検索）
+      if (selectedFeeFilters.length > 0) {
+        const matchesAnyFee = selectedFeeFilters.some((feeKey) => {
+          if (feeKey === 'fee1') {
+            return (h.fee1Amount !== undefined && Number(h.fee1Amount) > 0) ||
+                   (h.fee1 !== undefined && Number(h.fee1) > 0);
+          } else if (feeKey === 'fee2') {
+            return (h.fee2Amount !== undefined && Number(h.fee2Amount) > 0) ||
+                   (h.fee2 !== undefined && Number(h.fee2) > 0);
+          } else if (feeKey === 'fee3') {
+            return (h.fee3Amount !== undefined && Number(h.fee3Amount) > 0) ||
+                   (h.fee3 !== undefined && Number(h.fee3) > 0);
+          }
+          return false;
+        });
+        if (!matchesAnyFee) return false;
       }
 
       return true;
@@ -612,7 +668,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       const furiganaB = (b.furigana || b.familyHead || '').trim();
       return furiganaA.localeCompare(furiganaB, 'ja');
     });
-  }, [households, searchTerm, selectedKana, filterType, entries, isCol1Active, isCol2Active, isCol3Active]);
+  }, [households, searchTerm, selectedKana, filterType, tobaFilter, selectedFeeFilters, entries, isCol1Active, isCol2Active, isCol3Active, templeInfo]);
 
   // Calculate Active Summary for all entries
   const generatedRecordsSummary = useMemo(() => {
@@ -1108,7 +1164,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-[#777]" />
               <input
                 type="text"
-                placeholder="施主名・檀家ID・区分1・区分2・施餓鬼塔婆・棚経・備考などで検索..."
+                placeholder="施主名・檀家ID・区分1・区分2・塔婆・備考などで検索..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-white border border-[#D1CEC7] pl-9 pr-8 py-1.5 text-sm text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-none"
@@ -1124,44 +1180,71 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
               )}
             </div>
 
-            {/* Quick Filter Tabs */}
-            <div className="flex items-center space-x-1 text-xs">
+            {/* Quick Filter & Popup Filter Buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
               <button
                 type="button"
-                onClick={() => setFilterType('all')}
+                onClick={() => {
+                  setFilterType('all');
+                  setTobaFilter('all');
+                  setSelectedFeeFilters([]);
+                }}
                 className={`px-2.5 py-1.5 border transition-colors cursor-pointer font-bold ${
-                  filterType === 'all'
+                  filterType === 'all' && tobaFilter === 'all' && selectedFeeFilters.length === 0
                     ? 'bg-[#1A1A1A] text-white border-[#1A1A1A]'
                     : 'bg-white text-[#555] border-[#D1CEC7] hover:bg-gray-50'
                 }`}
               >
                 全檀家 ({households.length})
               </button>
+
+              {/* 塔婆絞り込みポップアップトリガーボタン */}
               <button
                 type="button"
-                onClick={() => setFilterType('segakiOnly')}
-                className={`px-2.5 py-1.5 border transition-colors cursor-pointer font-bold ${
-                  filterType === 'segakiOnly'
-                    ? 'bg-amber-800 text-white border-amber-800'
+                onClick={() => setIsTobaFilterModalOpen(true)}
+                className={`px-2.5 py-1.5 border transition-colors cursor-pointer font-bold flex items-center space-x-1 ${
+                  tobaFilter !== 'all'
+                    ? 'bg-amber-800 text-white border-amber-800 shadow-xs'
                     : 'bg-white text-amber-900 border-[#D1CEC7] hover:bg-amber-50'
                 }`}
               >
-                施餓鬼塔婆対象
+                <Filter className="w-3 h-3" />
+                <span>
+                  塔婆絞り込み
+                  {tobaFilter === 'anyToba' && ' (すべて)'}
+                  {tobaFilter === 'segakiOnly' && ' (施餓鬼)'}
+                  {tobaFilter === 'toba1Only' && ` (${templeInfo?.tobaType1 || '塔婆1'})`}
+                  {tobaFilter === 'toba2Only' && ` (${templeInfo?.tobaType2 || '塔婆2'})`}
+                  {tobaFilter === 'toba3Only' && ` (${templeInfo?.tobaType3 || '塔婆3'})`}
+                </span>
+                {tobaFilter !== 'all' && (
+                  <span className="ml-1 w-2 h-2 rounded-full bg-amber-300 inline-block" />
+                )}
               </button>
+
+              {/* 集金項目絞り込みポップアップトリガーボタン */}
               <button
                 type="button"
-                onClick={() => setFilterType('tanagyoOnly')}
-                className={`px-2.5 py-1.5 border transition-colors cursor-pointer font-bold ${
-                  filterType === 'tanagyoOnly'
-                    ? 'bg-emerald-800 text-white border-emerald-800'
+                onClick={() => setIsFeeFilterModalOpen(true)}
+                className={`px-2.5 py-1.5 border transition-colors cursor-pointer font-bold flex items-center space-x-1 ${
+                  selectedFeeFilters.length > 0
+                    ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
                     : 'bg-white text-emerald-900 border-[#D1CEC7] hover:bg-emerald-50'
                 }`}
               >
-                棚経対象
+                <Filter className="w-3 h-3" />
+                <span>
+                  集金項目絞り込み
+                  {selectedFeeFilters.length > 0 && ` (${selectedFeeFilters.length}件)`}
+                </span>
+                {selectedFeeFilters.length > 0 && (
+                  <span className="ml-1 w-2 h-2 rounded-full bg-emerald-300 inline-block" />
+                )}
               </button>
+
               <button
                 type="button"
-                onClick={() => setFilterType('enteredOnly')}
+                onClick={() => setFilterType(filterType === 'enteredOnly' ? 'all' : 'enteredOnly')}
                 className={`px-2.5 py-1.5 border transition-colors cursor-pointer font-bold ${
                   filterType === 'enteredOnly'
                     ? 'bg-indigo-800 text-white border-indigo-800'
@@ -1278,9 +1361,13 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                     const indAmt2 = getHouseholdDefaultAmount(h, 2);
                     const indAmt3 = getHouseholdDefaultAmount(h, 3);
 
-                    const hasCustomFee1 = indAmt1 !== '' && indAmt1 !== defaultAmount1;
-                    const hasCustomFee2 = indAmt2 !== '' && indAmt2 !== defaultAmount2;
-                    const hasCustomFee3 = indAmt3 !== '' && indAmt3 !== defaultAmount3;
+                    const customFee1 = getHouseholdCustomFee(h, 1);
+                    const customFee2 = getHouseholdCustomFee(h, 2);
+                    const customFee3 = getHouseholdCustomFee(h, 3);
+
+                    const hasCustomFee1 = customFee1 !== null;
+                    const hasCustomFee2 = customFee2 !== null;
+                    const hasCustomFee3 = customFee3 !== null;
 
                     return (
                       <tr 
@@ -1323,16 +1410,11 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                               </div>
                             </div>
 
-                            {/* 施餓鬼塔婆 / 棚経バッジ */}
+                            {/* 塔婆バッジ */}
                             <div className="flex flex-col items-end gap-1 shrink-0 font-sans">
-                              {(h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba)) && (
+                              {(h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba) || h.toba1Applied || h.toba2Applied || h.toba3Applied || (h.tobaApplications && Object.keys(h.tobaApplications).length > 0)) && (
                                 <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-xs flex items-center gap-0.5">
                                   <span>塔婆あり</span>
-                                </span>
-                              )}
-                              {h.tanagyoMonthlyVisit && (
-                                <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold rounded-xs flex items-center gap-0.5">
-                                  <span>棚経あり</span>
                                 </span>
                               )}
                             </div>
@@ -1369,9 +1451,9 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                                 </div>
                               </div>
                               {hasCustomFee1 && (
-                                <div className="text-[10px] font-sans text-amber-800 flex items-center gap-1 pl-6">
-                                  <Coins className="w-2.5 h-2.5" />
-                                  <span>個別金額: {formatCurrency(Number(indAmt1))}</span>
+                                <div className="text-[10px] font-sans text-red-600 font-bold flex items-center gap-1 pl-6">
+                                  <Coins className="w-2.5 h-2.5 text-red-600 shrink-0" />
+                                  <span>個別金額: {formatCurrency(Number(customFee1))}</span>
                                 </div>
                               )}
                             </div>
@@ -1408,9 +1490,9 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                                 </div>
                               </div>
                               {hasCustomFee2 && (
-                                <div className="text-[10px] font-sans text-sky-800 flex items-center gap-1 pl-6">
-                                  <Coins className="w-2.5 h-2.5" />
-                                  <span>個別金額: {formatCurrency(Number(indAmt2))}</span>
+                                <div className="text-[10px] font-sans text-red-600 font-bold flex items-center gap-1 pl-6">
+                                  <Coins className="w-2.5 h-2.5 text-red-600 shrink-0" />
+                                  <span>個別金額: {formatCurrency(Number(customFee2))}</span>
                                 </div>
                               )}
                             </div>
@@ -1447,9 +1529,9 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                                 </div>
                               </div>
                               {hasCustomFee3 && (
-                                <div className="text-[10px] font-sans text-emerald-800 flex items-center gap-1 pl-6">
-                                  <Coins className="w-2.5 h-2.5" />
-                                  <span>個別金額: {formatCurrency(Number(indAmt3))}</span>
+                                <div className="text-[10px] font-sans text-red-600 font-bold flex items-center gap-1 pl-6">
+                                  <Coins className="w-2.5 h-2.5 text-red-600 shrink-0" />
+                                  <span>個別金額: {formatCurrency(Number(customFee3))}</span>
                                 </div>
                               )}
                             </div>
@@ -1559,6 +1641,245 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         </div>
 
       </div>
+
+      {/* ========================================================================= */}
+      {/* 塔婆絞り込みポップアップモーダル                                             */}
+      {/* ========================================================================= */}
+      {isTobaFilterModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#D1CEC7] shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="bg-[#1A1A1A] text-[#F9F7F2] px-4 py-3 border-b border-[#D4AF37] flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Filter className="w-4 h-4 text-[#D4AF37]" />
+                <h3 className="font-bold text-sm">塔婆対象の絞り込み</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTobaFilterModalOpen(false)}
+                className="text-[#D1CEC7] hover:text-white p-1 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-2 text-xs font-sans">
+              <p className="text-[#555] mb-3 leading-relaxed">
+                表示対象とする塔婆の種類を選択してください。選択した条件に合致する檀家のみが一覧に表示されます。
+              </p>
+
+              <div className="space-y-1.5">
+                {[
+                  {
+                    id: 'all',
+                    title: 'すべての檀家（塔婆による絞り込みを解除）',
+                    desc: '塔婆の有無に関係なく全檀家を表示します',
+                    count: households.length
+                  },
+                  {
+                    id: 'anyToba',
+                    title: '塔婆ありの檀家すべて（いずれかの塔婆対象）',
+                    desc: '施餓鬼塔婆または塔婆1〜3等の申込がある世帯',
+                    count: households.filter(h => h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba) || h.toba1Applied || h.toba2Applied || h.toba3Applied || (h.tobaApplications && Object.keys(h.tobaApplications).length > 0)).length
+                  },
+                  {
+                    id: 'segakiOnly',
+                    title: '施餓鬼塔婆対象の檀家のみ',
+                    desc: '世帯主または家族に施餓鬼塔婆の登録がある世帯',
+                    count: households.filter(h => h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba)).length
+                  },
+                  ...(templeInfo?.tobaType1 ? [{
+                    id: 'toba1Only',
+                    title: `${templeInfo.tobaType1} 対象のみ`,
+                    desc: `寺院設定「${templeInfo.tobaType1}」の申込がある世帯`,
+                    count: households.filter(h => h.toba1Applied).length
+                  }] : []),
+                  ...(templeInfo?.tobaType2 ? [{
+                    id: 'toba2Only',
+                    title: `${templeInfo.tobaType2} 対象のみ`,
+                    desc: `寺院設定「${templeInfo.tobaType2}」の申込がある世帯`,
+                    count: households.filter(h => h.toba2Applied).length
+                  }] : []),
+                  ...(templeInfo?.tobaType3 ? [{
+                    id: 'toba3Only',
+                    title: `${templeInfo.tobaType3} 対象のみ`,
+                    desc: `寺院設定「${templeInfo.tobaType3}」の申込がある世帯`,
+                    count: households.filter(h => h.toba3Applied).length
+                  }] : []),
+                ].map((item) => {
+                  const isSelected = tobaFilter === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setTobaFilter(item.id as any);
+                        setIsTobaFilterModalOpen(false);
+                      }}
+                      className={`w-full text-left p-3 border transition-colors flex items-center justify-between cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-50 border-amber-600 text-amber-950 font-bold shadow-xs'
+                          : 'bg-white border-[#D1CEC7] hover:bg-gray-50 text-[#333]'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center space-x-2">
+                          <span>{item.title}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 bg-gray-200 text-gray-700 font-mono font-normal rounded-xs">
+                            {item.count}件
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-[#777] font-normal">
+                          {item.desc}
+                        </div>
+                      </div>
+                      <div className="pl-3 shrink-0">
+                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                          isSelected ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white'
+                        }`}>
+                          {isSelected && <Check className="w-2.5 h-2.5" />}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-[#EFECE6] border-t border-[#D1CEC7] px-4 py-2.5 flex items-center justify-between font-sans text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setTobaFilter('all');
+                  setIsTobaFilterModalOpen(false);
+                }}
+                className="text-[#666] hover:text-[#1A1A1A] underline cursor-pointer"
+              >
+                絞り込みを解除（すべて表示）
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsTobaFilterModalOpen(false)}
+                className="px-4 py-1.5 bg-[#1A1A1A] text-white hover:bg-[#333] transition-colors font-bold cursor-pointer"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 集金項目絞り込みポップアップモーダル                                         */}
+      {/* ========================================================================= */}
+      {isFeeFilterModalOpen && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#D1CEC7] shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-150">
+            {/* Header */}
+            <div className="bg-[#1A1A1A] text-[#F9F7F2] px-4 py-3 border-b border-[#D4AF37] flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Filter className="w-4 h-4 text-[#D4AF37]" />
+                <h3 className="font-bold text-sm">集金項目の絞り込み</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFeeFilterModalOpen(false)}
+                className="text-[#D1CEC7] hover:text-white p-1 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 space-y-3 text-xs font-sans">
+              <p className="text-[#555] leading-relaxed">
+                寺院設定で設定されている集金項目（護持会費・墓地管理費等）に金額が入力されている檀家を抽出します。複数チェックした場合は、<strong>いずれかの項目に金額が入力されている檀家</strong>（OR条件）が一覧に表示されます。
+              </p>
+
+              <div className="space-y-1.5">
+                {[
+                  { key: 'fee1', label: templeInfo?.feeType1 || '項目1（護持会費等）' },
+                  { key: 'fee2', label: templeInfo?.feeType2 || '項目2（墓地管理費等）' },
+                  { key: 'fee3', label: templeInfo?.feeType3 || '項目3' },
+                ].filter(item => Boolean(item.label && item.label.trim())).map((item) => {
+                  const isChecked = selectedFeeFilters.includes(item.key);
+                  const count = households.filter(h => {
+                    if (item.key === 'fee1') {
+                      return (h.fee1Amount !== undefined && Number(h.fee1Amount) > 0) || (h.fee1 !== undefined && Number(h.fee1) > 0);
+                    }
+                    if (item.key === 'fee2') {
+                      return (h.fee2Amount !== undefined && Number(h.fee2Amount) > 0) || (h.fee2 !== undefined && Number(h.fee2) > 0);
+                    }
+                    if (item.key === 'fee3') {
+                      return (h.fee3Amount !== undefined && Number(h.fee3Amount) > 0) || (h.fee3 !== undefined && Number(h.fee3) > 0);
+                    }
+                    return false;
+                  }).length;
+
+                  return (
+                    <label
+                      key={item.key}
+                      className={`w-full p-3 border transition-colors flex items-center justify-between cursor-pointer select-none ${
+                        isChecked
+                          ? 'bg-emerald-50 border-emerald-600 text-emerald-950 font-bold shadow-xs'
+                          : 'bg-white border-[#D1CEC7] hover:bg-gray-50 text-[#333]'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedFeeFilters([...selectedFeeFilters, item.key]);
+                            } else {
+                              setSelectedFeeFilters(selectedFeeFilters.filter(k => k !== item.key));
+                            }
+                          }}
+                          className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-gray-300 rounded-xs cursor-pointer"
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.2 bg-gray-200 text-gray-700 font-mono font-normal rounded-xs">
+                        登録: {count}件
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {selectedFeeFilters.length > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 p-2 text-emerald-800 text-[11px] rounded-xs">
+                  現在 <strong>{selectedFeeFilters.length}</strong> 項目を選択中（いずれかに金額がある檀家を表示）
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-[#EFECE6] border-t border-[#D1CEC7] px-4 py-2.5 flex items-center justify-between font-sans text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFeeFilters([]);
+                  setIsFeeFilterModalOpen(false);
+                }}
+                className="text-[#666] hover:text-[#1A1A1A] underline cursor-pointer"
+              >
+                全項目の選択をクリア
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFeeFilterModalOpen(false)}
+                className="px-4 py-1.5 bg-[#1A1A1A] text-white hover:bg-[#333] transition-colors font-bold cursor-pointer"
+              >
+                適用して閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
