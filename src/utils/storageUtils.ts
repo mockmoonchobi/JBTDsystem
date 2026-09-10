@@ -22,6 +22,21 @@ export const TABLE_STORAGE_KEYS = new Set<string>([
 
 // In-memory cache for fast synchronous access
 const memoryStateCache = new Map<string, any>();
+const failedWrites = new Map<string, unknown>();
+const writeVersions = new Map<string, symbol>();
+const storageListeners = new Set<() => void>();
+
+export const hasStorageFailures = () => failedWrites.size > 0;
+export function subscribeStorageFailures(listener: () => void): () => void {
+  storageListeners.add(listener);
+  return () => { storageListeners.delete(listener); };
+}
+function notifyStorageListeners(): void {
+  storageListeners.forEach((listener) => listener());
+}
+export async function retryFailedStorageWrites(): Promise<void> {
+  await Promise.allSettled([...failedWrites].map(([key, value]) => idbSet(key, value)));
+}
 
 // IndexedDB connection instance and promise cache
 let activeDB: IDBDatabase | null = null;
@@ -129,9 +144,14 @@ async function withStore<R>(
             reject(err);
           };
 
+          let result: R;
+          tx.oncomplete = () => resolve(result);
           operation(store)
-            .then(resolve)
-            .catch(reject);
+            .then((value) => { result = value; })
+            .catch((error) => {
+              try { tx.abort(); } catch (_) {}
+              reject(error);
+            });
         } catch (txInitErr) {
           // If transaction creation failed (e.g. database closing or invalid state), reject immediately to trigger reconnect retry
           reject(txInitErr);
@@ -184,6 +204,10 @@ export async function idbGet<T = any>(key: string): Promise<T | null> {
 
 export async function idbSet<T = any>(key: string, value: T): Promise<void> {
   memoryStateCache.set(key, value);
+  const version = Symbol(key);
+  writeVersions.set(key, version);
+  // A retry during an in-flight edit must use the newest value, not an older failure.
+  if (failedWrites.has(key)) failedWrites.set(key, value);
   try {
     await withStore<void>('readwrite', (store) => {
       return new Promise((resolve, reject) => {
@@ -192,13 +216,26 @@ export async function idbSet<T = any>(key: string, value: T): Promise<void> {
         req.onerror = () => reject(req.error);
       });
     });
+    if (writeVersions.get(key) === version) {
+      failedWrites.delete(key);
+      writeVersions.delete(key);
+      notifyStorageListeners();
+    }
   } catch (e) {
     console.warn(`[IndexedDB] Error writing key "${key}":`, e);
+    if (writeVersions.get(key) === version) {
+      failedWrites.set(key, value);
+      notifyStorageListeners();
+    }
+    throw e;
   }
 }
 
 export async function idbRemove(key: string): Promise<void> {
   memoryStateCache.delete(key);
+  failedWrites.delete(key);
+  writeVersions.delete(key);
+  notifyStorageListeners();
   try {
     await withStore<void>('readwrite', (store) => {
       return new Promise((resolve, reject) => {
@@ -209,11 +246,15 @@ export async function idbRemove(key: string): Promise<void> {
     });
   } catch (e) {
     console.warn(`[IndexedDB] Error removing key "${key}":`, e);
+    throw e;
   }
 }
 
 export async function idbClear(): Promise<void> {
   memoryStateCache.clear();
+  failedWrites.clear();
+  writeVersions.clear();
+  notifyStorageListeners();
   try {
     await withStore<void>('readwrite', (store) => {
       return new Promise((resolve, reject) => {
@@ -224,6 +265,7 @@ export async function idbClear(): Promise<void> {
     });
   } catch (e) {
     console.warn('[IndexedDB] Error clearing database:', e);
+    throw e;
   }
 }
 
@@ -313,14 +355,10 @@ export function saveJsonState<T>(key: string, data: T): void {
 
     if (TABLE_STORAGE_KEYS.has(key)) {
       // Large table dataset: save directly to IndexedDB without localStorage size limitations
-      idbSet(key, data).catch((e) => console.warn(`[saveJsonState] IDB save error for "${key}":`, e));
-
-      // Remove any historical truncated data from localStorage to free browser quota
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.removeItem(key);
-        }
-      } catch (_) {}
+      idbSet(key, data).then(() => {
+        // Preserve the legacy copy until the replacement is committed.
+        try { window.localStorage.removeItem(key); } catch (_) {}
+      }).catch((e) => console.warn(`[saveJsonState] IDB save error for "${key}":`, e));
     } else {
       // Small config / metadata
       const jsonStr = JSON.stringify(data);

@@ -3318,9 +3318,11 @@ export default function App() {
     const remainingTodos: TempleTodo[] = [];
 
     currentTodos.forEach((t) => {
-      // 1. relatedServiceId または serviceId が一致する場合は無条件に削除対象
-      if ((t.relatedServiceId && t.relatedServiceId === id) || ((t as any).serviceId && (t as any).serviceId === id)) {
-        todosToDelete.push(t);
+      // Explicit links take precedence over legacy household/date matching.
+      const linkedServiceId = t.relatedServiceId || t.serviceId;
+      if (linkedServiceId) {
+        if (linkedServiceId === id) todosToDelete.push(t);
+        else remainingTodos.push(t);
         return;
       }
 
@@ -4537,4 +4539,3 @@ export default function App() {
     </div>
   );
 }
-
