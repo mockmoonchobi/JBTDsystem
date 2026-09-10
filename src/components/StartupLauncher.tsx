@@ -11,7 +11,10 @@ import {
   Database,
   ShieldCheck,
   Building2,
-  HelpCircle
+  HelpCircle,
+  FileText,
+  ExternalLink,
+  X
 } from 'lucide-react';
 
 interface StartupLauncherProps {
@@ -43,6 +46,7 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<'term' | 'privacy' | 'about' | null>(null);
 
   if (!isOpen) return null;
 
@@ -299,6 +303,30 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
                   <p className="text-xs text-[#AAAAAA] mt-1 leading-relaxed">
                     Googleシートのデータを読み込み、Googleアカウントと認証連携して自動同期を開始します。
                   </p>
+                  <div className="mt-2 text-[10px] text-[#888888] flex items-center gap-1.5 flex-wrap">
+                    <span>事前に確認:</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewingDoc('term');
+                      }}
+                      className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 cursor-pointer"
+                    >
+                      利用規約
+                    </button>
+                    <span>・</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewingDoc('privacy');
+                      }}
+                      className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 cursor-pointer"
+                    >
+                      プライバシーポリシー
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="mt-4 pt-3 border-t border-[#383838] flex items-center justify-between text-xs font-bold text-emerald-400">
@@ -329,7 +357,7 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
                     <span>データ無しで立ち上げ</span>
                   </h3>
                   <p className="text-xs text-[#AAAAAA] mt-1 leading-relaxed">
-                    寺院情報や檀家名簿・過去帳を完全に空の状態で立ち上げ、新しい寺院データの入力を始めます。
+                    寺院情報や名簿を空の状態で立ち上げます。起動直後に寺院情報設定が開き、続けてデータ取り込みウィザードまたは手動入力を選択できます。
                   </p>
                 </div>
               </div>
@@ -376,18 +404,160 @@ export const StartupLauncher: React.FC<StartupLauncherProps> = ({
 
           </div>
 
-          {/* Footer note */}
-          <div className="mt-6 pt-4 border-t border-[#333333] flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#888888] gap-2">
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
-              <span>入力されたデータはブラウザおよび連携したGoogleドライブ内に安全に保持されます。</span>
+          {/* Footer note & Legal Links */}
+          <div className="mt-6 pt-4 border-t border-[#333333] flex flex-col sm:flex-row items-center justify-between text-[11px] text-[#888888] gap-3">
+            <div className="flex items-center gap-1.5 text-center sm:text-left">
+              <ShieldCheck className="w-4 h-4 text-[#D4AF37] shrink-0" />
+              <span>入力データはブラウザおよび連携したGoogleドライブ内に安全に保持されます。</span>
             </div>
-            <div className="text-[#AAAAAA]">
-              いつでもヘッダーからデータの書き出し・読み込みが可能です
+
+            {/* 利用規約・プライバシーポリシー閲覧リンク */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingDoc('term');
+                }}
+                className="text-[#CCCCCC] hover:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                title="利用規約を閲覧"
+              >
+                <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>利用規約</span>
+              </button>
+              <span className="text-[#555555]">|</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingDoc('privacy');
+                }}
+                className="text-[#CCCCCC] hover:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                title="プライバシーポリシーを閲覧"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>プライバシーポリシー</span>
+              </button>
+              <span className="text-[#555555]">|</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingDoc('about');
+                }}
+                className="text-[#CCCCCC] hover:text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                title="システム概要を閲覧"
+              >
+                <HelpCircle className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>システム概要</span>
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* In-App Document Viewer Modal */}
+      {viewingDoc && (
+        <div 
+          className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setViewingDoc(null)}
+        >
+          <div 
+            className="bg-[#1A1A1A] border-2 border-[#D4AF37] rounded-lg shadow-2xl w-full max-w-4xl h-[90vh] max-h-[850px] flex flex-col overflow-hidden text-[#F9F7F2]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-4 py-3 sm:px-6 sm:py-3.5 bg-gradient-to-r from-[#181818] via-[#242424] to-[#181818] border-b border-[#D4AF37]/50 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                {viewingDoc === 'term' ? (
+                  <FileText className="w-5 h-5 text-[#D4AF37]" />
+                ) : viewingDoc === 'privacy' ? (
+                  <ShieldCheck className="w-5 h-5 text-[#D4AF37]" />
+                ) : (
+                  <HelpCircle className="w-5 h-5 text-[#D4AF37]" />
+                )}
+                <h2 className="font-serif font-bold text-base sm:text-lg text-[#F9F7F2]">
+                  {viewingDoc === 'term' ? '利用規約' : viewingDoc === 'privacy' ? 'プライバシーポリシー' : 'システム概要'}
+                </h2>
+              </div>
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* 別タブで開くリンク */}
+                <a
+                  href={viewingDoc === 'term' ? '/term.html' : viewingDoc === 'privacy' ? '/privacy.html' : '/about.html'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#CCCCCC] hover:text-[#D4AF37] flex items-center gap-1 transition-colors px-2.5 py-1.5 rounded bg-[#2D2D2D] hover:bg-[#3D3D3D] border border-[#444444]"
+                  title="別タブで開く"
+                >
+                  <span className="hidden sm:inline">別タブで開く</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                {/* 閉じるボタン */}
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc(null)}
+                  className="text-stone-400 hover:text-white p-1.5 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                  title="閉じる"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Iframe Content */}
+            <div className="flex-1 bg-[#F8FAFC] relative overflow-hidden">
+              <iframe
+                src={viewingDoc === 'term' ? '/term.html' : viewingDoc === 'privacy' ? '/privacy.html' : '/about.html'}
+                title={viewingDoc === 'term' ? '利用規約' : viewingDoc === 'privacy' ? 'プライバシーポリシー' : 'システム概要'}
+                className="w-full h-full border-none"
+              />
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="px-4 py-2.5 sm:px-6 bg-[#181818] border-t border-[#333333] flex items-center justify-between text-xs text-[#AAAAAA] shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <span className="hidden sm:inline text-stone-500">文書切替:</span>
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc('term')}
+                  className={`hover:underline cursor-pointer ${
+                    viewingDoc === 'term' ? 'text-[#D4AF37] font-bold underline' : 'text-[#CCCCCC]'
+                  }`}
+                >
+                  利用規約
+                </button>
+                <span className="text-stone-600">/</span>
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc('privacy')}
+                  className={`hover:underline cursor-pointer ${
+                    viewingDoc === 'privacy' ? 'text-[#D4AF37] font-bold underline' : 'text-[#CCCCCC]'
+                  }`}
+                >
+                  プライバシーポリシー
+                </button>
+                <span className="text-stone-600">/</span>
+                <button
+                  type="button"
+                  onClick={() => setViewingDoc('about')}
+                  className={`hover:underline cursor-pointer ${
+                    viewingDoc === 'about' ? 'text-[#D4AF37] font-bold underline' : 'text-[#CCCCCC]'
+                  }`}
+                >
+                  システム概要
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingDoc(null)}
+                className="px-4 py-1.5 bg-[#2A2A2A] hover:bg-[#383838] text-[#F9F7F2] rounded text-xs transition-colors cursor-pointer border border-[#444444]"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

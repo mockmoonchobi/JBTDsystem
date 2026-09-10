@@ -16,6 +16,7 @@ import { ExternalDataImportModal } from './components/ExternalDataImportModal';
 import { OperationHistoryModal } from './components/OperationHistoryModal';
 import { MobileApp } from './components/mobile/MobileApp';
 import { StartupLauncher } from './components/StartupLauncher';
+import { PostEmptyStartupPromptModal } from './components/PostEmptyStartupPromptModal';
 
 import { FamilyManager } from './components/FamilyManager';
 
@@ -774,9 +775,29 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importModalTargetType, setImportModalTargetType] = useState<ImportTargetType>('household');
 
+  // データ無し立ち上げ直後の初回寺院設定フロー中フラグ＆ダイアログ制御
+  const [isFirstSetupAfterEmptyStartup, setIsFirstSetupAfterEmptyStartup] = useState(false);
+  const isFirstSetupAfterEmptyStartupRef = useRef(false);
+  const [showPostEmptyImportPrompt, setShowPostEmptyImportPrompt] = useState(false);
+
   const handleOpenTempleModal = (tab: 'basic' | 'master' | 'priests' = 'basic') => {
     setTempleModalInitialTab(tab);
     setIsTempleModalOpen(true);
+  };
+
+  const handleSelectPostEmptyImport = () => {
+    setShowPostEmptyImportPrompt(false);
+    isFirstSetupAfterEmptyStartupRef.current = false;
+    setIsFirstSetupAfterEmptyStartup(false);
+    setActiveTab('households');
+    handleOpenImportModal('household');
+  };
+
+  const handleSelectPostEmptyManual = () => {
+    setShowPostEmptyImportPrompt(false);
+    isFirstSetupAfterEmptyStartupRef.current = false;
+    setIsFirstSetupAfterEmptyStartup(false);
+    setActiveTab('households');
   };
 
   // Kakocho tab deep-link navigation states
@@ -880,6 +901,13 @@ export default function App() {
     setIsStartupLauncherOpen(false);
     isStartupLauncherOpenRef.current = false;
     recordHistory('データ無し（新規）で立ち上げ');
+
+    // データ無しで立ち上げを行った場合、最初の画面は寺院情報設定の画面にする
+    setActiveTab('households');
+    setTempleModalInitialTab('basic');
+    isFirstSetupAfterEmptyStartupRef.current = true;
+    setIsFirstSetupAfterEmptyStartup(true);
+    setIsTempleModalOpen(true);
   };
 
   // 共有データ接続モードから安全に初期状態（ブラウザ更新・初期ランチャー）へ復帰する処理
@@ -3725,6 +3753,13 @@ export default function App() {
     });
     // Googleシートの寺院情報・寺院一覧テーブルを初期化・端末側レコードで置き換え
     cleanWriteSpecificTablesToGoogleSheets(['寺院情報', '寺院一覧（本寺・兼務）']);
+
+    // データ無し起動直後の初回保存時のみ、データ取り込みウィザード移行ダイアログを表示
+    if (isFirstSetupAfterEmptyStartupRef.current) {
+      isFirstSetupAfterEmptyStartupRef.current = false;
+      setIsFirstSetupAfterEmptyStartup(false);
+      setShowPostEmptyImportPrompt(true);
+    }
   };
 
   const handleSaveTemples = (updatedTemples: TempleProfile[], activeId?: string) => {
@@ -3785,6 +3820,13 @@ export default function App() {
     }
     // Googleシートの寺院一覧・寺院情報テーブルを初期化・端末側レコードで置き換え
     cleanWriteSpecificTablesToGoogleSheets(['寺院一覧（本寺・兼務）', '寺院情報']);
+
+    // データ無し起動直後の初回保存時のみ、データ取り込みウィザード移行ダイアログを表示
+    if (isFirstSetupAfterEmptyStartupRef.current) {
+      isFirstSetupAfterEmptyStartupRef.current = false;
+      setIsFirstSetupAfterEmptyStartup(false);
+      setShowPostEmptyImportPrompt(true);
+    }
   };
 
   const handleDeleteSubTemple = (deletedTempleId: string) => {
@@ -4454,7 +4496,11 @@ export default function App() {
       {/* Temple Info & Multi-Temple Master Options Modal */}
       <TempleInfoModal
         isOpen={isTempleModalOpen}
-        onClose={() => setIsTempleModalOpen(false)}
+        onClose={() => {
+          setIsTempleModalOpen(false);
+          isFirstSetupAfterEmptyStartupRef.current = false;
+          setIsFirstSetupAfterEmptyStartup(false);
+        }}
         templeInfo={templeInfo}
         temples={temples}
         activeTempleId={activeTempleId}
@@ -4541,6 +4587,13 @@ export default function App() {
           }
         })()}
         isGoogleConnected={syncStatus !== 'disconnected'}
+      />
+
+      {/* Post Empty Startup Import Wizard Prompt Modal */}
+      <PostEmptyStartupPromptModal
+        isOpen={showPostEmptyImportPrompt}
+        onSelectImport={handleSelectPostEmptyImport}
+        onSelectManual={handleSelectPostEmptyManual}
       />
     </div>
   );

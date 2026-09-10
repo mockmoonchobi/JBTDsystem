@@ -1514,8 +1514,28 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="bg-[#F9F7F2] px-4 py-3 border-t border-[#D1CEC7] flex items-center justify-between text-[11px] text-[#666666] shrink-0">
-          <span>変更内容は安全に管理・保存されます。</span>
+        <div className="bg-[#F9F7F2] px-4 py-3 border-t border-[#D1CEC7] flex flex-wrap items-center justify-between text-[11px] text-[#666666] shrink-0 gap-2">
+          <div className="flex items-center gap-3">
+            <span>変更内容は安全に管理・保存されます。</span>
+            <span className="text-[#D1CEC7]">|</span>
+            <a
+              href="/term.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#666666] hover:text-[#1A1A1A] underline cursor-pointer"
+            >
+              利用規約
+            </a>
+            <span className="text-[#D1CEC7]">|</span>
+            <a
+              href="/privacy.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#666666] hover:text-[#1A1A1A] underline cursor-pointer"
+            >
+              プライバシーポリシー
+            </a>
+          </div>
           <button
             onClick={onClose}
             className="px-4 py-1 bg-[#1A1A1A] text-[#D4AF37] font-bold hover:bg-[#333333] transition-colors cursor-pointer text-xs"
