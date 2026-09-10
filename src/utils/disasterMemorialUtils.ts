@@ -245,7 +245,7 @@ export function convertDisasterEventsToRows(events: DisasterMemorialEvent[]): {
 /**
  * Google Sheets / Excel から読み込んだ行データをパース
  */
-export function parseDisasterEventsFromRows(rows: (string | number)[][]): DisasterMemorialEvent[] {
+export function parseDisasterEventsFromRows(rows: (string | number | Date | null | undefined | any)[][]): DisasterMemorialEvent[] {
   if (!rows || rows.length <= 1) return DEFAULT_DISASTER_MEMORIAL_EVENTS;
 
   const headers = (rows[0] || []).map((h) => String(h || '').trim());

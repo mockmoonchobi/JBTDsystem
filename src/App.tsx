@@ -839,6 +839,7 @@ export default function App() {
       priests: [],
       batchAccountingData: null,
       deletedRecords: [],
+      disasterEvents: [],
     };
 
     idbClear().catch((e) => console.warn('IDB clear error:', e));
@@ -1175,6 +1176,7 @@ export default function App() {
         priests: [],
         batchAccountingData: null,
         deletedRecords: [],
+        disasterEvents: [],
       };
 
       setStartupLoadingMsg('Googleシートからデータを読み込み中...');
@@ -1285,13 +1287,14 @@ export default function App() {
         templeInfo,
         masterOptions,
         templeMasterOptionsMap,
+        disasterEvents,
         savedAt: new Date().toISOString(),
         recordCount: totalLocalCount,
       };
       saveJsonState('temple_safety_snapshot', snapshot);
       idbSet('temple_safety_snapshot', snapshot).catch((e) => console.warn('IDB safety snapshot save error:', e));
     }
-  }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap]);
+  }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, disasterEvents]);
 
   // Helper to safely merge local state with Google Drive spreadsheet data based on newest creation / modification timestamps
   const applyRemoteSheetsData = useCallback((remoteData: SheetsImportResult, forceCleanImport?: boolean): MergedDatasetResult => {
@@ -2049,6 +2052,7 @@ export default function App() {
         priests: [],
         batchAccountingData: null,
         deletedRecords: [],
+        disasterEvents: [],
       };
 
       // 8. Googleシートからデータを読み込み（isCleanImport: true でGoogleシート側への書き込みは一切行わない）
@@ -2585,6 +2589,10 @@ export default function App() {
       if (backup.templeInfo) setTempleInfo(backup.templeInfo);
       if (backup.masterOptions) setMasterOptions(backup.masterOptions);
       if (backup.templeMasterOptionsMap) setTempleMasterOptionsMap(backup.templeMasterOptionsMap);
+      if (backup.disasterEvents && Array.isArray(backup.disasterEvents)) {
+        setDisasterEvents(backup.disasterEvents);
+        saveDisasterMemorialEvents(backup.disasterEvents, false);
+      }
 
       const totalRestored = (backup.households?.length || 0) + (backup.pastRecords?.length || 0) + (backup.memorialServices?.length || 0) + (backup.transactions?.length || 0);
       recordHistory(`バックアップスナップショットからデータを復元（総レコード数: ${totalRestored}件）`);
@@ -2614,6 +2622,7 @@ export default function App() {
           priests,
           batchAccountingData: activeBatch || undefined,
           deletedRecords: loadDeletedRecordsLog(),
+          disasterEvents: disasterEvents || getSavedDisasterMemorialEvents(),
         }
       );
     } catch (err: any) {
@@ -2648,191 +2657,259 @@ export default function App() {
 
     recordHistory(`Excelデータ取り込み（${modeLabel}）`);
 
-    const defaultTemple = activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
-    const data = await importFromExcel(file, {
-      targetTempleId: targetTempleId || 'ALL',
-      defaultTempleId: defaultTemple,
-    });
+    isImportingRef.current = true;
+    try {
+      const defaultTemple = activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
+      const data = await importFromExcel(file, {
+        targetTempleId: targetTempleId || 'ALL',
+        defaultTempleId: defaultTemple,
+      });
 
-    // If batch accounting data is present in imported file, restore it
-    if (data.batchAccountingData) {
-      saveBatchAccountingData(data.batchAccountingData);
-    }
-
-    // If operation/deletion records log is present, merge and restore
-    if (data.deletedRecords && data.deletedRecords.length > 0) {
-      const mergedLogs = mergeDeletedRecordsLogs(loadDeletedRecordsLog(), data.deletedRecords);
-      saveDeletedRecordsLog(mergedLogs);
-      setDeletedRecords(mergedLogs);
-    }
-
-    const importedHouseholds = data.households || [];
-    const importedPast = data.pastRecords || [];
-    const importedMem = data.memorialServices || [];
-    const importedTodos = data.templeTodos || [];
-    const importedTx = data.transactions || [];
-
-    const totalParsed = importedHouseholds.length + importedPast.length + importedMem.length + importedTodos.length + importedTx.length;
-    if (totalParsed === 0 && !data.temples?.length && !data.templeInfo) {
-      throw new Error('Excelファイルから有効なデータ（檀家名簿・過去帳・法事予約・ToDo・出納）を検出できませんでした。シート名や見出し列名をご確認ください。');
-    }
-
-    if (!targetTempleId || targetTempleId === 'ALL') {
-      // 全寺院一括取り込み：既存の全データベース（寺院情報、兼務寺、区分、勘定科目、全レコード）を完全消去・初期化してから反映
-      setHouseholds(importedHouseholds);
-      setPastRecords(importedPast);
-      setMemorialServices(importedMem);
-      setTempleTodos(importedTodos);
-      setTransactions(importedTx);
-
-      const extractedFamily = importedHouseholds.flatMap((h) => h.familyMembers || []);
-      setFamilyMembers(extractedFamily);
-
-      setSelectedIdsForPrint([]);
-      setExcludedHouseholdIds([]);
-      setEditingHousehold(null);
-
-      if (data.priests && data.priests.length > 0) {
-        setPriests(data.priests);
-        saveJsonState('temple_priests', data.priests);
-      } else {
-        setPriests([]);
-        saveJsonState('temple_priests', []);
+      // If batch accounting data is present in imported file, restore it
+      if (data.batchAccountingData) {
+        saveBatchAccountingData(data.batchAccountingData);
+        setBatchAccountingData(data.batchAccountingData);
       }
 
-      // 寺院情報・兼務寺院の完全置き換え
-      let finalTemples: TempleProfile[] = [];
-      let finalTempleInfo: TempleInfo;
+      const importedHouseholds = data.households || [];
+      const importedPast = data.pastRecords || [];
+      const importedMem = data.memorialServices || [];
+      const importedTodos = data.templeTodos || [];
+      const importedTx = data.transactions || [];
 
-      if (data.temples && data.temples.length > 0) {
-        finalTemples = data.temples;
-        finalTempleInfo = data.templeInfo || data.temples[0];
-      } else if (data.templeInfo) {
-        finalTemples = [{ ...data.templeInfo, id: data.templeInfo.id || 'temple-main', isMain: true }];
-        finalTempleInfo = data.templeInfo;
-      } else {
-        finalTemples = EMPTY_TEMPLES;
-        finalTempleInfo = EMPTY_TEMPLE_INFO;
+      const totalParsed = importedHouseholds.length + importedPast.length + importedMem.length + importedTodos.length + importedTx.length;
+      if (totalParsed === 0 && !data.temples?.length && !data.templeInfo) {
+        throw new Error('Excelファイルから有効なデータ（檀家名簿・過去帳・法事予約・ToDo・出納）を検出できませんでした。シート名や見出し列名をご確認ください。');
       }
 
-      setTemples(finalTemples);
-      setTempleInfo(finalTempleInfo);
-      setActiveTempleId(finalTemples[0]?.id || 'temple-main');
+      if (!targetTempleId || targetTempleId === 'ALL') {
+        // 全寺院一括取り込み：既存の全データベース（寺院情報、兼務寺、区分、勘定科目、全レコード）を完全消去・初期化してから反映
+        
+        // 1. 操作履歴の復元：Excelファイル内に操作履歴があればそれを完全上書き（現在の端末ログとマージしない）。
+        // なければ、一時的な架空操作ログ等が合体して復活しないよう空に初期化
+        const restoredLogs = data.deletedRecords && Array.isArray(data.deletedRecords) ? data.deletedRecords : [];
+        saveDeletedRecordsLog(restoredLogs);
+        setDeletedRecords(restoredLogs);
 
-      // マスタ設定（区分・勘定科目すべて）の完全置き換え
-      const newMaster = data.masterOptions || INITIAL_MASTER_OPTIONS;
-      const finalMaster = data.masterOptions
-        ? data.masterOptions
-        : mergeMasterOptionsWithData(newMaster, importedHouseholds, importedTx);
-      setMasterOptions(finalMaster);
-      const newMasterMap = data.templeMasterOptionsMap || {};
-      setTempleMasterOptionsMap(newMasterMap);
+        // 2. 基本レコードの完全置き換え
+        setHouseholds(importedHouseholds);
+        setPastRecords(importedPast);
+        setMemorialServices(importedMem);
+        setTempleTodos(importedTodos);
+        setTransactions(importedTx);
 
-      // 永続化ストレージへの完全上書き保存（旧データの完全消去）
-      saveJsonState('temple_households', importedHouseholds);
-      saveJsonState('temple_family_members', extractedFamily);
-      saveJsonState('temple_past_records', importedPast);
-      saveJsonState('temple_memorial_services', importedMem);
-      saveJsonState('temple_todos', importedTodos);
-      saveJsonState('temple_transactions', importedTx);
-      saveJsonState('temple_profiles_list', finalTemples);
-      saveJsonState('temple_info', finalTempleInfo);
-      saveJsonState('temple_master_options', finalMaster);
-      saveJsonState('temple_master_options_map', newMasterMap);
-      saveJsonState('temple_excluded_households', []);
-      saveJsonState('temple_selected_print_ids', []);
-    } else {
-      // 指定寺院のみの置き換え・統合
-      const targetId = targetTempleId;
-      if (importedHouseholds.length > 0) {
-        setHouseholds((prev) => [
-          ...prev.filter((h) => (h.templeId || 'temple-main') !== targetId),
-          ...importedHouseholds,
-        ]);
-      }
-      if (importedPast.length > 0) {
-        setPastRecords((prev) => [
-          ...prev.filter((r) => (r.templeId || 'temple-main') !== targetId),
-          ...importedPast,
-        ]);
-      }
-      if (importedTx.length > 0) {
-        setTransactions((prev) => [
-          ...prev.filter((t) => (t.templeId || 'temple-main') !== targetId),
-          ...importedTx,
-        ]);
-      }
-      if (importedMem.length > 0) {
-        setMemorialServices((prev) => [
-          ...prev.filter((m) => (m.templeId || 'temple-main') !== targetId),
-          ...importedMem,
-        ]);
-      }
-      if (importedTodos.length > 0) {
-        setTempleTodos((prev) => [
-          ...prev.filter((td) => (td.templeId || 'temple-main') !== targetId),
-          ...importedTodos,
-        ]);
-      }
+        const extractedFamily = importedHouseholds.flatMap((h) => h.familyMembers || []);
+        setFamilyMembers(extractedFamily);
 
-      if (data.masterOptions) {
-        setTempleMasterOptionsMap((prev) => {
-          const next = { ...prev, [targetId]: data.masterOptions! };
-          saveJsonState('temple_master_options_map', next);
-          return next;
-        });
-        if (targetId === 'temple-main' || targetId === temples[0]?.id) {
-          setMasterOptions(data.masterOptions);
-          saveJsonState('temple_master_options', data.masterOptions);
+        setSelectedIdsForPrint([]);
+        setExcludedHouseholdIds([]);
+        setEditingHousehold(null);
+
+        const finalPriests = data.priests && data.priests.length > 0 ? data.priests : [];
+        setPriests(finalPriests);
+        saveJsonState('temple_priests', finalPriests);
+
+        // 3. 寺院情報・兼務寺院の完全置き換え
+        let finalTemples: TempleProfile[] = [];
+        let finalTempleInfo: TempleInfo;
+
+        if (data.temples && data.temples.length > 0) {
+          finalTemples = data.temples;
+          finalTempleInfo = data.templeInfo || data.temples[0];
+        } else if (data.templeInfo) {
+          finalTemples = [{ ...data.templeInfo, id: data.templeInfo.id || 'temple-main', isMain: true }];
+          finalTempleInfo = data.templeInfo;
+        } else {
+          finalTemples = EMPTY_TEMPLES;
+          finalTempleInfo = EMPTY_TEMPLE_INFO;
         }
-      }
 
-      if (data.templeInfo || (data.temples && data.temples.length > 0)) {
-        const importedT = data.templeInfo || data.temples?.find((t) => t.id === targetId) || data.temples?.[0];
-        if (importedT) {
-          setTemples((prev) => prev.map((t) => {
-            if (t.id === targetId || (targetId === 'temple-main' && t.isMain)) {
-              return {
-                ...t,
-                ...importedT,
-                id: t.id,
-                isMain: t.isMain,
-                annualEvents: importedT.annualEvents && importedT.annualEvents.length > 0 ? importedT.annualEvents : t.annualEvents,
-              };
-            }
-            return t;
-          }));
+        setTemples(finalTemples);
+        setTempleInfo(finalTempleInfo);
+        setActiveTempleId(finalTemples[0]?.id || 'temple-main');
+
+        // 4. マスタ設定（区分・勘定科目すべて）の完全置き換え
+        const newMaster = data.masterOptions || INITIAL_MASTER_OPTIONS;
+        const finalMaster = data.masterOptions
+          ? data.masterOptions
+          : mergeMasterOptionsWithData(newMaster, importedHouseholds, importedTx);
+        setMasterOptions(finalMaster);
+        const newMasterMap = data.templeMasterOptionsMap || {};
+        setTempleMasterOptionsMap(newMasterMap);
+
+        // 5. 永続化ストレージへの完全上書き保存（旧データの完全消去）
+        saveJsonState('temple_households', importedHouseholds);
+        saveJsonState('temple_family_members', extractedFamily);
+        saveJsonState('temple_past_records', importedPast);
+        saveJsonState('temple_memorial_services', importedMem);
+        saveJsonState('temple_todos', importedTodos);
+        saveJsonState('temple_transactions', importedTx);
+        saveJsonState('temple_profiles_list', finalTemples);
+        saveJsonState('temple_info', finalTempleInfo);
+        saveJsonState('temple_master_options', finalMaster);
+        saveJsonState('temple_master_options_map', newMasterMap);
+        saveJsonState('temple_excluded_households', []);
+        saveJsonState('temple_selected_print_ids', []);
+
+        // 6. 戦没・災害物故者命日設定の完全反映
+        const finalDisasterEvents = data.disasterEvents && Array.isArray(data.disasterEvents) ? data.disasterEvents : [];
+        setDisasterEvents(finalDisasterEvents);
+        saveDisasterMemorialEvents(finalDisasterEvents, false);
+
+        // 7. 案内文テンプレート
+        const finalNoticeTemplates = data.noticeTemplates || { higan: '', niibon: '' };
+        if (data.noticeTemplates) {
+          setNoticeTemplates(data.noticeTemplates);
+          saveNoticeTemplates(data.noticeTemplates);
+        }
+
+        // 8. 【重要】即座に syncStateRef.current を Excelの完全復帰データで一括同期
+        // （その直後にGoogleシート初期化書き込みを行っても、以前の架空データが混ざらないよう防護）
+        syncStateRef.current = {
+          templeInfo: finalTempleInfo,
+          temples: finalTemples,
+          households: importedHouseholds,
+          pastRecords: importedPast,
+          memorialServices: importedMem,
+          transactions: importedTx,
+          familyMembers: extractedFamily,
+          masterOptions: finalMaster,
+          noticeTemplates: finalNoticeTemplates,
+          templeTodos: importedTodos,
+          templeMasterOptionsMap: newMasterMap,
+          priests: finalPriests,
+          batchAccountingData: data.batchAccountingData || null,
+          deletedRecords: restoredLogs,
+          disasterEvents: finalDisasterEvents,
+        };
+      } else {
+        // 指定寺院のみの置き換え・統合
+        if (data.deletedRecords && data.deletedRecords.length > 0) {
+          const mergedLogs = mergeDeletedRecordsLogs(loadDeletedRecordsLog(), data.deletedRecords);
+          saveDeletedRecordsLog(mergedLogs);
+          setDeletedRecords(mergedLogs);
+          if (syncStateRef.current) syncStateRef.current.deletedRecords = mergedLogs;
+        }
+
+        const targetId = targetTempleId;
+        let nextH = households;
+        if (importedHouseholds.length > 0) {
+          nextH = [
+            ...households.filter((h) => (h.templeId || 'temple-main') !== targetId),
+            ...importedHouseholds,
+          ];
+          setHouseholds(nextH);
+        }
+        let nextP = pastRecords;
+        if (importedPast.length > 0) {
+          nextP = [
+            ...pastRecords.filter((r) => (r.templeId || 'temple-main') !== targetId),
+            ...importedPast,
+          ];
+          setPastRecords(nextP);
+        }
+        let nextTx = transactions;
+        if (importedTx.length > 0) {
+          nextTx = [
+            ...transactions.filter((t) => (t.templeId || 'temple-main') !== targetId),
+            ...importedTx,
+          ];
+          setTransactions(nextTx);
+        }
+        let nextM = memorialServices;
+        if (importedMem.length > 0) {
+          nextM = [
+            ...memorialServices.filter((m) => (m.templeId || 'temple-main') !== targetId),
+            ...importedMem,
+          ];
+          setMemorialServices(nextM);
+        }
+        let nextTd = templeTodos;
+        if (importedTodos.length > 0) {
+          nextTd = [
+            ...templeTodos.filter((td) => (td.templeId || 'temple-main') !== targetId),
+            ...importedTodos,
+          ];
+          setTempleTodos(nextTd);
+        }
+
+        if (data.masterOptions) {
+          setTempleMasterOptionsMap((prev) => {
+            const next = { ...prev, [targetId]: data.masterOptions! };
+            saveJsonState('temple_master_options_map', next);
+            return next;
+          });
           if (targetId === 'temple-main' || targetId === temples[0]?.id) {
-            setTempleInfo((prev) => ({
-              ...prev,
-              ...importedT,
-              id: prev.id || 'temple-main',
-              isMain: true,
-              annualEvents: importedT.annualEvents && importedT.annualEvents.length > 0 ? importedT.annualEvents : prev.annualEvents,
-            }));
+            setMasterOptions(data.masterOptions);
+            saveJsonState('temple_master_options', data.masterOptions);
           }
         }
+
+        if (data.templeInfo || (data.temples && data.temples.length > 0)) {
+          const importedT = data.templeInfo || data.temples?.find((t) => t.id === targetId) || data.temples?.[0];
+          if (importedT) {
+            setTemples((prev) => prev.map((t) => {
+              if (t.id === targetId || (targetId === 'temple-main' && t.isMain)) {
+                return {
+                  ...t,
+                  ...importedT,
+                  id: t.id,
+                  isMain: t.isMain,
+                  annualEvents: importedT.annualEvents && importedT.annualEvents.length > 0 ? importedT.annualEvents : t.annualEvents,
+                };
+              }
+              return t;
+            }));
+            if (targetId === 'temple-main' || targetId === temples[0]?.id) {
+              setTempleInfo((prev) => ({
+                ...prev,
+                ...importedT,
+                id: prev.id || 'temple-main',
+                isMain: true,
+                annualEvents: importedT.annualEvents && importedT.annualEvents.length > 0 ? importedT.annualEvents : prev.annualEvents,
+              }));
+            }
+          }
+        }
+
+        if (data.noticeTemplates) {
+          setNoticeTemplates(data.noticeTemplates);
+          saveNoticeTemplates(data.noticeTemplates);
+        }
+
+        if (data.disasterEvents && data.disasterEvents.length > 0) {
+          setDisasterEvents(data.disasterEvents);
+          saveDisasterMemorialEvents(data.disasterEvents, false);
+        }
+
+        if (syncStateRef.current) {
+          syncStateRef.current.households = nextH;
+          syncStateRef.current.pastRecords = nextP;
+          syncStateRef.current.transactions = nextTx;
+          syncStateRef.current.memorialServices = nextM;
+          syncStateRef.current.templeTodos = nextTd;
+          if (data.disasterEvents) syncStateRef.current.disasterEvents = data.disasterEvents;
+        }
       }
+
+      const summaryParts: string[] = [];
+      if (importedHouseholds.length > 0) summaryParts.push(`檀家名簿 ${importedHouseholds.length}件`);
+      if (importedPast.length > 0) summaryParts.push(`過去帳 ${importedPast.length}件`);
+      if (importedMem.length > 0) summaryParts.push(`法事予約 ${importedMem.length}件`);
+      if (importedTodos.length > 0) summaryParts.push(`ToDo ${importedTodos.length}件`);
+      if (importedTx.length > 0) summaryParts.push(`出納 ${importedTx.length}件`);
+      if (data.deletedRecords && data.deletedRecords.length > 0) summaryParts.push(`操作履歴 ${data.deletedRecords.length}件`);
+      if (data.disasterEvents && data.disasterEvents.length > 0) summaryParts.push(`戦没・災害物故者設定 ${data.disasterEvents.length}件`);
+
+      const summaryText = summaryParts.length > 0 ? summaryParts.join('、') : '設定情報';
+      return {
+        success: true,
+        message: `取り込み完了: ${summaryText} を反映しました。`,
+      };
+    } finally {
+      // 処理完了後に同期抑制フラグを解除
+      isImportingRef.current = false;
     }
-
-    if (data.noticeTemplates) {
-      setNoticeTemplates(data.noticeTemplates);
-      saveNoticeTemplates(data.noticeTemplates);
-    }
-
-    const summaryParts: string[] = [];
-    if (importedHouseholds.length > 0) summaryParts.push(`檀家名簿 ${importedHouseholds.length}件`);
-    if (importedPast.length > 0) summaryParts.push(`過去帳 ${importedPast.length}件`);
-    if (importedMem.length > 0) summaryParts.push(`法事予約 ${importedMem.length}件`);
-    if (importedTodos.length > 0) summaryParts.push(`ToDo ${importedTodos.length}件`);
-    if (importedTx.length > 0) summaryParts.push(`出納 ${importedTx.length}件`);
-    if (data.deletedRecords && data.deletedRecords.length > 0) summaryParts.push(`操作履歴 ${data.deletedRecords.length}件`);
-
-    const summaryText = summaryParts.length > 0 ? summaryParts.join('、') : '設定情報';
-    return {
-      success: true,
-      message: `取り込み完了: ${summaryText} を反映しました。`,
-    };
   };
 
   // External Database Wizard Import Handlers
@@ -3611,6 +3688,16 @@ export default function App() {
       updatedTime: timeStr,
     };
     recordHistory('寺院情報を変更');
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      stampedInfo.id || 'temple-main',
+      'temple',
+      'update',
+      `寺院設定「${stampedInfo.name || '寺院情報'}」`,
+      stampedInfo.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     setTempleInfo(stampedInfo);
     saveJsonState('temple_info', stampedInfo);
     syncStateRef.current.templeInfo = stampedInfo;
@@ -3643,6 +3730,38 @@ export default function App() {
       updatedTime: timeStr,
     }));
     recordHistory('寺院情報・兼務寺院設定を変更');
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    stampedTemples.forEach((t) => {
+      const prevT = temples.find((pt) => pt.id === t.id);
+      if (!prevT) {
+        recordOperationLog(
+          t.id,
+          'temple',
+          'create',
+          `寺院「${t.name || t.id}」を追加`,
+          t.id,
+          operator,
+          deviceInfo
+        );
+      } else if (
+        prevT.name !== t.name ||
+        prevT.mountainName !== t.mountainName ||
+        prevT.address !== t.address ||
+        prevT.phone !== t.phone ||
+        prevT.chiefPriest !== t.chiefPriest ||
+        prevT.sect !== t.sect
+      ) {
+        recordOperationLog(
+          t.id,
+          'temple',
+          'update',
+          `寺院「${t.name || t.id}」の設定を変更`,
+          t.id,
+          operator,
+          deviceInfo
+        );
+      }
+    });
     setTemples(stampedTemples);
     saveJsonState('temple_profiles_list', stampedTemples);
     saveJsonState('temple_profiles', stampedTemples);
@@ -3723,6 +3842,7 @@ export default function App() {
 
     // 削除履歴にバッチ記録（Googleシート同期時の復活防止）
     const batchItems = [
+      { id: deletedTempleId, entityType: 'temple' as const, label: `寺院「${templeName}」`, templeId: deletedTempleId },
       ...deletedHouseholds.map((h) => ({ id: h.id, entityType: 'household' as const, label: `世帯「${h.familyHead}」`, templeId: deletedTempleId })),
       ...deletedPast.map((p) => ({ id: p.id, entityType: 'pastRecord' as const, label: `過去帳「${p.dharmaName || p.secularName}」`, templeId: deletedTempleId })),
       ...deletedTx.map((t) => ({ id: t.id, entityType: 'transaction' as const, label: `出納「${t.notes || t.category}」`, templeId: deletedTempleId })),
@@ -3833,6 +3953,7 @@ export default function App() {
         priests: [],
         batchAccountingData: null,
         deletedRecords: [],
+        disasterEvents: [],
       };
 
       setTemples(defaultTemples);
@@ -3845,6 +3966,8 @@ export default function App() {
       setMemorialServices([]);
       setTempleTodos([]);
       setFamilyMembers([]);
+      setDisasterEvents([]);
+      saveDisasterMemorialEvents([], false);
 
       setMasterOptions(EMPTY_MASTER_OPTIONS);
       setTempleMasterOptionsMap({ 'temple-main': EMPTY_MASTER_OPTIONS });

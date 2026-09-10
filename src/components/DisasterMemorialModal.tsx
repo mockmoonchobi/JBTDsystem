@@ -7,6 +7,7 @@ import {
   DEFAULT_DISASTER_MEMORIAL_EVENTS 
 } from '../utils/disasterMemorialUtils';
 import { normalizeDateInput, getJapaneseEra, getSpiritMemorialForDate } from '../utils/memorialCalculator';
+import { recordOperationLog, getCurrentOperatorInfo } from '../utils/deletedRecordsLog';
 
 interface DisasterMemorialModalProps {
   isOpen: boolean;
@@ -92,6 +93,58 @@ export const DisasterMemorialModal: React.FC<DisasterMemorialModalProps> = ({
 
     // Save
     saveDisasterMemorialEvents(events);
+
+    // Record operation log for added/updated events
+    try {
+      const { operator, deviceInfo } = getCurrentOperatorInfo();
+      const initialMap = new Map(initialEvents.map((e) => [e.id, e]));
+
+      events.forEach((ev) => {
+        const init = initialMap.get(ev.id);
+        const normDate = normalizeDateInput(ev.date) || ev.date;
+        if (!init) {
+          recordOperationLog(
+            ev.id || `disaster-${Date.now()}-${ev.name}`,
+            'disasterMemorial',
+            'create',
+            `戦没・災害物故者「${ev.name}」(${normDate})`,
+            undefined,
+            operator,
+            deviceInfo
+          );
+        } else if (init.name !== ev.name || init.date !== ev.date || init.notes !== ev.notes) {
+          recordOperationLog(
+            ev.id,
+            'disasterMemorial',
+            'update',
+            `戦没・災害物故者「${ev.name}」(${normDate})`,
+            undefined,
+            operator,
+            deviceInfo
+          );
+        }
+      });
+
+      // Check deleted events
+      const currentIdSet = new Set(events.map((e) => e.id));
+      initialEvents.forEach((init) => {
+        if (!currentIdSet.has(init.id)) {
+          const normDate = normalizeDateInput(init.date) || init.date;
+          recordOperationLog(
+            init.id,
+            'disasterMemorial',
+            'delete',
+            `戦没・災害物故者「${init.name}」(${normDate})`,
+            undefined,
+            operator,
+            deviceInfo
+          );
+        }
+      });
+    } catch (logErr) {
+      console.warn('Failed to record operation log for disaster memorial events:', logErr);
+    }
+
     setInitialEvents(JSON.parse(JSON.stringify(events)));
     setValidationError(null);
     setSaveSuccessMsg(true);

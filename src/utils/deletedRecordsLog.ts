@@ -1,8 +1,21 @@
 import { DeletedRecordEntry, DeletedEntityType } from '../types';
 import { safeStorage, saveJsonState, loadJsonState } from './storageUtils';
+import { getCurrentUser, getActiveGoogleAccountName } from '../lib/googleAuth';
 
 export const MAX_DELETED_LOG_LENGTH = 1000;
 const STORAGE_KEY = 'temple_deleted_records_log';
+
+/**
+ * Returns active operator name and device info for unified audit logging
+ */
+export function getCurrentOperatorInfo(overrideDevice?: string): { operator: string; deviceInfo: string } {
+  const user = getCurrentUser();
+  const activeGoogleName = getActiveGoogleAccountName();
+  const operator = user?.displayName?.trim() || user?.email?.trim() || activeGoogleName || 'Google未連携';
+  const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
+  const device = overrideDevice || (isMobile ? 'スマホ' : 'PC');
+  return { operator, deviceInfo: device };
+}
 
 /**
  * Normalizes operator name. Retains Google account name.

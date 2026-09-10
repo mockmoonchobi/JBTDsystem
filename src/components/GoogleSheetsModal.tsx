@@ -858,7 +858,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     </button>
                   )}
                   <p className="text-[10px] text-[#777777] leading-tight">
-                    ※ 檀家名簿・過去帳・法要・出納・ToDo・一括会計に加え、操作・削除履歴（共同管理・監査用）を含めて完全出力します。
+                    ※ 檀家名簿・過去帳・法要・出納・ToDo・一括会計・戦没・災害物故者設定に加え、操作・削除履歴（共同管理・監査用）を含めて完全出力します。
                   </p>
                 </div>
 
@@ -1563,7 +1563,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </div>
                 <p className="leading-relaxed text-xs text-rose-900">
                   選択したExcelファイル（<strong className="text-rose-950">{pendingImportFile.name}</strong>）を読み込むと、
-                  現在システムに登録されている<strong>檀家名簿・過去帳・年回忌・法要スケジュール・出納明細・一括会計受付・ToDo・マスタ設定</strong>などの全データは、
+                  現在システムに登録されている<strong>檀家名簿・過去帳・年回忌・法要スケジュール・出納明細・一括会計受付・ToDo・戦没・災害物故者命日設定・マスタ設定</strong>などの全データは、
                   <strong>本Excelファイルの内容で全て置き換わり（上書き）されます。</strong>
                 </p>
                 <p className="text-[11px] text-rose-800 font-medium">
@@ -1645,7 +1645,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 <span>【最重要警告】すべてのデータが初期化されます</span>
               </p>
               <p className="text-[11px] leading-relaxed text-[#333333]">
-                本システム内に保存されているすべてのデータ（<strong>本寺・兼務寺院の情報、全檀家名簿、全過去帳、全会計出納帳、全法事予約、寺院ToDo、マスタ設定等</strong>）を完全に消去し、システムを初期状態にリセットします。
+                本システム内に保存されているすべてのデータ（<strong>本寺・兼務寺院の情報、全檀家名簿、全過去帳、全会計出納帳、全法事予約、寺院ToDo、戦没・災害物故者命日設定、マスタ設定等</strong>）を完全に消去し、システムを初期状態にリセットします。
               </p>
               <p className="text-[11px] leading-relaxed text-rose-700 font-bold">
                 ※ この操作は取り消せません。必要なデータがある場合は、事前に「Excel出力」または「Googleスプレッドシート同期」でバックアップを保存してください。
@@ -1695,7 +1695,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   <span>端末側のデータを完全消去してGoogleシート「寺院管理・檀家過去帳データ」を取り込みます。</span>
                 </p>
                 <p className="text-[11px] leading-relaxed text-[#333333]">
-                  この端末に保存されているデータ（端末キャッシュ、操作履歴、檀家名簿、過去帳等）を<strong>すべて消去</strong>した上で、Googleシートのデータを読み込みます。Googleシート側に端末側のデータは書き込まれません。
+                  この端末に保存されているデータ（端末キャッシュ、操作履歴、檀家名簿、過去帳、戦没・災害物故者命日設定等）を<strong>すべて消去</strong>した上で、Googleシートのデータを読み込みます。Googleシート側に端末側のデータは書き込まれません。
                 </p>
               </div>
 
@@ -1748,7 +1748,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                   <span>書込中に不具合があった場合は大切なデータが失われますので、この操作を行う時はGoogleシートのバックアップを推奨します</span>
                 </p>
                 <p className="text-[11px] leading-relaxed text-[#444444]">
-                  Googleドライブ上の既存の「寺院管理・檀家過去帳データ」ファイルを<strong>完全に消去</strong>した上で、新たに「寺院管理・檀家過去帳データ」スプレッドシートを新規作成し、現在この端末にある最新データ（檀家名簿・過去帳・法事予約・出納帳・マスタ設定等）を全件書き込みます。
+                  Googleドライブ上の既存の「寺院管理・檀家過去帳データ」ファイルを<strong>完全に消去</strong>した上で、新たに「寺院管理・檀家過去帳データ」スプレッドシートを新規作成し、現在この端末にある最新データ（檀家名簿・過去帳・法事予約・出納帳・戦没・災害物故者命日設定・マスタ設定等）を全件書き込みます。
                 </p>
               </div>
 
