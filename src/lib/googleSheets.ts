@@ -1,3 +1,4 @@
+import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
 import { 
   Household, 
   PastRecord, 
@@ -641,7 +642,9 @@ export async function ensureAllSheetsExist(
       headers: { Authorization: `Bearer ${accessToken}` },
     }, 3, 600, 30000);
 
-    if (!res.ok) return { existingTitles: [], sheets: [] };
+    if (!res.ok) {
+      handleGoogleApiError(res, await res.json().catch(() => ({})), 'シート構成の取得に失敗しました');
+    }
 
     const data = await res.json();
     const existingSheets: { sheetId: number; title: string; rowCount: number; columnCount: number }[] = (data.sheets || []).map((s: any) => ({
@@ -682,15 +685,13 @@ export async function ensureAllSheetsExist(
       });
     }
 
-    const missingTitles = requiredTitles.filter((t) => {
-      // Check exact title or recognized aliases (e.g. 法事・予約一覧 for 法事予約, 寺院タスク・ToDo for 寺院ToDo)
-      if (existingTitles.includes(t)) return false;
-      if (t === '法事予約' && existingTitles.includes('法事・予約一覧')) return false;
-      if (t === '寺院ToDo' && existingTitles.includes('寺院タスク・ToDo')) return false;
-      if (t === '操作・削除履歴' && existingTitles.some((s) => ['操作・削除履歴', '削除履歴', '操作履歴', '削除ログ'].includes(s))) return false;
-      if (t === '戦没・災害物故者命日設定' && existingTitles.some((s) => ['戦没・災害物故者命日設定', '戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定'].includes(s))) return false;
-      return true;
-    });
+    // Include tables derived from fallback temple profiles as well.
+    for (const capacity of sheetCapacities || []) {
+      if (!requiredTitles.includes(capacity.sheetName)) requiredTitles.push(capacity.sheetName);
+    }
+    const missingTitles = requiredTitles.filter((title) =>
+      !existingTitles.includes(resolveExportSheetName(title, existingTitles))
+    );
 
     const updateRequests: any[] = [];
 
@@ -717,13 +718,8 @@ export async function ensureAllSheetsExist(
     // 2. Expand existing sheets in the same batch request if sheetCapacities specified
     if (sheetCapacities && sheetCapacities.length > 0) {
       for (const cap of sheetCapacities) {
-        const target = existingSheets.find(
-          (s) =>
-            s.title === cap.sheetName ||
-            s.title === `'${cap.sheetName}'` ||
-            (cap.sheetName === '法事予約' && s.title === '法事・予約一覧') ||
-            (cap.sheetName === '寺院ToDo' && s.title === '寺院タスク・ToDo') ||
-            (cap.sheetName === 'マスタ設定（総合）' && s.title === 'マスタ設定')
+        const target = existingSheets.find((sheet) =>
+          sheet.title === resolveExportSheetName(cap.sheetName, existingTitles)
         );
 
         if (!target) continue;
@@ -753,21 +749,28 @@ export async function ensureAllSheetsExist(
 
     if (updateRequests.length > 0) {
       const batchUpdateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
-      await fetchWithRetry(batchUpdateUrl, {
+      const response = await fetchWithRetry(batchUpdateUrl, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ requests: updateRequests }),
       }, 3, 600, 35000);
+      if (!response.ok) {
+        handleGoogleApiError(response, await response.json().catch(() => ({})), 'シートの作成・拡張に失敗しました');
+      }
+      const result = await response.json();
+      for (const reply of result.replies || []) {
+        const props = reply.addSheet?.properties;
+        if (props) existingSheets.push({
+          sheetId: props.sheetId, title: props.title,
+          rowCount: props.gridProperties?.rowCount || 1000,
+          columnCount: props.gridProperties?.columnCount || 30,
+        });
+      }
     }
-
-    const allTitles = [...existingTitles, ...missingTitles];
-    return { existingTitles: allTitles, sheets: existingSheets };
+    return { existingTitles: existingSheets.map((sheet) => sheet.title), sheets: existingSheets };
   } catch (err) {
     console.warn('Failed to ensure sheet tabs exist:', err);
-    return { existingTitles: [], sheets: [] };
+    throw err;
   }
 }
 
@@ -1663,7 +1666,6 @@ export async function exportToSheets(
 
   // Prepare batchUpdate update data and clear ranges
   const updateDataList: { range: string; values: any[][] }[] = [];
-  const clearRanges: string[] = [];
   const sheetCapacities: { sheetName: string; requiredRows: number; requiredCols: number }[] = [];
 
   // Helper to calculate required columns
@@ -1678,9 +1680,6 @@ export async function exportToSheets(
   // Helper to chunk large arrays into manageable sizes for Google Sheets API limits (unlimited total dataset size)
   const addChunkedUpdates = (sheetName: string, allRows: any[][], chunkSize = 1000) => {
     if (!shouldIncludeSheet(sheetName)) return;
-
-    // Even if rows are empty (e.g. cleared state), include sheet in clearRanges
-    clearRanges.push(`'${sheetName.replace(/'/g, "''")}'`);
 
     if (allRows.length === 0) return;
     
@@ -1847,119 +1846,23 @@ export async function exportToSheets(
   const { headers: disasterHeaders, rows: disasterRows } = convertDisasterEventsToRows(disasterEvents);
   addChunkedUpdates('戦没・災害物故者命日設定', [disasterHeaders, ...disasterRows]);
 
-  // 1. Ensure all sheet tabs exist and have sufficient row/col capacity in a single metadata pass & batch update
-  const { existingTitles } = await ensureAllSheetsExist(
-    accessToken,
-    spreadsheetId,
-    temples,
-    exportOptions,
-    sheetCapacities
-  );
-
-  // 2. Clear ranges completely using known existing sheet titles
-  try {
-    const titlesToClear = existingTitles.length > 0 ? existingTitles : BASE_REQUIRED_SHEETS;
-    let rangesToClear: string[] = [];
-    if (!targetTablesFilter) {
-      // Full export: clear all existing sheets in the spreadsheet
-      rangesToClear = titlesToClear.map((title) => `'${title.replace(/'/g, "''")}'`);
-    } else {
-      // Specific table export: only clear existing sheets that match the filter
-      rangesToClear = titlesToClear
-        .filter((title) => shouldIncludeSheet(title))
-        .map((title) => `'${title.replace(/'/g, "''")}'`);
-    }
-
-    if (rangesToClear.length > 0) {
-      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchClear`;
-      const clearRes = await fetchWithRetry(clearUrl, {
+  // Only managed tables present in this export are replaced. The clear and
+  // writes share one atomic request: a rejected write never leaves empty tables.
+  const { sheets } = await ensureAllSheetsExist(accessToken, spreadsheetId, temples, exportOptions, sheetCapacities);
+  const requests = buildSheetReplacementRequests(updateDataList, sheets);
+  if (requests.length > 0) {
+    const response = await fetchWithRetry(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
+      {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ranges: rangesToClear }),
-      }, 3, 600, 35000);
-
-      if (!clearRes.ok) {
-        console.warn('batchClear returned non-ok, falling back to per-sheet clear in exportToSheets');
-        for (const title of titlesToClear) {
-          if (targetTablesFilter && !shouldIncludeSheet(title)) continue;
-          const singleClearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(title)}':clear`;
-          await fetchWithRetry(singleClearUrl, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-          }, 2, 500, 15000).catch((e) => console.warn(`Failed to clear sheet ${title}:`, e));
-        }
-      }
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests }),
+      }, 3, 600, 45000
+    );
+    if (!response.ok) {
+      handleGoogleApiError(response, await response.json().catch(() => ({})), 'Google スプレッドシートへの書き込みに失敗しました');
     }
-  } catch (clearErr) {
-    console.warn('Batch clear warning:', clearErr);
-  }
-
-  // 3. Batch update with new data in a single request for optimal speed (with automatic chunking fallback if payload is large)
-  const remapSheetName = (name: string): string => {
-    if (name === '法事予約' && existingTitles.includes('法事・予約一覧') && !existingTitles.includes('法事予約')) return '法事・予約一覧';
-    if (name === '寺院ToDo' && existingTitles.includes('寺院タスク・ToDo') && !existingTitles.includes('寺院ToDo')) return '寺院タスク・ToDo';
-    if (name === '戦没・災害物故者命日設定') {
-      const alias = existingTitles.find((s) => ['戦没災害物故者命日設定', '災害物故者命日設定', '戦没物故者命日設定', '戦没・災害物故者', '災害物故者', '戦没者設定', '災害物故者設定'].includes(s));
-      if (alias && !existingTitles.includes('戦没・災害物故者命日設定')) return alias;
-    }
-    return name;
-  };
-  const remappedUpdateDataList = updateDataList.map((item) => {
-    const quoteMatch = item.range.match(/^'([^']+)'!(.*)$/);
-    if (quoteMatch) {
-      const remapped = remapSheetName(quoteMatch[1]);
-      return { ...item, range: `'${remapped.replace(/'/g, "''")}'!${quoteMatch[2]}` };
-    }
-    return item;
-  });
-
-  const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`;
-  try {
-    const payload = {
-      valueInputOption: 'USER_ENTERED',
-      data: remappedUpdateDataList,
-    };
-    const res = await fetchWithRetry(updateUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    }, 3, 600, 45000);
-
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      handleGoogleApiError(res, errJson, 'Google スプレッドシートへの書き込みに失敗しました');
-    }
-  } catch (updateErr: any) {
-    // If request failed because payload was too large (HTTP 413), fallback to chunking
-    if (updateErr?.message?.includes('413') || updateErr?.status === 413) {
-      const BATCH_CHUNK_SIZE = 5;
-      for (let i = 0; i < updateDataList.length; i += BATCH_CHUNK_SIZE) {
-        const chunkUpdates = updateDataList.slice(i, i + BATCH_CHUNK_SIZE);
-        const res = await fetchWithRetry(updateUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ valueInputOption: 'USER_ENTERED', data: chunkUpdates }),
-        }, 3, 600, 45000);
-        if (!res.ok) {
-          const errJson = await res.json().catch(() => ({}));
-          handleGoogleApiError(res, errJson, 'Google スプレッドシートへの書き込みに失敗しました');
-        }
-      }
-    } else {
-      throw updateErr;
-    }
+    // Do not fall back to separately clearing/writing chunks on failure.
   }
 
   // 檀家名簿の書き込みが含まれている場合、緯度・経度の列書式を確実に数値形式（0.000000）にフォーマットして日付化を防止

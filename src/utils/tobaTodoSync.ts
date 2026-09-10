@@ -1,6 +1,7 @@
 import { MemorialService, TempleTodo, PastRecord, TempleProfile, ServiceDeceasedTarget, ServiceTobaItem } from '../types';
 import { getPreviousDay, normalizeDateInput, getTodayDateString } from './calendarUtils';
 import { resolveSpiritMemorialType } from './memorialCalculator';
+import { withCreationAudit, withUpdateAudit } from './auditUtils';
 
 /**
  * 法要の全供養精霊リストを取得（メイン精霊 + 併修精霊）
@@ -147,12 +148,20 @@ export function syncTobaTodosList(
   const oldNormDate = oldService ? (normalizeDateInput(oldService.scheduledDate || '') || todayStr) : null;
   const oldPrevDay = oldNormDate ? getPreviousDay(oldNormDate) : null;
 
-  const existingTobaTodo = currentTodos.find(
-    (t) => (service.id && t.relatedServiceId === service.id) ||
-           (oldService && t.relatedServiceId === oldService.id) ||
-           (t.category === '塔婆揮毫' && service.householdId && t.householdId === service.householdId && 
-             (t.dueDate === targetDate || t.dueDate === prevDay || (oldNormDate && t.dueDate === oldNormDate) || (oldPrevDay && t.dueDate === oldPrevDay)))
+  // An explicit service link always wins. Date matching is only for legacy,
+  // unlinked toba tasks, never a task already owned by a different service.
+  const linkedTodo = currentTodos.find((t) => t.category === '塔婆揮毫' && (
+    (service.id && (t.relatedServiceId || t.serviceId) === service.id) ||
+    (oldService?.id && (t.relatedServiceId || t.serviceId) === oldService.id)
+  ));
+  const legacyCandidates = currentTodos.filter((t) =>
+    !t.relatedServiceId && !t.serviceId && t.category === '塔婆揮毫' &&
+    service.householdId && t.householdId === service.householdId &&
+    (!t.templeId || !service.templeId || t.templeId === service.templeId) &&
+    (t.dueDate === targetDate || t.dueDate === prevDay ||
+      (oldNormDate && t.dueDate === oldNormDate) || (oldPrevDay && t.dueDate === oldPrevDay))
   );
+  const existingTobaTodo = linkedTodo || (legacyCandidates.length === 1 ? legacyCandidates[0] : undefined);
 
   let resultTodos: TempleTodo[] = currentTodos;
 
@@ -168,9 +177,20 @@ export function syncTobaTodosList(
         householdId: service.householdId,
         householdHeadName: sponsorsSummary,
         relatedServiceId: service.id,
+        serviceId: service.id,
         notes: tobaDetailNotes,
       };
-      resultTodos = currentTodos.map((t) => (t.id === existingTobaTodo.id ? updated : t));
+      const auditedTodo = withUpdateAudit(updated, existingTobaTodo);
+      // Sheets stores audit time to seconds. Advance at least one second so
+      // edits within the same second still win when another device merges them.
+      const previousStamp = existingTobaTodo.updatedAt ||
+        `${(existingTobaTodo.updatedDate || existingTobaTodo.createdDate || '').replace(/\//g, '-')}T${existingTobaTodo.updatedTime || existingTobaTodo.createdTime || '00:00:00'}`;
+      const previousMs = new Date(previousStamp).getTime();
+      const stamp = new Date(Math.max(Date.now(), Number.isFinite(previousMs) ? previousMs + 1000 : 0));
+      auditedTodo.updatedDate = `${stamp.getFullYear()}/${String(stamp.getMonth() + 1).padStart(2, '0')}/${String(stamp.getDate()).padStart(2, '0')}`;
+      auditedTodo.updatedTime = `${String(stamp.getHours()).padStart(2, '0')}:${String(stamp.getMinutes()).padStart(2, '0')}:${String(stamp.getSeconds()).padStart(2, '0')}`;
+      auditedTodo.updatedAt = `${auditedTodo.updatedDate.replace(/\//g, '-')}T${auditedTodo.updatedTime}`;
+      resultTodos = currentTodos.map((t) => (t.id === existingTobaTodo.id ? auditedTodo : t));
     } else {
       // 新規ToDoを作成（当日の同時刻、一意のIDを保証）
       const newTobaTodo: TempleTodo = {
@@ -186,9 +206,9 @@ export function syncTobaTodosList(
         householdId: service.householdId,
         householdHeadName: sponsorsSummary,
         notes: tobaDetailNotes,
-        createdAt: todayStr,
+        createdAt: new Date().toISOString(),
       };
-      resultTodos = [newTobaTodo, ...currentTodos];
+      resultTodos = [withCreationAudit(newTobaTodo), ...currentTodos];
     }
   } else {
     // 塔婆本数が0本になった場合は関連ToDoを削除
