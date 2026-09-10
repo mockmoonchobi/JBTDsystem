@@ -189,7 +189,9 @@ export function syncTobaTodosList(
       const stamp = new Date(Math.max(Date.now(), Number.isFinite(previousMs) ? previousMs + 1000 : 0));
       auditedTodo.updatedDate = `${stamp.getFullYear()}/${String(stamp.getMonth() + 1).padStart(2, '0')}/${String(stamp.getDate()).padStart(2, '0')}`;
       auditedTodo.updatedTime = `${String(stamp.getHours()).padStart(2, '0')}:${String(stamp.getMinutes()).padStart(2, '0')}:${String(stamp.getSeconds()).padStart(2, '0')}`;
-      auditedTodo.updatedAt = `${auditedTodo.updatedDate.replace(/\//g, '-')}T${auditedTodo.updatedTime}`;
+      // Use the shared audit columns; a stale updatedAt would override later
+      // manual edits, which also update these columns through withUpdateAudit.
+      delete auditedTodo.updatedAt;
       resultTodos = currentTodos.map((t) => (t.id === existingTobaTodo.id ? auditedTodo : t));
     } else {
       // 新規ToDoを作成（当日の同時刻、一意のIDを保証）
