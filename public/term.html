@@ -5,53 +5,187 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>利用規約 - 寺院檀家管理システム</title>
   <style>
+    :root {
+      --primary-color: #92400e;
+      --primary-light: #fef3c7;
+      --text-main: #1e293b;
+      --text-muted: #475569;
+      --text-subtle: #64748b;
+      --bg-page: #f8fafc;
+      --bg-card: #ffffff;
+      --border-color: #e2e8f0;
+      --link-color: #2563eb;
+      --link-hover: #1d4ed8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      line-height: 1.8;
-      color: #333;
-      background-color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "BIZ UDPGothic", Meiryo, sans-serif;
+      line-height: 1.85;
+      color: var(--text-main);
+      background-color: var(--bg-page);
       margin: 0;
-      padding: 40px 20px;
+      padding: 40px 20px 60px;
+      -webkit-font-smoothing: antialiased;
     }
+
     .container {
-      max-width: 800px;
+      max-width: 820px;
       margin: 0 auto;
-      background: #ffffff;
-      padding: 40px;
+      background: var(--bg-card);
+      padding: 48px 44px;
       border-radius: 12px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      border: 1px solid var(--border-color);
+      border-top: 4px solid var(--primary-color);
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
     }
+
+    .site-badge {
+      display: inline-flex;
+      align-items: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary-color);
+      background-color: var(--primary-light);
+      padding: 4px 10px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      text-decoration: none;
+    }
+
+    .site-badge:hover {
+      text-decoration: underline;
+    }
+
     h1 {
-      font-size: 24px;
-      border-bottom: 2px solid #e2e8f0;
-      padding-bottom: 16px;
+      font-size: 26px;
+      font-weight: 700;
+      color: #0f172a;
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 18px;
       margin-top: 0;
-      color: #1e293b;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
     }
-    h2 {
-      font-size: 18px;
-      margin-top: 32px;
-      color: #334155;
-      border-left: 4px solid #3b82f6;
-      padding-left: 12px;
-    }
-    p, li {
-      font-size: 15px;
-      color: #475569;
-    }
-    ul {
-      padding-left: 20px;
-    }
+
     .date {
-      color: #94a3b8;
+      color: var(--text-subtle);
       font-size: 13px;
       text-align: right;
       margin-bottom: 24px;
+      font-weight: 500;
+    }
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 36px;
+      margin-bottom: 16px;
+      color: #0f172a;
+      border-left: 4px solid var(--primary-color);
+      padding-left: 14px;
+      padding-top: 2px;
+      padding-bottom: 2px;
+      background: linear-gradient(90deg, #fffbeb 0%, transparent 100%);
+      border-radius: 0 4px 4px 0;
+    }
+
+    p {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-top: 0;
+      margin-bottom: 18px;
+    }
+
+    ul {
+      padding-left: 22px;
+      margin-top: 0;
+      margin-bottom: 24px;
+    }
+
+    li {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      line-height: 1.8;
+    }
+
+    a {
+      color: var(--link-color);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s ease;
+    }
+
+    a:hover {
+      color: var(--link-hover);
+    }
+
+    .footer-nav {
+      margin-top: 48px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 14px;
+    }
+
+    .footer-links a {
+      color: var(--text-subtle);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer-links a:hover {
+      color: var(--primary-color);
+      text-decoration: underline;
+    }
+
+    .footer-links a.active {
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+
+    .footer-copy {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 20px 12px;
+      }
+      .container {
+        padding: 28px 20px;
+      }
+      h1 {
+        font-size: 22px;
+      }
+      h2 {
+        font-size: 16px;
+      }
+      .footer-nav {
+        flex-direction: column;
+        align-items: flex-start;
+      }
     }
   </style>
 </head>
 <body>
   <div class="container">
+    <a href="about.html" class="site-badge">寺院檀家管理システム</a>
     <h1>利用規約</h1>
     <div class="date">制定日: 2026年9月8日</div>
 
@@ -98,7 +232,16 @@
 
     <h2>第8条（お問い合わせ窓口）</h2>
     <p>本規約に関するお問い合わせは、以下の窓口までお願いいたします。</p>
-    <p>管理者連絡先: mockmoon.chobi@gmail.com</p>
+    <p>管理者連絡先: <a href="mailto:mockmoon.chobi@gmail.com">mockmoon.chobi@gmail.com</a></p>
+
+    <div class="footer-nav">
+      <div class="footer-links">
+        <a href="about.html">システムについて</a>
+        <a href="term.html" class="active">利用規約</a>
+        <a href="privacy.html">プライバシーポリシー</a>
+      </div>
+      <div class="footer-copy">© 寺院檀家管理システム</div>
+    </div>
   </div>
 </body>
 </html>
