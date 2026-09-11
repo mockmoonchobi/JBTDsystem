@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { 
   CreditCard, 
   Plus, 
@@ -37,6 +37,8 @@ import {
   getJapaneseEra,
 } from '../utils/fiscalYearUtils';
 import { ImportTargetType } from '../utils/externalImportUtils';
+import { NewTransactionRow } from './NewTransactionRow';
+import { InlineEditTransactionRow } from './InlineEditTransactionRow';
 
 interface AccountingManagerProps {
   transactions: Transaction[];
@@ -130,17 +132,26 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
   const [receiptHonorific, setReceiptHonorific] = useState<string>('様');
   const [receiptProviso, setReceiptProviso] = useState<string>('');
 
+  // 高速な檀家検索マップ (O(1) ルックアップ) - 全行再描画時の総当たり探索を完全排除
+  const householdMap = useMemo(() => {
+    const map = new Map<string, Household>();
+    for (let i = 0; i < households.length; i++) {
+      map.set(households[i].id, households[i]);
+    }
+    return map;
+  }, [households]);
+
   // Calculate dynamic prior carryover for selected fiscal year from all previous transactions
   const priorCarryover = useMemo(() => {
     if (!selectedFYNumber) return null;
     return calculatePriorCarryoverBalance(cleanTransactions, selectedFYNumber, templeInfo);
   }, [cleanTransactions, selectedFYNumber, templeInfo]);
 
-  // 世帯IDまたは取引情報から施主名（敬称なし）を取得
-  const getPayerDisplayName = (tx: Transaction): string => {
+  // 世帯IDまたは取引情報から施主名（敬称なし）を取得 (O(1) 高速参照)
+  const getPayerDisplayName = useCallback((tx: Transaction): string => {
     let name = '';
     if (tx.householdId) {
-      const matched = households.find((h) => h.id === tx.householdId);
+      const matched = householdMap.get(tx.householdId);
       if (matched && matched.familyHead) {
         name = matched.familyHead;
       }
@@ -154,10 +165,10 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
       return '';
     }
     return clean;
-  };
+  }, [householdMap]);
 
   // 表示用の摘要文字列（施主と紐づけられている場合は「施主　〇〇」を前置）
-  const getDisplayNotes = (tx: Transaction): string => {
+  const getDisplayNotes = useCallback((tx: Transaction): string => {
     const payer = getPayerDisplayName(tx);
     const rawNotes = (tx.notes || '').trim();
     const cleanNote = payer && rawNotes.startsWith(payer) ? rawNotes.slice(payer.length).trim() : rawNotes;
@@ -169,7 +180,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
       return `施主　${payer}`;
     }
     return rawNotes || '—';
-  };
+  }, [getPayerDisplayName]);
 
   const handleOpenReceiptModal = (tx: Transaction) => {
     setReceiptModalTx(tx);
@@ -177,7 +188,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     // 氏名の初期値：檀家IDと紐づくならば、施主氏名を貼り付け、それ以外は摘要を貼り付け
     let payer = '';
     if (tx.householdId) {
-      const matched = households.find((h) => h.id === tx.householdId);
+      const matched = householdMap.get(tx.householdId);
       if (matched && matched.familyHead) {
         payer = matched.familyHead;
       }
@@ -212,23 +223,8 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
   // Delete Confirmation Modal State
   const [deleteTargetTx, setDeleteTargetTx] = useState<Transaction | null>(null);
 
-  // Inline Row Editing State
+  // Inline Row Editing State (編集中のIDのみ保持し、入力フォームはInlineEditTransactionRowに完全隔離)
   const [editingTxId, setEditingTxId] = useState<string | null>(null);
-  const [inlineTxForm, setInlineTxForm] = useState<Partial<Transaction> | null>(null);
-
-  // New inline transaction entry state (ALWAYS VISIBLE AT BOTTOM)
-  const todayEraDate = formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false);
-  const [newTxForm, setNewTxForm] = useState<Partial<Transaction>>({
-    date: todayEraDate,
-    householdId: '',
-    householdHeadName: '',
-    category: incomeCategories[0] || '法要布施',
-    type: '収入',
-    amount: undefined,
-    paymentMethod: '現金受付',
-    receiptNumber: `R-${Date.now().toString().slice(-6)}`,
-    notes: '',
-  });
 
   // Date normalization options for accounting
   const accountingDateOptions = useMemo<NormalizeDateOptions>(() => ({
@@ -237,83 +233,19 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
     fiscalYear: fiscalYearFilter !== 'ALL' ? Number(fiscalYearFilter) : undefined,
   }), [templeInfo?.fiscalYearStartMonth, fiscalYearFilter]);
 
-  const handleSaveNewTx = () => {
-    if (!newTxForm.amount || newTxForm.amount <= 0) {
-      alert('出納の金額を入力してください。');
-      return;
-    }
-
-    const normalizedDate = normalizeDateInput(newTxForm.date || '', accountingDateOptions) || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
-
-    const matchedHousehold = newTxForm.householdId ? households.find((h) => h.id === newTxForm.householdId) : null;
-    const resolvedTxTempleId = matchedHousehold?.templeId || templeInfo?.id || 'temple-main';
-
-    const completeTx: Transaction = {
-      id: `TX-${Date.now()}`,
-      templeId: resolvedTxTempleId,
-      date: normalizedDate,
-      householdId: newTxForm.householdId || '',
-      householdHeadName: newTxForm.householdHeadName || '',
-      category: (newTxForm.category as TransactionCategory) || (incomeCategories[0] as any) || '法要布施',
-      type: newTxForm.type || '収入',
-      amount: Number(newTxForm.amount) || 0,
-      paymentMethod: newTxForm.paymentMethod || '現金受付',
-      receiptNumber: newTxForm.receiptNumber || `R-${Date.now().toString().slice(-6)}`,
-      notes: newTxForm.notes || '',
-    };
-
-    onAddTransaction(completeTx);
-
-    // Reset for next quick entry line
-    setNewTxForm({
-      date: formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false),
-      householdId: '',
-      householdHeadName: '',
-      category: incomeCategories[0] || '法要布施',
-      type: '収入',
-      amount: undefined,
-      paymentMethod: '現金受付',
-      receiptNumber: `R-${Date.now().toString().slice(-6)}`,
-      notes: '',
-    });
-  };
-
   const handleStartInlineEdit = (tx: Transaction) => {
     setEditingTxId(tx.id);
-    setInlineTxForm({
-      ...tx,
-      date: formatJapaneseEraDate(tx.date, false),
-      notes: tx.notes !== undefined && tx.notes !== '' ? tx.notes : (tx.householdHeadName || ''),
-    });
   };
 
-  const handleSaveInlineEdit = () => {
-    if (!inlineTxForm || !inlineTxForm.id) return;
-    const normalizedDate = normalizeDateInput(inlineTxForm.date || '', accountingDateOptions) || '2026/08/09';
-
-    const completeTx: Transaction = {
-      id: inlineTxForm.id,
-      date: normalizedDate,
-      householdId: inlineTxForm.householdId,
-      householdHeadName: inlineTxForm.householdHeadName || '',
-      category: (inlineTxForm.category as TransactionCategory) || '法要布施',
-      type: inlineTxForm.type || '収入',
-      amount: Number(inlineTxForm.amount) || 0,
-      paymentMethod: inlineTxForm.paymentMethod || '現金受付',
-      receiptNumber: inlineTxForm.receiptNumber || `R-${Date.now()}`,
-      notes: inlineTxForm.notes || '',
-    };
-
+  const handleSaveInlineEdit = (updatedTx: Transaction) => {
     if (onUpdateTransaction) {
-      onUpdateTransaction(completeTx);
+      onUpdateTransaction(updatedTx);
     }
     setEditingTxId(null);
-    setInlineTxForm(null);
   };
 
   const handleCancelInlineEdit = () => {
     setEditingTxId(null);
-    setInlineTxForm(null);
   };
 
   const filteredTransactions = useMemo(() => {
@@ -339,7 +271,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
 
       return matchesSearch && matchesType && matchesCategory && matchesFY;
     });
-  }, [cleanTransactions, searchTerm, typeFilter, categoryFilter, fiscalYearFilter, templeInfo, households]);
+  }, [cleanTransactions, searchTerm, typeFilter, categoryFilter, fiscalYearFilter, templeInfo, getDisplayNotes, getPayerDisplayName]);
 
   // Sort State (Default: Date Ascending / 年月日での昇順ソート)
   type AccountingSortKey = 'date' | 'category' | 'householdHeadName' | 'income' | 'expense';
@@ -469,7 +401,6 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
       setDeleteTargetTx(null);
       if (editingTxId === deleteTargetTx.id) {
         setEditingTxId(null);
-        setInlineTxForm(null);
       }
     }
   };
@@ -687,144 +618,21 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                   </tr>
                 )}
                 {sortedTransactions.map((t, tIdx) => {
-                  const isEditingThisTx = editingTxId === t.id && inlineTxForm;
+                  const isEditingThisTx = editingTxId === t.id;
 
-                  if (isEditingThisTx && inlineTxForm) {
+                  if (isEditingThisTx) {
                     return (
-                      <tr key={`tx-row-${t.id || tIdx}-${tIdx}`} className="bg-[#FFFDF0] font-sans">
-                        {/* 年月日 (編集時) */}
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="text"
-                            value={inlineTxForm.date || ''}
-                            onChange={(e) => setInlineTxForm({ ...inlineTxForm, date: e.target.value })}
-                            onFocus={(e) => e.target.select()}
-                            onBlur={(e) => {
-                              const normalized = normalizeDateInput(e.target.value, accountingDateOptions);
-                              if (normalized) {
-                                setInlineTxForm({ ...inlineTxForm, date: formatJapaneseEraDate(normalized, false) });
-                              }
-                            }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(); }}
-                            placeholder="例: 20260607"
-                            className="w-full bg-white border border-[#1A1A1A] px-1.5 py-1 font-mono text-sm font-bold"
-                          />
-                        </td>
-                        {/* 勘定科目 (編集時) */}
-                        <td className="px-2 py-1.5">
-                          <select
-                            value={`${inlineTxForm.type || '収入'}:${inlineTxForm.category || incomeCategories[0] || '法要布施'}`}
-                            onChange={(e) => {
-                              const [newType, newCat] = e.target.value.split(':') as ['収入' | '支出', string];
-                              setInlineTxForm({
-                                ...inlineTxForm,
-                                type: newType,
-                                category: newCat,
-                              });
-                            }}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(); }}
-                            className="w-full bg-white border border-[#1A1A1A] px-1.5 py-1 text-sm font-bold whitespace-nowrap"
-                          >
-                            <optgroup label="【 収入の部 】">
-                              {incomeCategories.map((cat) => (
-                                <option key={`収入:${cat}`} value={`収入:${cat}`}>
-                                  {cat}
-                                </option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="【 支出の部 】">
-                              {expenseCategories.map((cat) => (
-                                <option key={`支出:${cat}`} value={`支出:${cat}`}>
-                                  {cat}
-                                </option>
-                              ))}
-                            </optgroup>
-                          </select>
-                        </td>
-                        {/* 決済方法 / 摘要 (編集時) */}
-                        <td className="px-2 py-1.5 min-w-[200px]">
-                          <div className="flex items-center space-x-1.5">
-                            <select
-                              value={inlineTxForm.paymentMethod || paymentMethodOptions[0] || '現金受付'}
-                              onChange={(e) => setInlineTxForm({ ...inlineTxForm, paymentMethod: e.target.value as any })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(); }}
-                              className="w-24 bg-white border border-[#1A1A1A] px-1.5 py-1 text-xs shrink-0"
-                            >
-                              {paymentMethodOptions.map((pm) => (
-                                <option key={pm} value={pm}>
-                                  {pm}
-                                </option>
-                              ))}
-                            </select>
-                            <input
-                              type="text"
-                              value={inlineTxForm.notes || ''}
-                              onChange={(e) => setInlineTxForm({ ...inlineTxForm, notes: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(); }}
-                              placeholder="備考・摘要"
-                              className="flex-1 bg-white border border-[#1A1A1A] px-1.5 py-1 text-sm font-bold min-w-0"
-                            />
-                          </div>
-                        </td>
-                        {/* 収入金額 (編集時) */}
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="number"
-                            disabled={inlineTxForm.type !== '収入'}
-                            value={inlineTxForm.type === '収入' ? (inlineTxForm.amount || '') : ''}
-                            onChange={(e) => setInlineTxForm({ ...inlineTxForm, amount: Number(e.target.value) })}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(); }}
-                            placeholder={inlineTxForm.type === '収入' ? '金額' : '―'}
-                            className={`w-full px-1.5 py-1 text-sm font-mono font-bold text-right border ${
-                              inlineTxForm.type === '収入'
-                                ? 'bg-emerald-50 border-emerald-600 text-emerald-900'
-                                : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                            }`}
-                          />
-                        </td>
-                        {/* 支出金額 (編集時) */}
-                        <td className="px-2 py-1.5">
-                          <input
-                            type="number"
-                            disabled={inlineTxForm.type !== '支出'}
-                            value={inlineTxForm.type === '支出' ? (inlineTxForm.amount || '') : ''}
-                            onChange={(e) => setInlineTxForm({ ...inlineTxForm, amount: Number(e.target.value) })}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineEdit(); }}
-                            placeholder={inlineTxForm.type === '支出' ? '金額' : '―'}
-                            className={`w-full px-1.5 py-1 text-sm font-mono font-bold text-right border ${
-                              inlineTxForm.type === '支出'
-                                ? 'bg-rose-50 border-rose-600 text-rose-900'
-                                : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                            }`}
-                          />
-                        </td>
-                        {/* 残高 (編集時) */}
-                        <td className="px-3 py-1.5 text-right font-mono text-sm text-[#888888]">
-                          {formatCurrency(t.runningBalance)}
-                        </td>
-                        {/* 操作 (編集時) */}
-                        <td className="px-2 py-1.5 text-right space-x-1 whitespace-nowrap">
-                          <button
-                            onClick={handleSaveInlineEdit}
-                            className="px-2.5 py-1 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold text-xs inline-flex items-center space-x-0.5 shadow-sm cursor-pointer"
-                          >
-                            <Save className="w-3.5 h-3.5" />
-                            <span>保存</span>
-                          </button>
-                          <button
-                            onClick={handleCancelInlineEdit}
-                            className="px-2 py-1 bg-white border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs hover:bg-[#EBE7DF] cursor-pointer"
-                          >
-                            <span>取消</span>
-                          </button>
-                          <button
-                            onClick={() => setDeleteTargetTx(t)}
-                            className="px-2 py-1 bg-rose-50 border border-rose-300 text-rose-800 font-bold text-xs hover:bg-rose-100 cursor-pointer"
-                          >
-                            削除
-                          </button>
-                        </td>
-                      </tr>
+                      <InlineEditTransactionRow
+                        key={`tx-row-edit-${t.id || tIdx}`}
+                        transaction={t}
+                        incomeCategories={incomeCategories}
+                        expenseCategories={expenseCategories}
+                        paymentMethodOptions={paymentMethodOptions}
+                        accountingDateOptions={accountingDateOptions}
+                        onSave={handleSaveInlineEdit}
+                        onCancel={handleCancelInlineEdit}
+                        onDelete={(tx) => setDeleteTargetTx(tx)}
+                      />
                     );
                   }
 
@@ -988,129 +796,16 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                   </tr>
                 )}
 
-                {/* ALWAYS-VISIBLE NEW TRANSACTION ENTRY ROW AT BOTTOM OF TABLE (Compact) */}
-                <tr className="bg-[#FFFDF0] border-2 border-[#D4AF37] font-sans">
-                  {/* 年月日 */}
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="text"
-                      value={newTxForm.date || ''}
-                      onChange={(e) => setNewTxForm({ ...newTxForm, date: e.target.value })}
-                      onFocus={(e) => e.target.select()}
-                      onBlur={(e) => {
-                        const normalized = normalizeDateInput(e.target.value, accountingDateOptions);
-                        if (normalized) {
-                          setNewTxForm({ ...newTxForm, date: formatJapaneseEraDate(normalized, false) });
-                        }
-                      }}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewTx(); }}
-                      placeholder="例: 20260607"
-                      className="w-full bg-white border border-[#1A1A1A] px-1.5 py-1 font-mono text-sm font-bold"
-                    />
-                  </td>
-                  {/* 勘定科目 (グループ化・1行表示) */}
-                  <td className="px-2 py-1.5">
-                    <select
-                      value={`${newTxForm.type || '収入'}:${newTxForm.category || incomeCategories[0] || '法要布施'}`}
-                      onChange={(e) => {
-                        const [newType, newCat] = e.target.value.split(':') as ['収入' | '支出', string];
-                        setNewTxForm({
-                          ...newTxForm,
-                          type: newType,
-                          category: newCat,
-                        });
-                      }}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewTx(); }}
-                      className="w-full bg-white border border-[#1A1A1A] px-1.5 py-1 text-sm font-bold whitespace-nowrap"
-                    >
-                      <optgroup label="【 収入の部 】">
-                        {incomeCategories.map((cat) => (
-                          <option key={`収入:${cat}`} value={`収入:${cat}`}>
-                            {cat}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="【 支出の部 】">
-                        {expenseCategories.map((cat) => (
-                          <option key={`支出:${cat}`} value={`支出:${cat}`}>
-                            {cat}
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
-                  </td>
-                  {/* 決済方法 / 摘要 (1行入力スタイル) */}
-                  <td className="px-2 py-1.5 max-w-[240px]">
-                    <div className="flex items-center space-x-1.5">
-                      <select
-                        value={newTxForm.paymentMethod || paymentMethodOptions[0] || '現金受付'}
-                        onChange={(e) => setNewTxForm({ ...newTxForm, paymentMethod: e.target.value as any })}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewTx(); }}
-                        className="w-24 bg-white border border-[#1A1A1A] px-1.5 py-1 text-xs shrink-0"
-                      >
-                        {paymentMethodOptions.map((pm) => (
-                          <option key={pm} value={pm}>
-                            {pm}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        value={newTxForm.notes || ''}
-                        onChange={(e) => setNewTxForm({ ...newTxForm, notes: e.target.value })}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewTx(); }}
-                        placeholder="備考・摘要"
-                        className="flex-1 bg-white border border-[#1A1A1A] px-1.5 py-1 text-sm font-bold min-w-0"
-                      />
-                    </div>
-                  </td>
-                  {/* 収入金額 */}
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="number"
-                      disabled={newTxForm.type !== '収入'}
-                      value={newTxForm.type === '収入' ? (newTxForm.amount ?? '') : ''}
-                      onChange={(e) => setNewTxForm({ ...newTxForm, amount: e.target.value ? Number(e.target.value) : undefined })}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewTx(); }}
-                      placeholder={newTxForm.type === '収入' ? '金額入力' : '―'}
-                      className={`w-full px-1.5 py-1 text-sm font-mono font-bold text-right border ${
-                        newTxForm.type === '収入'
-                          ? 'bg-emerald-50 border-emerald-600 text-emerald-900 font-bold'
-                          : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      }`}
-                    />
-                  </td>
-                  {/* 支出金額 */}
-                  <td className="px-2 py-1.5">
-                    <input
-                      type="number"
-                      disabled={newTxForm.type !== '支出'}
-                      value={newTxForm.type === '支出' ? (newTxForm.amount ?? '') : ''}
-                      onChange={(e) => setNewTxForm({ ...newTxForm, amount: e.target.value ? Number(e.target.value) : undefined })}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewTx(); }}
-                      placeholder={newTxForm.type === '支出' ? '金額入力' : '―'}
-                      className={`w-full px-1.5 py-1 text-sm font-mono font-bold text-right border ${
-                        newTxForm.type === '支出'
-                          ? 'bg-rose-50 border-rose-600 text-rose-900 font-bold'
-                          : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      }`}
-                    />
-                  </td>
-                  {/* 残高 */}
-                  <td className="px-3 py-1.5 text-right font-mono text-[#888888] text-xs font-bold">
-                    (新規記帳)
-                  </td>
-                  {/* 登録ボタン */}
-                  <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                    <button
-                      onClick={handleSaveNewTx}
-                      className="px-3 py-1 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold text-xs inline-flex items-center space-x-1 shadow-sm cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>登録</span>
-                    </button>
-                  </td>
-                </tr>
+                {/* ALWAYS-VISIBLE NEW TRANSACTION ENTRY ROW AT BOTTOM OF TABLE (Compact & Isolated Component) */}
+                <NewTransactionRow
+                  incomeCategories={incomeCategories}
+                  expenseCategories={expenseCategories}
+                  paymentMethodOptions={paymentMethodOptions}
+                  accountingDateOptions={accountingDateOptions}
+                  templeInfo={templeInfo}
+                  householdMap={householdMap}
+                  onAddTransaction={onAddTransaction}
+                />
               </tbody>
             </table>
           </div>

@@ -45,6 +45,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Household, PastRecord, Transaction, TransactionCategory, MasterOptions, FamilyMember, TempleInfo, TempleProfile, MemorialService, TempleTodo } from '../types';
 import { calculateMemorialMilestones, getJapaneseEra, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions, calculateNiibonFromDeathDate, isRelevantNiibon, sortHouseholds, formatCurrency, getHouseholdSponsorName, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, toggleHouseholdSponsorSegakiToba, getHouseholdNiibonStatus } from '../utils/memorialCalculator';
 import { SingleHouseholdKakochoImportModal } from './SingleHouseholdKakochoImportModal';
+import { HouseholdFeeInput } from './HouseholdFeeInput';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 
@@ -2559,30 +2560,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                             case 'fee':
                               return (
                                 <td key="fee" className="px-1.5 py-2 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                  {(() => {
-                                    const curAmount = getHouseholdFeeAmount(household, activeFeeType, currentActiveTemple);
-                                    return (
-                                      <div className="flex items-center justify-center">
-                                        <div className="relative flex items-center">
-                                          <span className="absolute left-1.5 text-[10px] text-[#888888] font-bold">¥</span>
-                                          <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            placeholder="—"
-                                            value={curAmount !== undefined ? curAmount : ''}
-                                            onChange={(e) => {
-                                              const raw = e.target.value.replace(/[^0-9]/g, '');
-                                              const num = raw !== '' ? parseInt(raw, 10) : undefined;
-                                              const updated = setHouseholdFeeAmount(household, activeFeeType, num, currentActiveTemple);
-                                              onEditHousehold(updated);
-                                            }}
-                                            className="w-20 pl-4 pr-1.5 py-1 text-xs text-right font-mono font-bold bg-white border border-[#D1CEC7] hover:border-[#888888] focus:border-[#D4AF37] focus:bg-[#FAF9F5] focus:outline-none transition-colors"
-                                            title={`${household.familyHead} 様: ${activeFeeType} 金額（半角数字）`}
-                                          />
-                                        </div>
-                                      </div>
-                                    );
-                                  })()}
+                                  <HouseholdFeeInput
+                                    household={household}
+                                    activeFeeType={activeFeeType}
+                                    currentActiveTemple={currentActiveTemple}
+                                    onEditHousehold={onEditHousehold}
+                                  />
                                 </td>
                               );
                             case 'tanagyo':
