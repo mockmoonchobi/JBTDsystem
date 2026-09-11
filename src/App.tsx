@@ -3049,6 +3049,87 @@ export default function App() {
     handleSaveMasterOptions(updatedMaster, targetTemple);
   };
 
+  // Operation history log formatting helpers
+  const formatHouseholdLogDesc = (h: Partial<Household>, action: 'create' | 'update' | 'delete'): string => {
+    const headName = h.familyHead ? `${h.familyHead} 様` : `世帯(ID: ${h.id || '新規'})`;
+    const typeTag = h.householdType ? `【${h.householdType}】` : '';
+    const details: string[] = [];
+    if (h.address) details.push(h.address);
+    if (h.phone) details.push(`電話: ${h.phone}`);
+    if (h.mobile) details.push(`携帯: ${h.mobile}`);
+    if (h.familyMembers && h.familyMembers.length > 0) details.push(`家族: ${h.familyMembers.length}名`);
+    const detailStr = details.length > 0 ? `（${details.join(' / ')}）` : '';
+    const actionText = action === 'create' ? '世帯台帳の新規登録' : (action === 'update' ? '世帯台帳の更新' : '世帯台帳の削除');
+    return `${actionText}：${headName}${typeTag}${detailStr}`;
+  };
+
+  const formatPastRecordLogDesc = (record: Partial<PastRecord>, action: 'create' | 'update' | 'delete'): string => {
+    const names: string[] = [];
+    if (record.dharmaName) names.push(`法名: ${record.dharmaName}`);
+    if (record.secularName) names.push(`俗名: ${record.secularName} 様`);
+    const mainTitle = names.length > 0 ? names.join(' / ') : `故人(ID: ${record.id || '新規'})`;
+
+    const details: string[] = [];
+    if (record.deathDate) details.push(`命日: ${record.deathDate}`);
+    const ageVal = record.ageAtDeath ?? record.age;
+    if (typeof ageVal === 'number') details.push(`行年・享年: ${ageVal}歳`);
+    if (record.householdHeadName) details.push(`施主・世帯: ${record.householdHeadName} 様`);
+    const detailStr = details.length > 0 ? `（${details.join(' / ')}）` : '';
+
+    const actionText = action === 'create' ? '過去帳の新規登録' : (action === 'update' ? '過去帳の更新' : '過去帳の削除');
+    return `${actionText}：${mainTitle}${detailStr}`;
+  };
+
+  const formatServiceLogDesc = (service: Partial<MemorialService>, action: 'create' | 'update' | 'delete'): string => {
+    const deceased = service.dharmaName || service.deceasedName || '故人';
+    const mType = service.memorialType || '法要';
+    const details: string[] = [];
+    if (service.scheduledDate) {
+      details.push(`日時: ${service.scheduledDate}${service.scheduledTime ? ` ${service.scheduledTime}` : ''}`);
+    }
+    if (service.chiefMourner) details.push(`施主: ${service.chiefMourner} 様`);
+    if (service.venue) details.push(`会場: ${service.venue}`);
+    if (service.notes) details.push(`備考: ${service.notes}`);
+    const detailStr = details.length > 0 ? `（${details.join(' / ')}）` : '';
+    const actionText = action === 'create' ? '法要予約の新規受付' : (action === 'update' ? '法要予約内容の変更' : '法要予約の削除');
+    return `${actionText}：${deceased}の${mType}${detailStr}`;
+  };
+
+  const formatTodoLogDesc = (todo: Partial<TempleTodo>, action: 'create' | 'update' | 'delete'): string => {
+    const title = todo.title || 'タスク';
+    const details: string[] = [];
+    if (todo.dueDate) details.push(`期日: ${todo.dueDate}`);
+    if (todo.category) details.push(`区分: ${todo.category}`);
+    if (todo.completed) details.push('完了済');
+    const detailStr = details.length > 0 ? `（${details.join(' / ')}）` : '';
+    const actionText = action === 'create' ? '寺院ToDoの追加' : (action === 'update' ? '寺院ToDoの更新' : '寺院ToDoの削除');
+    return `${actionText}：${title}${detailStr}`;
+  };
+
+  const formatFamilyMemberLogDesc = (member: Partial<FamilyMember>, action: 'create' | 'update' | 'delete', headName?: string): string => {
+    const name = member.name ? `${member.name} 様` : `家族(ID: ${member.id || '新規'})`;
+    const details: string[] = [];
+    if (member.relationship) details.push(`続柄: ${member.relationship}`);
+    if (member.phone) details.push(`電話: ${member.phone}`);
+    if (headName) details.push(`世帯主: ${headName} 様`);
+    const detailStr = details.length > 0 ? `（${details.join(' / ')}）` : '';
+    const actionText = action === 'create' ? '家族構成員の追加' : (action === 'update' ? '家族構成員の更新' : '家族構成員の削除');
+    return `${actionText}：${name}${detailStr}`;
+  };
+
+  const formatTransactionLogDesc = (tx: Partial<Transaction>, action: 'create' | 'update' | 'delete'): string => {
+    const typeStr = tx.type === '支出' ? '支出' : '収入';
+    const amountStr = typeof tx.amount === 'number' ? `¥${tx.amount.toLocaleString()}` : '';
+    const catStr = tx.category || '科目未設定';
+    const details: string[] = [];
+    if (tx.date) details.push(`日付: ${tx.date}`);
+    if (tx.householdHeadName) details.push(`世帯: ${tx.householdHeadName} 様`);
+    if (tx.notes) details.push(`摘要: ${tx.notes}`);
+    const detailStr = details.length > 0 ? `（${details.join(' / ')}）` : '';
+    const actionText = action === 'create' ? '出納記帳（新規）' : (action === 'update' ? '出納帳の修正' : '出納レコードの削除');
+    return `${actionText}：【${typeStr}】${catStr} ${amountStr}${detailStr}`;
+  };
+
   // Handlers: Household CRUD
   const handleSaveHousehold = (household: Household) => {
     const existing = households.find((h) => h.id === household.id);
@@ -3064,7 +3145,7 @@ export default function App() {
       auditedHousehold.id,
       'household',
       exists ? 'update' : 'create',
-      auditedHousehold.familyHead ? `世帯「${auditedHousehold.familyHead}」` : `世帯(${auditedHousehold.id})`,
+      formatHouseholdLogDesc(auditedHousehold, exists ? 'update' : 'create'),
       auditedHousehold.templeId,
       operator,
       deviceInfo
@@ -3122,7 +3203,7 @@ export default function App() {
           audited.id,
           'household',
           'update',
-          audited.familyHead ? `世帯「${audited.familyHead}」` : `世帯(${audited.id})`,
+          formatHouseholdLogDesc(audited, 'update'),
           audited.templeId,
           operator,
           deviceInfo
@@ -3145,7 +3226,7 @@ export default function App() {
     recordDeletedRecord(
       id,
       'household',
-      target?.familyHead ? `世帯「${target.familyHead}」` : `世帯(${id})`,
+      formatHouseholdLogDesc(target || { id }, 'delete'),
       target?.templeId,
       'delete',
       operator,
@@ -3168,7 +3249,7 @@ export default function App() {
       audited.id,
       'pastRecord',
       'create',
-      audited.dharmaName || audited.secularName || audited.id,
+      formatPastRecordLogDesc(audited, 'create'),
       audited.templeId,
       operator,
       deviceInfo
@@ -3185,7 +3266,7 @@ export default function App() {
         r.id,
         'pastRecord',
         'create',
-        r.dharmaName || r.secularName || r.id,
+        formatPastRecordLogDesc(r, 'create'),
         r.templeId,
         operator,
         deviceInfo
@@ -3203,7 +3284,7 @@ export default function App() {
       audited.id,
       'pastRecord',
       'update',
-      audited.dharmaName || audited.secularName || audited.id,
+      formatPastRecordLogDesc(audited, 'update'),
       audited.templeId,
       operator,
       deviceInfo
@@ -3218,7 +3299,7 @@ export default function App() {
     recordDeletedRecord(
       id,
       'pastRecord',
-      target?.dharmaName || target?.secularName || id,
+      formatPastRecordLogDesc(target || { id }, 'delete'),
       target?.templeId,
       'delete',
       operator,
@@ -3289,7 +3370,7 @@ export default function App() {
       auditedService.id,
       'memorialService',
       'create',
-      auditedService.notes || auditedService.deceasedName || auditedService.id,
+      formatServiceLogDesc(auditedService, 'create'),
       auditedService.templeId,
       operator,
       deviceInfo
@@ -3324,7 +3405,7 @@ export default function App() {
       auditedService.id,
       'memorialService',
       'update',
-      auditedService.notes || auditedService.deceasedName || auditedService.id,
+      formatServiceLogDesc(auditedService, 'update'),
       auditedService.templeId,
       operator,
       deviceInfo
@@ -3346,7 +3427,7 @@ export default function App() {
         const deletedTodoItems = removedTodos.map((t) => ({
           id: t.id,
           entityType: 'templeTodo' as const,
-          label: t.title,
+          label: formatTodoLogDesc(t, 'delete'),
           templeId: t.templeId,
         }));
         recordDeletedRecordsBatch(deletedTodoItems, operator, deviceInfo);
@@ -3365,7 +3446,7 @@ export default function App() {
     recordDeletedRecord(
       id,
       'memorialService',
-      existing?.notes || existing?.deceasedName || id,
+      formatServiceLogDesc(existing || { id }, 'delete'),
       existing?.templeId,
       'delete',
       operator,
@@ -3467,7 +3548,7 @@ export default function App() {
           audited.id,
           'templeTodo',
           'update',
-          audited.title || audited.id,
+          formatTodoLogDesc(audited, 'update'),
           audited.templeId,
           operator,
           deviceInfo
@@ -3479,7 +3560,7 @@ export default function App() {
         audited.id,
         'templeTodo',
         'create',
-        audited.title || audited.id,
+        formatTodoLogDesc(audited, 'create'),
         audited.templeId,
         operator,
         deviceInfo
@@ -3497,7 +3578,7 @@ export default function App() {
       audited.id,
       'templeTodo',
       'update',
-      audited.title || audited.id,
+      formatTodoLogDesc(audited, 'update'),
       audited.templeId,
       operator,
       deviceInfo
@@ -3512,7 +3593,7 @@ export default function App() {
     recordDeletedRecord(
       id,
       'templeTodo',
-      target?.title || id,
+      formatTodoLogDesc(target || { id }, 'delete'),
       target?.templeId,
       'delete',
       operator,
@@ -3536,13 +3617,37 @@ export default function App() {
   // Handlers: Family Members CRUD
   const handleAddFamilyMember = (member: FamilyMember) => {
     recordHistory(`家族「${member.name}」を追加`);
-    setFamilyMembers((prev) => [withCreationAudit(member), ...prev]);
+    const audited = withCreationAudit(member);
+    const relatedHousehold = households.find((h) => h.id === member.householdId);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      audited.id,
+      'familyMember',
+      'create',
+      formatFamilyMemberLogDesc(audited, 'create', relatedHousehold?.familyHead),
+      relatedHousehold?.templeId,
+      operator,
+      deviceInfo
+    );
+    setFamilyMembers((prev) => [audited, ...prev]);
   };
 
   const handleUpdateFamilyMember = (member: FamilyMember) => {
     recordHistory(`家族「${member.name}」を更新`);
     const existing = familyMembers.find((m) => m.id === member.id);
-    setFamilyMembers((prev) => prev.map((m) => (m.id === member.id ? withUpdateAudit(member, existing) : m)));
+    const audited = withUpdateAudit(member, existing);
+    const relatedHousehold = households.find((h) => h.id === member.householdId);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      audited.id,
+      'familyMember',
+      'update',
+      formatFamilyMemberLogDesc(audited, 'update', relatedHousehold?.familyHead),
+      relatedHousehold?.templeId,
+      operator,
+      deviceInfo
+    );
+    setFamilyMembers((prev) => prev.map((m) => (m.id === member.id ? audited : m)));
   };
 
   const handleDeleteFamilyMember = (id: string) => {
@@ -3553,7 +3658,7 @@ export default function App() {
     recordDeletedRecord(
       id,
       'familyMember',
-      target?.name || id,
+      formatFamilyMemberLogDesc(target || { id }, 'delete', relatedHousehold?.familyHead),
       relatedHousehold?.templeId,
       'delete',
       operator,
@@ -3626,7 +3731,7 @@ export default function App() {
       auditedTx.id,
       'transaction',
       'create',
-      auditedTx.notes || auditedTx.category || auditedTx.id,
+      formatTransactionLogDesc(auditedTx, 'create'),
       auditedTx.templeId,
       operator,
       deviceInfo
@@ -3652,7 +3757,7 @@ export default function App() {
         auditedTx.id,
         'transaction',
         'create',
-        auditedTx.notes || auditedTx.category || auditedTx.id,
+        formatTransactionLogDesc(auditedTx, 'create'),
         auditedTx.templeId,
         operator,
         deviceInfo
@@ -3676,7 +3781,7 @@ export default function App() {
       auditedTx.id,
       'transaction',
       'update',
-      auditedTx.notes || auditedTx.category || auditedTx.id,
+      formatTransactionLogDesc(auditedTx, 'update'),
       auditedTx.templeId,
       operator,
       deviceInfo
@@ -3691,7 +3796,7 @@ export default function App() {
     recordDeletedRecord(
       id,
       'transaction',
-      targetTx?.notes || targetTx?.category || id,
+      formatTransactionLogDesc(targetTx || { id }, 'delete'),
       targetTx?.templeId,
       'delete',
       operator,

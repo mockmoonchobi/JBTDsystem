@@ -32,6 +32,118 @@ interface OperationHistoryModalProps {
   isGoogleConnected?: boolean;
 }
 
+interface ParsedOperation {
+  headline: string;
+  subHeadline: string;
+  chips: string[];
+  recordId?: string;
+}
+
+/**
+ * Parses operation entry into a clear, human-readable headline, action summary, and detailed metadata chips.
+ */
+export function parseOperationDetails(entry: DeletedRecordEntry): ParsedOperation {
+  const rawLabel = (entry.label || '').trim();
+  const rawId = (entry.id || '').trim();
+  const actionType = entry.actionType || 'delete';
+  const entityType = entry.entityType || 'household';
+
+  const getActionPhrase = (act: string, ent: string): string => {
+    const isCreate = act === 'create' || act === 'batch_create';
+    const isUpdate = act === 'update' || act === 'undo';
+
+    switch (ent) {
+      case 'household':
+        return isCreate ? '世帯台帳の新規登録' : (isUpdate ? '世帯情報の更新・変更' : '世帯台帳の削除');
+      case 'familyMember':
+        return isCreate ? '世帯家族の追加登録' : (isUpdate ? '家族構成員の更新' : '家族構成員の削除');
+      case 'pastRecord':
+        return isCreate ? '過去帳（故人精霊）の新規登録' : (isUpdate ? '過去帳（命日・施主情報等）の更新' : '過去帳レコードの削除');
+      case 'memorialService':
+        return isCreate ? '法要予約の新規受付' : (isUpdate ? '法要予約内容の変更' : '法要予約の取り消し・削除');
+      case 'transaction':
+        return isCreate ? '出納帳（入出金）の新規記帳' : (isUpdate ? '出納帳レコードの修正' : '出納レコードの削除');
+      case 'templeTodo':
+        return isCreate ? '寺院ToDoタスクの追加' : (isUpdate ? '寺院ToDoタスクの更新' : '寺院ToDoタスクの削除');
+      case 'priest':
+        return '登録僧侶名簿の更新保存';
+      case 'temple':
+        return '寺院基本情報・兼務寺院設定の更新';
+      case 'disasterMemorial':
+        return isCreate ? '戦没・災害物故者命日設定の登録' : (isUpdate ? '戦没・災害物故者命日設定の更新' : '戦没・災害物故者命日設定の削除');
+      case 'noticeTemplate':
+        return '案内文テンプレートの設定保存';
+      case 'master':
+        return 'マスタ設定（区分・勘定科目）の変更';
+      case 'batchAccounting':
+        return '一括会計受付データの更新';
+      default:
+        return isCreate ? '新規登録' : (isUpdate ? '変更・更新' : '削除');
+    }
+  };
+
+  let headline = '';
+  let subHeadline = '';
+  const chips: string[] = [];
+
+  if (rawLabel) {
+    // 1. Structured format: "操作種別名：対象名（詳細情報）"
+    const colonIdx = rawLabel.indexOf('：') !== -1 ? rawLabel.indexOf('：') : rawLabel.indexOf(': ');
+    if (colonIdx > 0 && colonIdx < 35) {
+      subHeadline = rawLabel.substring(0, colonIdx).trim();
+      let rest = rawLabel.substring(colonIdx + (rawLabel.charAt(colonIdx) === '：' ? 1 : 2)).trim();
+
+      // Extract parentheses at the end if present: （...） or (...)
+      const parenMatch = rest.match(/([（(])([^）)]+)([）)])$/);
+      if (parenMatch) {
+        const inside = parenMatch[2].trim();
+        rest = rest.substring(0, parenMatch.index).trim();
+        const parts = inside.split(/\s*[/／、]\s*/).filter(Boolean);
+        chips.push(...parts);
+      }
+      headline = rest;
+    } else {
+      // 2. Pattern with Japanese quotes: e.g. 世帯「佐藤 太郎」を更新 / 世帯「佐藤 太郎」
+      const fullQuoteMatch = rawLabel.match(/^(.+?)「(.+?)」を?(追加|更新|削除|変更)?$/);
+      if (fullQuoteMatch) {
+        headline = fullQuoteMatch[2].trim();
+        const actionVerb = fullQuoteMatch[3];
+        if (actionVerb) {
+          const act = actionVerb === '追加' ? 'create' : (actionVerb === '削除' ? 'delete' : 'update');
+          subHeadline = getActionPhrase(act, entityType);
+        } else {
+          subHeadline = getActionPhrase(actionType, entityType);
+        }
+      } else {
+        headline = rawLabel;
+        subHeadline = getActionPhrase(actionType, entityType);
+      }
+    }
+  } else {
+    headline = rawId || '対象名称未設定';
+    subHeadline = getActionPhrase(actionType, entityType);
+  }
+
+  // Fallback if headline is empty
+  if (!headline) {
+    headline = rawId ? `管理番号: ${rawId}` : '対象未指定';
+  }
+
+  // Household naming polish
+  if (entityType === 'household' && !headline.endsWith('様') && !headline.includes('世帯') && !headline.startsWith('ID:')) {
+    headline = `${headline} 様`;
+  }
+
+  const recordId = rawId && !rawId.startsWith('LOG-') ? rawId : undefined;
+
+  return {
+    headline,
+    subHeadline: subHeadline || getActionPhrase(actionType, entityType),
+    chips,
+    recordId,
+  };
+}
+
 export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
   isOpen,
   onClose,
@@ -89,10 +201,10 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
         const rawOp = (r.operator || '').toLowerCase();
         const matchLabel = (r.label || '').toLowerCase().includes(term);
         const matchId = (r.id || '').toLowerCase().includes(term);
-        const matchLogId = (r.logId || '').toLowerCase().includes(term);
+        const matchEntity = getEntityLabel(r.entityType).toLowerCase().includes(term);
         const matchOperator = displayOp.includes(term) || rawOp.includes(term);
         const matchDevice = (r.deviceInfo || '').toLowerCase().includes(term);
-        if (!matchLabel && !matchId && !matchLogId && !matchOperator && !matchDevice) {
+        if (!matchLabel && !matchId && !matchEntity && !matchOperator && !matchDevice) {
           return false;
         }
       }
@@ -293,7 +405,7 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="対象名、ID、操作者、端末情報で検索..."
+                placeholder="操作内容、対象名、操作者、端末等で検索..."
                 className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-slate-50/50"
               />
               {searchTerm && (
@@ -349,83 +461,111 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                 <table className="w-full text-left text-sm border-collapse">
                   <thead>
                     <tr className="bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-600">
-                      <th className="py-3 px-3.5 whitespace-nowrap">履歴ID</th>
                       <th className="py-3 px-3.5 whitespace-nowrap">操作種別</th>
                       <th className="py-3 px-3.5 whitespace-nowrap">データ対象</th>
-                      <th className="py-3 px-3.5">対象名称 / 内容</th>
+                      <th className="py-3 px-3.5 min-w-[280px]">操作内容 / 詳細</th>
                       <th className="py-3 px-3.5 whitespace-nowrap">操作日時</th>
                       <th className="py-3 px-3.5 whitespace-nowrap">操作者</th>
                       <th className="py-3 px-3.5 whitespace-nowrap">端末</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {filteredRecords.map((entry, idx) => (
-                      <tr key={entry.logId || `${entry.id}-${idx}`} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-2.5 px-3.5 font-mono text-xs text-slate-400 whitespace-nowrap">
-                          {entry.logId || `LOG-${idx + 1}`}
-                        </td>
-                        <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          {getActionBadge(entry.actionType)}
-                        </td>
-                        <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200 font-medium">
-                            {getEntityLabel(entry.entityType)}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3.5">
-                          <div className="font-medium text-slate-800">{entry.label || '-'}</div>
-                          <div className="text-xs font-mono text-slate-400">ID: {entry.id}</div>
-                        </td>
-                        <td className="py-2.5 px-3.5 whitespace-nowrap text-xs text-slate-600">
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="w-3.5 h-3.5 text-slate-400" />
-                            {formatDate(entry.deletedTimestamp || entry.deletedAt)}
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3.5 whitespace-nowrap text-xs">
-                          {(() => {
-                            const opName = getDisplayOperatorName(entry.operator, entry.deviceInfo);
-                            const activeGoogle = currentUser?.displayName || currentUser?.email || (typeof window !== 'undefined' ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email')) : '');
-                            const isMe = activeGoogle && (
-                              opName.toLowerCase() === activeGoogle.toLowerCase() ||
-                              (currentUser?.email && opName.toLowerCase() === currentUser.email.toLowerCase()) ||
-                              (currentUser?.displayName && opName === currentUser.displayName)
-                            );
-                            const isUnlinked = opName === 'Google未連携' || opName === '未ログイン';
-
-                            return (
-                              <div className="flex items-center gap-1.5">
-                                {isMe ? (
-                                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                ) : isUnlinked ? (
-                                  <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                ) : (
-                                  <UserIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                )}
-                                <span className={isMe ? 'font-semibold text-emerald-900' : (isUnlinked ? 'text-slate-500' : 'font-medium text-slate-800')}>
-                                  {opName}
+                    {filteredRecords.map((entry, idx) => {
+                      const parsed = parseOperationDetails(entry);
+                      return (
+                        <tr key={entry.logId || `${entry.id}-${idx}`} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            {getActionBadge(entry.actionType)}
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                              {getEntityLabel(entry.entityType)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3.5">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-baseline gap-2">
+                                <span className="font-semibold text-slate-900 text-sm">
+                                  {parsed.headline}
                                 </span>
-                                {isMe && (
-                                  <span className="text-[10px] px-1 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xs font-normal">
-                                    現在のアカウント
-                                  </span>
-                                )}
+                                <span className="text-xs text-slate-500 font-medium">
+                                  — {parsed.subHeadline}
+                                </span>
                               </div>
-                            );
-                          })()}
-                        </td>
-                        <td className="py-2.5 px-3.5 whitespace-nowrap text-xs text-slate-500">
-                          <div className="flex items-center gap-1">
-                            {entry.deviceInfo?.includes('スマホ') ? (
-                              <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-                            ) : (
-                              <Monitor className="w-3.5 h-3.5 text-slate-400" />
-                            )}
-                            <span>{entry.deviceInfo || 'PC'}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {parsed.chips.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                  {parsed.chips.map((chip, cIdx) => (
+                                    <span
+                                      key={cIdx}
+                                      className="inline-flex items-center text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/80 leading-tight"
+                                    >
+                                      {chip}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {parsed.recordId && (
+                                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 pt-0.5">
+                                  <span className="text-slate-300">管理番号:</span>
+                                  <span>{parsed.recordId}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap text-xs text-slate-600">
+                            <div className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
+                              {formatDate(entry.deletedTimestamp || entry.deletedAt)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap text-xs">
+                            {(() => {
+                              const opName = getDisplayOperatorName(entry.operator, entry.deviceInfo);
+                              const activeGoogle = currentUser?.displayName || currentUser?.email || (typeof window !== 'undefined' ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email')) : '');
+                              const isMe = activeGoogle && (
+                                opName.toLowerCase() === activeGoogle.toLowerCase() ||
+                                (currentUser?.email && opName.toLowerCase() === currentUser.email.toLowerCase()) ||
+                                (currentUser?.displayName && opName === currentUser.displayName)
+                              );
+                              const isUnlinked = opName === 'Google未連携' || opName === '未ログイン';
+
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  {isMe ? (
+                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  ) : isUnlinked ? (
+                                    <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                  ) : (
+                                    <UserIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                  )}
+                                  <span className={isMe ? 'font-semibold text-emerald-900' : (isUnlinked ? 'text-slate-500' : 'font-medium text-slate-800')}>
+                                    {opName}
+                                  </span>
+                                  {isMe && (
+                                    <span
+                                      className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-medium shrink-0"
+                                      title="現在ログイン中のGoogleアカウント"
+                                    >
+                                      自分
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-3 px-3.5 whitespace-nowrap text-xs text-slate-500">
+                            <div className="flex items-center gap-1">
+                              {entry.deviceInfo?.includes('スマホ') ? (
+                                <Smartphone className="w-3.5 h-3.5 text-slate-400" />
+                              ) : (
+                                <Monitor className="w-3.5 h-3.5 text-slate-400" />
+                              )}
+                              <span>{entry.deviceInfo || 'PC'}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

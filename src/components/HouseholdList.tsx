@@ -46,6 +46,8 @@ import { Household, PastRecord, Transaction, TransactionCategory, MasterOptions,
 import { calculateMemorialMilestones, getJapaneseEra, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions, calculateNiibonFromDeathDate, isRelevantNiibon, sortHouseholds, formatCurrency, getHouseholdSponsorName, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, toggleHouseholdSponsorSegakiToba, getHouseholdNiibonStatus } from '../utils/memorialCalculator';
 import { SingleHouseholdKakochoImportModal } from './SingleHouseholdKakochoImportModal';
 import { HouseholdFeeInput } from './HouseholdFeeInput';
+import { HouseholdHeadInlineEditor } from './HouseholdHeadInlineEditor';
+import { InlineFamilyMemberEditor } from './InlineFamilyMemberEditor';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 
@@ -2824,25 +2826,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 </div>
 
                 {isEditingHouseholdInline && inlineHouseholdForm ? (
-                  <div className="space-y-1 pt-1">
-                    <input
-                      type="text"
-                      value={inlineHouseholdForm.furigana}
-                      onChange={(e) => setInlineHouseholdForm({ ...inlineHouseholdForm, furigana: e.target.value })}
-                      placeholder="フリガナ"
-                      className="bg-[#2A2A2A] text-white border border-[#555] px-2 py-1 text-xs w-full max-w-sm"
-                    />
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={inlineHouseholdForm.familyHead}
-                        onChange={(e) => setInlineHouseholdForm({ ...inlineHouseholdForm, familyHead: e.target.value })}
-                        placeholder="世帯主名"
-                        className="bg-white text-[#1A1A1A] border border-[#D4AF37] px-3 py-1 font-bold text-lg w-full max-w-sm"
-                      />
-                      <span className="text-[#CCCCCC]">様</span>
-                    </div>
-                  </div>
+                  <HouseholdHeadInlineEditor
+                    familyHead={inlineHouseholdForm.familyHead}
+                    furigana={inlineHouseholdForm.furigana}
+                    onChangeHead={(head) => setInlineHouseholdForm((prev) => (prev ? { ...prev, familyHead: head } : null))}
+                    onChangeFurigana={(furi) => setInlineHouseholdForm((prev) => (prev ? { ...prev, furigana: furi } : null))}
+                  />
                 ) : (
                   <>
                     <div className="text-xs text-[#CCCCCC] font-sans tracking-wide">{currentIndividualHousehold.furigana}</div>
@@ -3562,150 +3551,39 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {inlineFamilyMembers.map((member, idx) => (
-                        <div key={`inline-fm-${member.id || idx}-${idx}`} className={`bg-white border p-3 space-y-2 shadow-sm ${member.isChiefMourner || member.isSponsor ? 'border-[#8C2D19] ring-1 ring-[#8C2D19]/40' : 'border-[#1A1A1A]'}`}>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              placeholder="氏名（例: 山田 太郎）"
-                              value={member.name}
-                              onChange={(e) => {
-                                const updated = [...inlineFamilyMembers];
-                                updated[idx] = { ...updated[idx], name: e.target.value };
-                                setInlineFamilyMembers(updated);
-                              }}
-                              className="bg-[#F9F7F2] border border-[#D1CEC7] p-1.5 text-xs text-[#1A1A1A] font-bold w-full focus:border-[#1A1A1A] focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              placeholder="ふりがな"
-                              value={member.furigana || ''}
-                              onChange={(e) => {
-                                const updated = [...inlineFamilyMembers];
-                                updated[idx] = { ...updated[idx], furigana: e.target.value };
-                                setInlineFamilyMembers(updated);
-                              }}
-                              className="bg-[#F9F7F2] border border-[#D1CEC7] p-1.5 text-xs text-[#1A1A1A] w-28 focus:border-[#1A1A1A] focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              placeholder="続柄"
-                              value={member.relationship}
-                              onChange={(e) => {
-                                const updated = [...inlineFamilyMembers];
-                                updated[idx] = { ...updated[idx], relationship: e.target.value };
-                                setInlineFamilyMembers(updated);
-                              }}
-                              className="bg-[#F9F7F2] border border-[#D1CEC7] p-1.5 text-xs text-[#1A1A1A] font-bold w-20 focus:border-[#1A1A1A] focus:outline-none"
-                            />
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              placeholder="電話番号"
-                              value={member.phone || ''}
-                              onChange={(e) => {
-                                const updated = [...inlineFamilyMembers];
-                                updated[idx] = { ...updated[idx], phone: e.target.value };
-                                setInlineFamilyMembers(updated);
-                              }}
-                              className="bg-[#F9F7F2] border border-[#D1CEC7] p-1.5 text-xs font-mono text-[#1A1A1A] w-full focus:border-[#1A1A1A] focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setInlineFamilyMembers(inlineFamilyMembers.filter((_, i) => i !== idx));
-                              }}
-                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 font-bold shrink-0"
-                              title="この家族を削除"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#F0ECE1]">
-                            <input
-                              type="text"
-                              placeholder="住所（別居・現住所等）"
-                              value={member.address || ''}
-                              onChange={(e) => {
-                                const updated = [...inlineFamilyMembers];
-                                updated[idx] = { ...updated[idx], address: e.target.value };
-                                setInlineFamilyMembers(updated);
-                              }}
-                              className="bg-[#FAF9F5] border border-[#D1CEC7] p-1 text-[11px] text-[#1A1A1A] flex-1 min-w-[140px] focus:border-[#1A1A1A] focus:outline-none"
-                            />
-                            {/* 施主指定チェックボックス */}
-                            <label className={`flex items-center space-x-1 cursor-pointer px-2 py-1 border shrink-0 transition-colors ${member.isChiefMourner || member.isSponsor ? 'bg-[#8C2D19] text-white border-[#8C2D19]' : 'bg-stone-100 text-[#1A1A1A] border-[#CCCCCC] hover:border-[#8C2D19]'}`} title="この人物を世帯の「現在の施主」として指定（他地域在住の子息など）">
-                              <input
-                                type="checkbox"
-                                checked={!!(member.isChiefMourner || member.isSponsor)}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  const updated = inlineFamilyMembers.map((m, i) => ({
-                                    ...m,
-                                    isChiefMourner: i === idx ? checked : false,
-                                    isSponsor: i === idx ? checked : false,
-                                  }));
-                                  setInlineFamilyMembers(updated);
-                                }}
-                                className="w-3.5 h-3.5 accent-[#8C2D19]"
-                              />
-                              <span className="font-bold text-[10px]">施主指定</span>
-                            </label>
-                          </div>
-
-                          {/* 家族の塔婆申込 & 為書き設定 (スロット一覧) */}
-                          <div className="pt-2 border-t border-[#F0ECE1] space-y-1.5 bg-[#FAF9F5] p-2">
-                            <span className="block text-[10px] font-bold text-[#555555]">塔婆申込・為書き:</span>
-                            {individualTobaSlots.map((slot) => {
-                              const tobaType = slot.name;
-                              const app = getFamilyMemberTobaApplication(member, tobaType, individualHouseholdTemple);
-                              return (
-                                <div key={slot.slot} className="space-y-1 p-1 bg-white border border-[#E5E2DC]">
-                                  <label className="flex items-center space-x-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={!!app.applied}
-                                      onChange={(e) => {
-                                        const updatedMember = setFamilyMemberTobaApplication(
-                                          member,
-                                          tobaType,
-                                          e.target.checked,
-                                          app.tamegaki,
-                                          individualHouseholdTemple
-                                        );
-                                        const updated = [...inlineFamilyMembers];
-                                        updated[idx] = updatedMember;
-                                        setInlineFamilyMembers(updated);
-                                      }}
-                                      className="w-3.5 h-3.5 accent-[#1A1A1A]"
-                                    />
-                                    <span className="font-bold text-[10px] text-[#1A1A1A]">{tobaType}</span>
-                                  </label>
-                                  {app.applied && (
-                                    <input
-                                      type="text"
-                                      placeholder="為書き (例: 亡〇〇)"
-                                      value={app.tamegaki || ''}
-                                      onChange={(e) => {
-                                        const updatedMember = setFamilyMemberTobaApplication(
-                                          member,
-                                          tobaType,
-                                          true,
-                                          e.target.value,
-                                          individualHouseholdTemple
-                                        );
-                                        const updated = [...inlineFamilyMembers];
-                                        updated[idx] = updatedMember;
-                                        setInlineFamilyMembers(updated);
-                                      }}
-                                      className="bg-[#FAF9F5] border border-[#1A1A1A] p-1 text-[11px] text-[#1A1A1A] font-serif w-full focus:outline-none"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
+                        <InlineFamilyMemberEditor
+                          key={`inline-fm-${member.id || idx}-${idx}`}
+                          member={member}
+                          index={idx}
+                          tobaSlots={individualTobaSlots}
+                          temple={individualHouseholdTemple}
+                          onUpdateField={(field, value) => {
+                            setInlineFamilyMembers((prev) => {
+                              const updated = [...prev];
+                              updated[idx] = { ...updated[idx], [field]: value };
+                              return updated;
+                            });
+                          }}
+                          onUpdateMember={(updatedMember) => {
+                            setInlineFamilyMembers((prev) => {
+                              const updated = [...prev];
+                              updated[idx] = updatedMember;
+                              return updated;
+                            });
+                          }}
+                          onRemove={() => {
+                            setInlineFamilyMembers((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          onSetChiefMourner={(checked) => {
+                            setInlineFamilyMembers((prev) =>
+                              prev.map((m, i) => ({
+                                ...m,
+                                isChiefMourner: i === idx ? checked : false,
+                                isSponsor: i === idx ? checked : false,
+                              }))
+                            );
+                          }}
+                        />
                       ))}
                     </div>
                   )}
