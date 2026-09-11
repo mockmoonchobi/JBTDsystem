@@ -41,9 +41,9 @@ export const HOUSEHOLD_MAPPING_FIELDS: ColumnMappingField[] = [
   { key: 'toba2Tamegaki', label: '塔婆申込２為書き', description: '例: 先祖代々供養', aliases: ['塔婆申込２為書き', '塔婆申込2為書き', '塔婆申込２為書', 'toba2Tamegaki'] },
   { key: 'toba3Applied', label: '塔婆申込３', description: '例: 申込済 / 未申込', aliases: ['塔婆申込３', '塔婆申込3', '塔婆申込３申込', '塔婆申込3申込', 'toba3Applied'] },
   { key: 'toba3Tamegaki', label: '塔婆申込３為書き', description: '例: 先祖代々供養', aliases: ['塔婆申込３為書き', '塔婆申込3為書き', '塔婆申込３為書', 'toba3Tamegaki'] },
-  { key: 'fee1Amount', label: '集金１金額', description: '例: 5000 (個別設定金額)', aliases: ['集金１金額', '集金1金額', '集金１', '集金1', '護持会費', 'fee1Amount', 'fee1'] },
-  { key: 'fee2Amount', label: '集金２金額', description: '例: 3000 (個別設定金額)', aliases: ['集金２金額', '集金2金額', '集金２', '集金2', '墓地管理費', 'fee2Amount', 'fee2'] },
-  { key: 'fee3Amount', label: '集金３金額', description: '例: 2000 (個別設定金額)', aliases: ['集金３金額', '集金3金額', '集金３', '集金3', '境内整備費', 'fee3Amount', 'fee3'] },
+  { key: 'fee1Amount', label: '集金１金額', description: '例: 5000 (個別設定金額・年会費等)', aliases: ['集金１', '集金1', '集金１金額', '集金1金額', '集金項目１', '集金項目1', '集金項目１金額', '集金項目1金額', '護持会費', 'fee1Amount', 'fee1'] },
+  { key: 'fee2Amount', label: '集金２金額', description: '例: 3000 (個別設定金額・墓地管理費等)', aliases: ['集金２', '集金2', '集金２金額', '集金2金額', '集金項目２', '集金項目2', '集金項目２金額', '集金項目2金額', '墓地管理費', 'fee2Amount', 'fee2'] },
+  { key: 'fee3Amount', label: '集金３金額', description: '例: 2000 (個別設定金額・境内整備費等)', aliases: ['集金３', '集金3', '集金３金額', '集金3金額', '集金項目３', '集金項目3', '集金項目３金額', '集金項目3金額', '境内整備費', 'fee3Amount', 'fee3'] },
   { key: 'isSegakiToba', label: '施餓鬼塔婆申込 (旧互換)', description: '例: 申込済 / 未申込', aliases: ['施餓鬼塔婆申込', '施餓鬼塔婆', '施餓鬼申込', '施餓鬼'] },
   { key: 'segakiTamegaki', label: '施餓鬼為書き (旧互換)', description: '例: 先祖代々供養', aliases: ['施餓鬼為書き', '為書き', '施餓鬼為書'] },
   { key: 'tanagyoMonthlyVisit', label: '棚経・月参り対象', description: '例: 対象 / 未対象', aliases: ['棚経・月参り対象', '棚経・月参り', '棚経月参り', '棚経対象', '棚経', '月参り', 'tanagyoMonthlyVisit'] },
@@ -86,6 +86,9 @@ export const COMBINED_MAPPING_FIELDS: ColumnMappingField[] = [
   { key: 'householdType', label: '【檀家】区分１', description: '例: 正檀家', aliases: ['区分1', '区分１', '檀家区分', '種別', '檀家種別', '区分'] },
   { key: 'status', label: '【檀家】区分２', description: '例: 健在', aliases: ['区分2', '区分２', '状態', '状況', 'ステータス', '状態区分'] },
   { key: 'tombNumber', label: '【檀家】墓地番号', description: '例: A-1', aliases: ['墓地番号', '墓地', '区画'] },
+  { key: 'fee1Amount', label: '【檀家】集金１金額', description: '例: 5000 (個別設定金額・年会費等)', aliases: ['集金１', '集金1', '集金１金額', '集金1金額', '集金項目１', '集金項目1', '集金項目１金額', '集金項目1金額', '護持会費', 'fee1Amount', 'fee1'] },
+  { key: 'fee2Amount', label: '【檀家】集金２金額', description: '例: 3000 (個別設定金額・墓地管理費等)', aliases: ['集金２', '集金2', '集金２金額', '集金2金額', '集金項目２', '集金項目2', '集金項目２金額', '集金項目2金額', '墓地管理費', 'fee2Amount', 'fee2'] },
+  { key: 'fee3Amount', label: '【檀家】集金３金額', description: '例: 2000 (個別設定金額・境内整備費等)', aliases: ['集金３', '集金3', '集金３金額', '集金3金額', '集金項目３', '集金項目3', '集金項目３金額', '集金項目3金額', '境内整備費', 'fee3Amount', 'fee3'] },
   { key: 'isSegakiToba', label: '【檀家】施餓鬼塔婆申込', description: '例: 申込済 / 未申込', aliases: ['施餓鬼塔婆申込', '施餓鬼塔婆', '施餓鬼申込', '施餓鬼', '塔婆申込', 'isSegakiToba'] },
   { key: 'segakiTamegaki', label: '【檀家】施餓鬼為書き', description: '例: 先祖代々供養', aliases: ['施餓鬼為書き', '為書き', '施餓鬼為書', '為書', 'segakiTamegaki'] },
   { key: 'tanagyoMonthlyVisit', label: '【檀家】棚経・月参り対象', description: '例: 対象 / 未対象', aliases: ['棚経・月参り対象', '棚経・月参り', '棚経月参り', '棚経対象', '棚経', '月参り', 'tanagyoMonthlyVisit'] },
@@ -297,6 +300,17 @@ export function cleanAmount(val: string | number | undefined): number {
   str = str.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
+}
+
+export function parseImportFee(val: string | number | undefined): number | undefined {
+  if (val === undefined || val === null || val === '') return undefined;
+  if (typeof val === 'number') return isNaN(val) ? undefined : val;
+  let str = String(val).trim().replace(/[,，¥￥円\s]/g, '');
+  str = str.replace(/[０-９]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xfee0));
+  str = str.replace(/[^0-9.-]/g, '');
+  if (!str) return undefined;
+  const num = parseFloat(str);
+  return isNaN(num) ? undefined : num;
 }
 
 /**
@@ -601,16 +615,9 @@ export function convertTableToData(
       const rawFee1 = getCell(row, 'fee1Amount');
       const rawFee2 = getCell(row, 'fee2Amount');
       const rawFee3 = getCell(row, 'fee3Amount');
-      const parseFee = (v: string): number | undefined => {
-        if (!v) return undefined;
-        const cleaned = v.replace(/[^0-9.-]/g, '');
-        if (!cleaned) return undefined;
-        const n = Number(cleaned);
-        return isNaN(n) ? undefined : n;
-      };
-      const fee1Amount = parseFee(rawFee1);
-      const fee2Amount = parseFee(rawFee2);
-      const fee3Amount = parseFee(rawFee3);
+      const fee1Amount = parseImportFee(rawFee1);
+      const fee2Amount = parseImportFee(rawFee2);
+      const fee3Amount = parseImportFee(rawFee3);
 
       const tanagyoVal = getCell(row, 'tanagyoMonthlyVisit');
       const tanagyoMonthlyVisit = tanagyoVal === '対象' || tanagyoVal === '棚経' || tanagyoVal === '月参り' || tanagyoVal === '有' || tanagyoVal === '1' || tanagyoVal.toLowerCase() === 'true' || (tanagyoVal.includes('対象') && !tanagyoVal.includes('未'));
@@ -653,9 +660,18 @@ export function convertTableToData(
         if (toba2Tamegaki !== undefined && toba2Tamegaki !== '') existing.toba2Tamegaki = toba2Tamegaki;
         if (toba3Val) existing.toba3Applied = toba3Applied;
         if (toba3Tamegaki !== undefined && toba3Tamegaki !== '') existing.toba3Tamegaki = toba3Tamegaki;
-        if (fee1Amount !== undefined) existing.fee1Amount = fee1Amount;
-        if (fee2Amount !== undefined) existing.fee2Amount = fee2Amount;
-        if (fee3Amount !== undefined) existing.fee3Amount = fee3Amount;
+        if (fee1Amount !== undefined) {
+          existing.fee1Amount = fee1Amount;
+          existing.fee1 = fee1Amount;
+        }
+        if (fee2Amount !== undefined) {
+          existing.fee2Amount = fee2Amount;
+          existing.fee2 = fee2Amount;
+        }
+        if (fee3Amount !== undefined) {
+          existing.fee3Amount = fee3Amount;
+          existing.fee3 = fee3Amount;
+        }
         if (tanagyoVal) existing.tanagyoMonthlyVisit = tanagyoMonthlyVisit;
         if (tanagyoAddress) existing.tanagyoAddress = tanagyoAddress;
         if (tanagyoNotes) existing.tanagyoNotes = tanagyoNotes;
@@ -700,6 +716,9 @@ export function convertTableToData(
           fee1Amount,
           fee2Amount,
           fee3Amount,
+          fee1: fee1Amount,
+          fee2: fee2Amount,
+          fee3: fee3Amount,
           tanagyoMonthlyVisit,
           tanagyoAddress: tanagyoAddress || undefined,
           tanagyoNotes: tanagyoNotes || undefined,
@@ -893,6 +912,13 @@ export function convertTableToData(
       const tanagyoMonthlyVisit = tanagyoVal === '対象' || tanagyoVal === '棚経' || tanagyoVal === '月参り' || tanagyoVal === '有' || tanagyoVal === '1' || tanagyoVal.toLowerCase() === 'true' || (tanagyoVal.includes('対象') && !tanagyoVal.includes('未'));
       const tanagyoAddress = getCell(row, 'tanagyoAddress');
       const tanagyoNotes = getCell(row, 'tanagyoNotes');
+      const rawFee1 = getCell(row, 'fee1Amount');
+      const rawFee2 = getCell(row, 'fee2Amount');
+      const rawFee3 = getCell(row, 'fee3Amount');
+      const fee1Amount = parseImportFee(rawFee1);
+      const fee2Amount = parseImportFee(rawFee2);
+      const fee3Amount = parseImportFee(rawFee3);
+
       const deathDate = normalizeDateInput(getCell(row, 'deathDate'));
       const ageAtDeath = cleanAge(getCell(row, 'ageAtDeath'));
       const relationship = getCell(row, 'relationship') || ''; // 空欄時は空のまま
@@ -934,6 +960,12 @@ export function convertTableToData(
           tanagyoMonthlyVisit,
           tanagyoAddress: tanagyoAddress || undefined,
           tanagyoNotes: tanagyoNotes || undefined,
+          fee1Amount,
+          fee2Amount,
+          fee3Amount,
+          fee1: fee1Amount,
+          fee2: fee2Amount,
+          fee3: fee3Amount,
           qrToken: `QR-${id}-${Date.now().toString(36).toUpperCase()}`,
           familyMembers: [],
           createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
@@ -956,6 +988,18 @@ export function convertTableToData(
           if (tanagyoVal) h.tanagyoMonthlyVisit = tanagyoMonthlyVisit;
           if (tanagyoAddress) h.tanagyoAddress = tanagyoAddress;
           if (tanagyoNotes) h.tanagyoNotes = tanagyoNotes;
+          if (fee1Amount !== undefined) {
+            h.fee1Amount = fee1Amount;
+            h.fee1 = fee1Amount;
+          }
+          if (fee2Amount !== undefined) {
+            h.fee2Amount = fee2Amount;
+            h.fee2 = fee2Amount;
+          }
+          if (fee3Amount !== undefined) {
+            h.fee3Amount = fee3Amount;
+            h.fee3 = fee3Amount;
+          }
           h.createdDate = h.createdDate || createdDate;
           h.createdTime = h.createdTime || createdTime;
           h.updatedDate = rawUDate || importAudit.date;
@@ -1080,11 +1124,11 @@ export function downloadSampleTemplate(type: ImportTargetType, format: 'xlsx' | 
 
   if (type === 'household') {
     sheetName = '檀家名簿ひな形';
-    headers = ['檀家ID', '世帯主名', 'フリガナ', '郵便番号', '住所', '電話番号', '携帯番号', '総代・世話人', '墓地番号', '区分１', '区分２', '備考'];
+    headers = ['檀家ID', '世帯主名', 'フリガナ', '郵便番号', '住所', '電話番号', '携帯番号', '総代・世話人', '墓地番号', '区分１', '区分２', '集金１', '集金２', '集金３', '備考'];
     sampleRows = [
-      ['DK-00101', '山田 太郎', 'ヤマダ タロウ', '105-0011', '東京都港区芝公園4-7-35', '03-1234-5678', '090-1111-2222', '東地区 (世話人)', 'A-12', '正檀家', '健在', '世話人幹事'],
-      ['DK-00102', '佐藤 一郎', 'サトウ イチロウ', '105-0012', '東京都港区芝大門1-2-3', '03-9876-5432', '', '西地区 (総代)', 'B-05', '信徒', '', ''],
-      ['DK-00103', '高橋 和子', 'タカハシ カズコ', '108-0073', '東京都港区三田2-5-8', '03-5555-4444', '080-3333-5555', '', 'C-21', '', '遠方', '長男同居'],
+      ['DK-00101', '山田 太郎', 'ヤマダ タロウ', '105-0011', '東京都港区芝公園4-7-35', '03-1234-5678', '090-1111-2222', '東地区 (世話人)', 'A-12', '正檀家', '健在', 5000, 3000, 2000, '世話人幹事'],
+      ['DK-00102', '佐藤 一郎', 'サトウ イチロウ', '105-0012', '東京都港区芝大門1-2-3', '03-9876-5432', '', '西地区 (総代)', 'B-05', '信徒', '', 5000, '', '', ''],
+      ['DK-00103', '高橋 和子', 'タカハシ カズコ', '108-0073', '東京都港区三田2-5-8', '03-5555-4444', '080-3333-5555', '', 'C-21', '', '遠方', '', '', '', '長男同居'],
     ];
   } else if (type === 'past_record') {
     sheetName = '過去帳ひな形';
@@ -1096,11 +1140,11 @@ export function downloadSampleTemplate(type: ImportTargetType, format: 'xlsx' | 
     ];
   } else if (type === 'combined') {
     sheetName = '檀家・過去帳統合ひな形';
-    headers = ['檀家ID', '世帯主名', 'フリガナ', '郵便番号', '住所', '電話番号', '総代・世話人', '墓地番号', '区分１', '区分２', '戒名・法名', '俗名', '没年月日', '享年', '続柄'];
+    headers = ['檀家ID', '世帯主名', 'フリガナ', '郵便番号', '住所', '電話番号', '総代・世話人', '墓地番号', '区分１', '区分２', '集金１', '集金２', '集金３', '戒名・法名', '俗名', '没年月日', '享年', '続柄'];
     sampleRows = [
-      ['DK-00101', '山田 太郎', 'ヤマダ タロウ', '105-0011', '東京都港区芝公園4-7-35', '03-1234-5678', '東地区', 'A-12', '正檀家', '健在', '釋慈光信士', '山田 清吉', '平成15年4月10日', 84, '父'],
-      ['DK-00101', '山田 太郎', 'ヤマダ タロウ', '105-0011', '東京都港区芝公園4-7-35', '03-1234-5678', '東地区', 'A-12', '正檀家', '', '法敬院妙蓮大姉', '山田 鶴', '平成28年11月23日', 89, '母'],
-      ['DK-00102', '佐藤 一郎', 'サトウ イチロウ', '105-0012', '東京都港区芝大門1-2-3', '03-9876-5432', '西地区', 'B-05', '信徒', '', '徳翁道純居士', '佐藤 栄作', '令和3年8月15日', 92, '祖父'],
+      ['DK-00101', '山田 太郎', 'ヤマダ タロウ', '105-0011', '東京都港区芝公園4-7-35', '03-1234-5678', '東地区', 'A-12', '正檀家', '健在', 5000, 3000, 2000, '釋慈光信士', '山田 清吉', '平成15年4月10日', 84, '父'],
+      ['DK-00101', '山田 太郎', 'ヤマダ タロウ', '105-0011', '東京都港区芝公園4-7-35', '03-1234-5678', '東地区', 'A-12', '正檀家', '', '', '', '', '法敬院妙蓮大姉', '山田 鶴', '平成28年11月23日', 89, '母'],
+      ['DK-00102', '佐藤 一郎', 'サトウ イチロウ', '105-0012', '東京都港区芝大門1-2-3', '03-9876-5432', '西地区', 'B-05', '信徒', '', 5000, '', '', '徳翁道純居士', '佐藤 栄作', '令和3年8月15日', 92, '祖父'],
     ];
   } else if (type === 'accounting') {
     sheetName = '出納ひな形';

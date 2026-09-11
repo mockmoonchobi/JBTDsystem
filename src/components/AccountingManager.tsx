@@ -615,7 +615,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                   </th>
                   <th
                     onClick={() => handleSort('householdHeadName')}
-                    className="sticky top-0 bg-[#1A1A1A] px-3 py-2.5 font-bold whitespace-nowrap cursor-pointer hover:bg-[#2A2A2A] transition-colors max-w-[240px]"
+                    className="sticky top-0 bg-[#1A1A1A] px-3 py-2.5 font-bold whitespace-nowrap cursor-pointer hover:bg-[#2A2A2A] transition-colors min-w-[200px]"
                   >
                     摘要
                     {sortKey === 'householdHeadName' ? (
@@ -742,7 +742,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                           </select>
                         </td>
                         {/* 決済方法 / 摘要 (編集時) */}
-                        <td className="px-2 py-1.5 max-w-[240px]">
+                        <td className="px-2 py-1.5 min-w-[200px]">
                           <div className="flex items-center space-x-1.5">
                             <select
                               value={inlineTxForm.paymentMethod || paymentMethodOptions[0] || '現金受付'}
@@ -857,14 +857,14 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                       </td>
 
                       {/* 3. 摘要・決済方法 (施主と紐づけされている場合は「施主　〇〇」を小さく薄い文字で表示) */}
-                      <td className="px-3 py-2 text-[#444444] font-sans max-w-[280px]">
+                      <td className="px-3 py-2 text-[#444444] font-sans">
                         {(() => {
                           const payer = getPayerDisplayName(t);
                           const rawNotes = (t.notes || '').trim();
                           const cleanNote = payer && rawNotes.startsWith(payer) ? rawNotes.slice(payer.length).trim() : rawNotes;
 
                           return (
-                            <div className="flex items-center space-x-1.5 truncate" title={getDisplayNotes(t)}>
+                            <div className="flex items-center space-x-2" title={getDisplayNotes(t)}>
                               {isAutoCarryoverTransaction(t) && (
                                 <span className="px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-bold font-sans whitespace-nowrap shrink-0">
                                   期初繰越
@@ -875,15 +875,12 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                                   施主　{payer}
                                 </span>
                               )}
-                              <span className="font-bold text-[#1A1A1A] text-sm truncate">
+                              <span className="font-bold text-[#1A1A1A] text-sm break-words flex-1 min-w-0">
                                 {cleanNote || (!payer ? '—' : '')}
                               </span>
                               <span className="text-xs text-[#888888] bg-[#F2EFE9] px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
                                 {t.paymentMethod}
                               </span>
-                              {t.receiptNumber && (
-                                <span className="text-[11px] text-[#999999] shrink-0 font-mono">No.{t.receiptNumber}</span>
-                              )}
                             </div>
                           );
                         })()}
@@ -961,8 +958,8 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                     </td>
 
                     {/* 3. 摘要 */}
-                    <td className="px-3 py-2 text-sm text-[#555555] font-sans max-w-[240px]">
-                      <div className="font-bold text-[#1A1A1A] truncate text-sm">
+                    <td className="px-3 py-2 text-sm text-[#555555] font-sans">
+                      <div className="font-bold text-[#1A1A1A] text-sm">
                         次期（{getJapaneseEra(Number(fiscalYearFilter) + 1).replace('年', '')}年度）への繰越金
                       </div>
                     </td>

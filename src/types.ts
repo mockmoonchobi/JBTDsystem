@@ -481,7 +481,10 @@ export type DeletedEntityType =
   | 'temple'
   | 'familyMember'
   | 'priest'
-  | 'disasterMemorial';
+  | 'disasterMemorial'
+  | 'noticeTemplate'
+  | 'master'
+  | 'batchAccounting';
 
 export interface DeletedRecordEntry {
   logId?: string; // 一意の履歴ID (例: "LOG-1725350000000-0", "LOG-1")

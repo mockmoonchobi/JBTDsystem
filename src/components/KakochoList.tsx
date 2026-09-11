@@ -134,6 +134,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => targetUpcomingPeriodId);
 
   const currentPeriod = higanPeriods.find((p) => p.id === selectedPeriodId) || higanPeriods[0];
+  const isBonPeriod = Boolean(currentPeriod && (currentPeriod.type === 'bon' || currentPeriod.id.endsWith('-bon')));
 
   // Milestone sub-mode: 'shipping' (対象法要期・年2回発送区分) vs 'yearly' (年法要予定・前年/本年/来年精霊ベース)
   const [milestoneSubMode, setMilestoneSubMode] = useState<'shipping' | 'yearly'>(initialMilestoneSubMode || 'shipping');
@@ -519,8 +520,16 @@ export const KakochoList: React.FC<KakochoListProps> = ({
     const groups: HouseholdMilestoneGroup[] = [];
 
     map.forEach((items, key) => {
-      // Sort items within household by scheduledDate ascending (prioritize nearest memorial date)
-      items.sort((a, b) => a.milestone.scheduledDate.localeCompare(b.milestone.scheduledDate));
+      // Sort items within household (by deathDate ascending if 新盆, otherwise by scheduledDate ascending)
+      if (isBonPeriod) {
+        items.sort((a, b) => {
+          const da = normalizeDateInput(a.record.deathDate || '') || '';
+          const db = normalizeDateInput(b.record.deathDate || '') || '';
+          return da.localeCompare(db);
+        });
+      } else {
+        items.sort((a, b) => a.milestone.scheduledDate.localeCompare(b.milestone.scheduledDate));
+      }
       const primaryItem = items[0];
       const currentHousehold = households.find((h) => h.id === primaryItem.record.householdId);
       const headName = currentHousehold
@@ -538,11 +547,19 @@ export const KakochoList: React.FC<KakochoListProps> = ({
       });
     });
 
-    // Sort groups by earliest scheduled date ascending
-    groups.sort((a, b) => a.primaryMilestone.scheduledDate.localeCompare(b.primaryMilestone.scheduledDate));
+    // Sort groups by earliest date ascending (by deathDate if 新盆, otherwise by scheduled date)
+    if (isBonPeriod) {
+      groups.sort((a, b) => {
+        const da = normalizeDateInput(a.primaryRecord.deathDate || '') || '';
+        const db = normalizeDateInput(b.primaryRecord.deathDate || '') || '';
+        return da.localeCompare(db);
+      });
+    } else {
+      groups.sort((a, b) => a.primaryMilestone.scheduledDate.localeCompare(b.primaryMilestone.scheduledDate));
+    }
 
     return groups;
-  }, [milestoneCandidates, households]);
+  }, [milestoneCandidates, households, isBonPeriod]);
 
   const onUpdateMilestoneTargetsRef = useRef(onUpdateMilestoneTargets);
   useEffect(() => {
@@ -986,7 +1003,9 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                           </button>
                         </th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">檀信徒名</th>
-                        <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">予定日</th>
+                        <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">
+                          {isBonPeriod ? '命日' : '予定日'}
+                        </th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">回忌</th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">戒名</th>
                         <th className="sticky top-0 bg-[#1A1A1A] p-3.5 whitespace-nowrap">他法要予定</th>
@@ -1034,9 +1053,20 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                             <td className="p-3.5 font-bold text-[#1A1A1A] text-sm whitespace-nowrap">
                               {displaySponsor} 様
                             </td>
-                            {/* 予定日 (回忌が近いほうを優先) */}
-                            <td className="p-3.5 font-mono font-bold text-[#1A1A1A] text-sm whitespace-nowrap">
-                              {formatMonthDayOnly(primaryMilestone.scheduledDate)}
+                            {/* 予定日 (回忌が近いほうを優先) / 新盆時は命日（年月日） */}
+                            <td
+                              className="p-3.5 font-mono font-bold text-[#1A1A1A] text-sm whitespace-nowrap"
+                              title={isBonPeriod ? (primaryRecord.deathDate ? `没年月日: ${formatJapaneseEraDate(primaryRecord.deathDate, false)}` : '') : `予定日: ${primaryMilestone.scheduledDate}`}
+                            >
+                              {isBonPeriod ? (
+                                primaryRecord.deathDate ? (
+                                  formatJapaneseEraDate(primaryRecord.deathDate, false)
+                                ) : (
+                                  <span className="text-[#888888]">ー</span>
+                                )
+                              ) : (
+                                formatMonthDayOnly(primaryMilestone.scheduledDate)
+                              )}
                             </td>
                             {/* 回忌 */}
                             <td className="p-3.5 whitespace-nowrap">

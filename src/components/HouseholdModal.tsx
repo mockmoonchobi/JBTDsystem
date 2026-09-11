@@ -5,6 +5,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { normalizeFurigana, formatCurrency } from '../utils/memorialCalculator';
 import { cleanAndNormalizeHouseholdId, generateNewHouseholdId, getTemplePrefix } from '../utils/dankaIdUtils';
+import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 import { 
   getTobaSlots,
   getEffectiveTobaTypes, 
@@ -737,13 +738,26 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div>
                 <label className="block font-bold text-[#444444] mb-1">郵便番号</label>
-                <input
-                  type="text"
-                  placeholder="例: 105-0011"
-                  value={formData.postalCode}
-                  onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                  className="w-full bg-white border border-[#D1CEC7] px-3 py-1.5 text-[#2D2D2D] focus:border-[#1A1A1A] focus:outline-none"
-                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="例: 105-0011"
+                    value={formData.postalCode || ''}
+                    onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                    className="w-full bg-white border border-[#D1CEC7] px-3 py-1.5 text-[#2D2D2D] focus:border-[#1A1A1A] focus:outline-none"
+                  />
+                  <PostalAddressSearchButton
+                    postalCode={formData.postalCode || ''}
+                    currentAddress={formData.address || ''}
+                    onAddressFound={(address, formattedZip) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        postalCode: formattedZip,
+                        address,
+                      }));
+                    }}
+                  />
+                </div>
               </div>
 
               <div className="md:col-span-2">

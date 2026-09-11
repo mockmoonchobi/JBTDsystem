@@ -838,6 +838,18 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     </span>
                   </div>
                 </div>
+
+                <div className="p-2.5 bg-white border border-emerald-300 rounded-xs text-[11px] text-[#444444] flex items-start gap-2">
+                  <span className="px-1.5 py-0.5 bg-emerald-800 text-white font-bold text-[10px] rounded-xs shrink-0 mt-0.5">
+                    集金項目対応
+                  </span>
+                  <div>
+                    <strong className="text-[#1A1A1A]">集金１・集金２・集金３の金額取り込み:</strong>
+                    <span className="text-[#666666] ml-1">
+                      名簿ひな形には「集金１」「集金２」「集金３」の列が用意されており、護持会費や墓地管理費などの世帯別設定金額（例: 5000）を一括で取り込むことができます。
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Guidance for popular software */}
@@ -1554,7 +1566,12 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     (h.furigana && h.furigana.toLowerCase().includes(searchLower)) ||
                     (h.address && h.address.toLowerCase().includes(searchLower)) ||
                     (h.phone && h.phone.toLowerCase().includes(searchLower)) ||
-                    (h.district && h.district.toLowerCase().includes(searchLower))
+                    (h.district && h.district.toLowerCase().includes(searchLower)) ||
+                    (h.householdType && h.householdType.toLowerCase().includes(searchLower)) ||
+                    (h.status && h.status.toLowerCase().includes(searchLower)) ||
+                    (h.fee1Amount !== undefined && String(h.fee1Amount).includes(searchLower)) ||
+                    (h.fee2Amount !== undefined && String(h.fee2Amount).includes(searchLower)) ||
+                    (h.fee3Amount !== undefined && String(h.fee3Amount).includes(searchLower))
                   );
                 });
 
@@ -1686,12 +1703,15 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                               <th className="p-2.5 font-bold text-[#1A1A1A]">地区・総代</th>
                               <th className="p-2.5 font-bold text-[#1A1A1A]">区分１</th>
                               <th className="p-2.5 font-bold text-[#1A1A1A]">区分２</th>
+                              <th className="p-2.5 font-bold text-[#1A1A1A] text-right">集金１</th>
+                              <th className="p-2.5 font-bold text-[#1A1A1A] text-right">集金２</th>
+                              <th className="p-2.5 font-bold text-[#1A1A1A] text-right">集金３</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#EAE7E0]">
                             {displayedHouseholds.length === 0 ? (
                               <tr>
-                                <td colSpan={10} className="p-8 text-center text-[#888888]">
+                                <td colSpan={13} className="p-8 text-center text-[#888888]">
                                   該当するデータが見つかりませんでした。
                                 </td>
                               </tr>
@@ -1708,6 +1728,15 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                                   <td className="p-2.5 text-[#555] whitespace-nowrap">{h.district || '-'}</td>
                                   <td className="p-2.5 text-[#555] whitespace-nowrap">{h.householdType || '-'}</td>
                                   <td className="p-2.5 text-[#555] whitespace-nowrap">{h.status || '-'}</td>
+                                  <td className="p-2.5 font-mono text-right whitespace-nowrap text-[#1A1A1A]">
+                                    {h.fee1Amount !== undefined ? `¥${h.fee1Amount.toLocaleString()}` : (h.fee1 ? `¥${Number(h.fee1).toLocaleString()}` : '-')}
+                                  </td>
+                                  <td className="p-2.5 font-mono text-right whitespace-nowrap text-[#1A1A1A]">
+                                    {h.fee2Amount !== undefined ? `¥${h.fee2Amount.toLocaleString()}` : (h.fee2 ? `¥${Number(h.fee2).toLocaleString()}` : '-')}
+                                  </td>
+                                  <td className="p-2.5 font-mono text-right whitespace-nowrap text-[#1A1A1A]">
+                                    {h.fee3Amount !== undefined ? `¥${h.fee3Amount.toLocaleString()}` : (h.fee3 ? `¥${Number(h.fee3).toLocaleString()}` : '-')}
+                                  </td>
                                 </tr>
                               ))
                             )}

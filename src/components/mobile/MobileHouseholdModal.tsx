@@ -10,6 +10,7 @@ import {
   setFamilyMemberTobaApplication 
 } from '../../utils/tobaUtils';
 import { getFeeSlots } from '../../utils/feeUtils';
+import { PostalAddressSearchButton } from '../PostalAddressSearchButton';
 
 interface MobileHouseholdModalProps {
   isOpen: boolean;
@@ -315,13 +316,26 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
                 <MapPin className="w-3.5 h-3.5 text-[#8C2D19]" />
                 郵便番号
               </label>
-              <input
-                type="text"
-                placeholder="例: 123-4567"
-                value={formData.postalCode || ''}
-                onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
-                className="w-full p-2 border border-[#D1CEC7] bg-white text-xs"
-              />
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  placeholder="例: 123-4567"
+                  value={formData.postalCode || ''}
+                  onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
+                  className="w-full p-2 border border-[#D1CEC7] bg-white text-xs"
+                />
+                <PostalAddressSearchButton
+                  postalCode={formData.postalCode || ''}
+                  currentAddress={formData.address || ''}
+                  onAddressFound={(address, formattedZip) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      postalCode: formattedZip,
+                      address,
+                    }));
+                  }}
+                />
+              </div>
             </div>
             <div>
               <label className="block font-bold text-[#1A1A1A] mb-1">ご住所</label>

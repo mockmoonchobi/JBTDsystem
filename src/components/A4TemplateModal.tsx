@@ -29,6 +29,7 @@ import {
   applyNoticeTemplate
 } from '../utils/memorialCalculator';
 import { safeJoinWithSpace } from '../utils/unicodeUtils';
+import { recordOperationLog, getCurrentOperatorInfo } from '../utils/deletedRecordsLog';
 
 interface A4TemplateModalProps {
   isOpen: boolean;
@@ -163,6 +164,16 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
     setSelectedTemplateId(newId);
     setHasChanges(true);
     saveAllNoticeTemplates(updated);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      newId,
+      'noticeTemplate',
+      'create',
+      `案内文テンプレート（A4）「${newTpl.name}」を新規作成`,
+      templeInfo?.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     if (onTemplatesUpdated) {
       onTemplatesUpdated(updated);
     }
@@ -200,6 +211,16 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
 
     setAllTemplates(remaining);
     saveAllNoticeTemplates(remaining);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      templateToDelete.id,
+      'noticeTemplate',
+      'delete',
+      `案内文テンプレート（A4）「${templateToDelete.name}」を削除`,
+      templeInfo?.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     if (onTemplatesUpdated) {
       onTemplatesUpdated(remaining);
     }
@@ -215,6 +236,16 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
     setAllTemplates(restored);
     setSelectedTemplateId(defaultA4[0]?.id || 'tpl-a4-memorial');
     saveAllNoticeTemplates(restored);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      'tpl-a4-reset',
+      'noticeTemplate',
+      'update',
+      '案内文テンプレート（A4）の初期値を復元',
+      templeInfo?.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     setHasChanges(false);
     setSaveSuccess(true);
     if (onTemplatesUpdated) {
@@ -255,6 +286,18 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
 
   const handleSaveAndClose = () => {
     saveAllNoticeTemplates(allTemplates);
+    if (currentTemplate) {
+      const { operator, deviceInfo } = getCurrentOperatorInfo();
+      recordOperationLog(
+        currentTemplate.id,
+        'noticeTemplate',
+        'update',
+        `案内文テンプレート（A4）「${currentTemplate.name}」を更新`,
+        templeInfo?.id || 'temple-main',
+        operator,
+        deviceInfo
+      );
+    }
     setHasChanges(false);
     setSaveSuccess(true);
     if (onTemplatesUpdated) {
@@ -275,6 +318,18 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
 
   const executeSaveAndClose = () => {
     saveAllNoticeTemplates(allTemplates);
+    if (currentTemplate) {
+      const { operator, deviceInfo } = getCurrentOperatorInfo();
+      recordOperationLog(
+        currentTemplate.id,
+        'noticeTemplate',
+        'update',
+        `案内文テンプレート（A4）「${currentTemplate.name}」を更新`,
+        templeInfo?.id || 'temple-main',
+        operator,
+        deviceInfo
+      );
+    }
     setShowSaveConfirm(false);
     setHasChanges(false);
     if (onTemplatesUpdated) {

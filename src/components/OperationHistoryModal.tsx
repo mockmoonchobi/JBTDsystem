@@ -114,6 +114,9 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
       case 'priest': return '登録僧侶';
       case 'temple': return '寺院設定';
       case 'disasterMemorial': return '戦没・災害物故者';
+      case 'noticeTemplate': return '案内文テンプレート';
+      case 'master': return '区分・科目マスタ';
+      case 'batchAccounting': return '一括会計受付';
       default: return entityType;
     }
   };
@@ -320,6 +323,9 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                 <option value="priest">登録僧侶</option>
                 <option value="temple">寺院設定</option>
                 <option value="disasterMemorial">戦没・災害物故者設定</option>
+                <option value="noticeTemplate">案内文テンプレート</option>
+                <option value="master">区分・科目マスタ</option>
+                <option value="batchAccounting">一括会計</option>
               </select>
             </div>
           </div>

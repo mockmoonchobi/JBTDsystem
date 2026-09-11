@@ -33,6 +33,7 @@ import { TempleInfo, TempleProfile, MasterOptions, Household, PastRecord, Transa
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, DEFAULT_ANNUAL_EVENTS } from '../data/initialData';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
+import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 
 interface TempleInfoModalProps {
   isOpen: boolean;
@@ -1053,13 +1054,25 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-[#555555] mb-1">郵便番号</label>
-                  <input
-                    type="text"
-                    placeholder="例: 123-4567"
-                    value={currentTemple.postalCode || ''}
-                    onChange={(e) => updateCurrentTemple({ postalCode: e.target.value })}
-                    className="w-full bg-[#FAF9F5] border border-[#D1CEC7] px-2.5 py-1.5 focus:border-[#1A1A1A] focus:outline-hidden"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="例: 123-4567"
+                      value={currentTemple.postalCode || ''}
+                      onChange={(e) => updateCurrentTemple({ postalCode: e.target.value })}
+                      className="w-full bg-[#FAF9F5] border border-[#D1CEC7] px-2.5 py-1.5 focus:border-[#1A1A1A] focus:outline-hidden"
+                    />
+                    <PostalAddressSearchButton
+                      postalCode={currentTemple.postalCode || ''}
+                      currentAddress={currentTemple.address || ''}
+                      onAddressFound={(address, formattedZip) => {
+                        updateCurrentTemple({
+                          postalCode: formattedZip,
+                          address,
+                        });
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 

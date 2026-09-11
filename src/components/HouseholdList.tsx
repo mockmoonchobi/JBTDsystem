@@ -46,6 +46,7 @@ import { Household, PastRecord, Transaction, TransactionCategory, MasterOptions,
 import { calculateMemorialMilestones, getJapaneseEra, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions, calculateNiibonFromDeathDate, isRelevantNiibon, sortHouseholds, formatCurrency, getHouseholdSponsorName, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, toggleHouseholdSponsorSegakiToba, getHouseholdNiibonStatus } from '../utils/memorialCalculator';
 import { SingleHouseholdKakochoImportModal } from './SingleHouseholdKakochoImportModal';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
+import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 
 export type ListColumnKey =
   | 'idTomb'         // ID/墓地
@@ -2952,13 +2953,28 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   <div className="space-y-2">
                     <div>
                       <label className="block text-[#888888] font-bold mb-0.5">郵便番号</label>
-                      <input
-                        type="text"
-                        value={inlineHouseholdForm.postalCode}
-                        onChange={(e) => setInlineHouseholdForm({ ...inlineHouseholdForm, postalCode: e.target.value })}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineHousehold(); }}
-                        className="bg-white border border-[#1A1A1A] p-1.5 text-xs w-full font-mono"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={inlineHouseholdForm.postalCode || ''}
+                          onChange={(e) => setInlineHouseholdForm({ ...inlineHouseholdForm, postalCode: e.target.value })}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineHousehold(); }}
+                          className="bg-white border border-[#1A1A1A] p-1.5 text-xs w-full font-mono"
+                          placeholder="例: 105-0011"
+                        />
+                        <PostalAddressSearchButton
+                          postalCode={inlineHouseholdForm.postalCode || ''}
+                          currentAddress={inlineHouseholdForm.address || ''}
+                          compact
+                          onAddressFound={(address, formattedZip) => {
+                            setInlineHouseholdForm((prev) => prev ? ({
+                              ...prev,
+                              postalCode: formattedZip,
+                              address,
+                            }) : null);
+                          }}
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-[#888888] font-bold mb-0.5">住所</label>

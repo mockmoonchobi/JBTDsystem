@@ -117,7 +117,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
     safeStorage.setItem('temple_print_show_qrcode', String(val));
   };
 
-  // 施主QRコード印刷の有無設定 (封筒宛名右最下部・はがき宛名面様の30mm左・デフォルトON)
+  // 施主QRコード印刷の有無設定 (封筒宛名右最下部・はがき宛名面様の30mm左・デフォルトOFF)
   const [showHouseholdQrCode, setShowHouseholdQrCode] = useState<boolean>(() => {
     try {
       const saved = safeStorage.getItem('temple_print_show_household_qrcode');
@@ -127,7 +127,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
     } catch (e) {
       // ignore
     }
-    return true;
+    return false;
   });
 
   const handleToggleHouseholdQrCode = (val: boolean) => {
@@ -394,7 +394,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               印
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider">長3封筒・はがき 印刷エンジン</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider">長3封筒・はがき 印刷</h2>
               <div className="text-xs text-[#D4AF37] font-sans flex items-center gap-1.5 mt-0.5">
                 <span>差出人寺院:</span>
                 <span className="font-bold text-[#F9F7F2]">
@@ -410,7 +410,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 font-sans text-xs">
+        <div className="flex flex-wrap items-center justify-end gap-2 font-sans text-xs lg:ml-auto">
           {/* Document Type Toggle */}
           <div className="bg-[#2A2A2A] p-1 border border-[#D4AF37]/50 flex space-x-1">
             <button
@@ -484,7 +484,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {currentPreviewHousehold && (
               <button
                 onClick={handleTriggerPrintSingle}

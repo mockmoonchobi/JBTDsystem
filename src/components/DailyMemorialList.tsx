@@ -28,7 +28,7 @@ function getKijitsuHeadLabel(item: DailyMemorialItem): string {
   if (label.includes('四七日')) return '四七日';
   if (label.includes('五七日') || label.includes('三十五日')) return '五七日';
   if (label.includes('六七日')) return '六七日';
-  if (label.includes('七七日') || label.includes('四十九日')) return '四十九日';
+  if (label.includes('七七日') || label.includes('四十九日')) return '七七日';
   if (label.includes('百ヶ日')) return '百ヶ日';
   const match = label.match(/([一二三四五六七八九十百千]+回忌)/);
   if (match) return match[1];
@@ -491,7 +491,7 @@ export const DailyMemorialList: React.FC<DailyMemorialListProps> = ({
                 {/* 1ページ目のみ: 本日の日付 (漢数字) タイトル */}
                 {pageIndex === 0 && (
                   <div className="text-2xl sm:text-3xl font-extrabold tracking-[0.25em] pl-6 pr-2 leading-normal shrink-0 whitespace-nowrap">
-                    {convertTextNumbersToKanji(`${targetDate.getMonth() + 1}月${targetDate.getDate()}日`)} 供養精霊
+                    {convertTextNumbersToKanji(`${targetDate.getMonth() + 1}月${targetDate.getDate()}日`)}
                   </div>
                 )}
 

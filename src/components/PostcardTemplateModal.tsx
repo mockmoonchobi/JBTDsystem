@@ -30,6 +30,7 @@ import {
   getPostcardBackTypography
 } from '../utils/memorialCalculator';
 import { safeJoinWithSpace } from '../utils/unicodeUtils';
+import { recordOperationLog, getCurrentOperatorInfo } from '../utils/deletedRecordsLog';
 
 interface PostcardTemplateModalProps {
   isOpen: boolean;
@@ -164,6 +165,16 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
     setSelectedTemplateId(newId);
     setHasChanges(true);
     saveAllNoticeTemplates(updated);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      newId,
+      'noticeTemplate',
+      'create',
+      `案内文テンプレート（はがき）「${newTpl.name}」を新規作成`,
+      templeInfo?.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     if (onTemplatesUpdated) {
       onTemplatesUpdated(updated);
     }
@@ -201,6 +212,16 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
 
     setAllTemplates(remaining);
     saveAllNoticeTemplates(remaining);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      templateToDelete.id,
+      'noticeTemplate',
+      'delete',
+      `案内文テンプレート（はがき）「${templateToDelete.name}」を削除`,
+      templeInfo?.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     if (onTemplatesUpdated) {
       onTemplatesUpdated(remaining);
     }
@@ -216,6 +237,16 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
     setAllTemplates(restored);
     setSelectedTemplateId(defaultPostcards[0]?.id || 'tpl-higan');
     saveAllNoticeTemplates(restored);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      'tpl-postcard-reset',
+      'noticeTemplate',
+      'update',
+      '案内文テンプレート（はがき）の初期値を復元',
+      templeInfo?.id || 'temple-main',
+      operator,
+      deviceInfo
+    );
     setHasChanges(false);
     setSaveSuccess(true);
     if (onTemplatesUpdated) {
@@ -256,6 +287,18 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
 
   const handleSaveAndClose = () => {
     saveAllNoticeTemplates(allTemplates);
+    if (currentTemplate) {
+      const { operator, deviceInfo } = getCurrentOperatorInfo();
+      recordOperationLog(
+        currentTemplate.id,
+        'noticeTemplate',
+        'update',
+        `案内文テンプレート（はがき）「${currentTemplate.name}」を更新`,
+        templeInfo?.id || 'temple-main',
+        operator,
+        deviceInfo
+      );
+    }
     setHasChanges(false);
     setSaveSuccess(true);
     if (onTemplatesUpdated) {
@@ -276,6 +319,18 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
 
   const executeSaveAndClose = () => {
     saveAllNoticeTemplates(allTemplates);
+    if (currentTemplate) {
+      const { operator, deviceInfo } = getCurrentOperatorInfo();
+      recordOperationLog(
+        currentTemplate.id,
+        'noticeTemplate',
+        'update',
+        `案内文テンプレート（はがき）「${currentTemplate.name}」を更新`,
+        templeInfo?.id || 'temple-main',
+        operator,
+        deviceInfo
+      );
+    }
     setShowSaveConfirm(false);
     setHasChanges(false);
     if (onTemplatesUpdated) {

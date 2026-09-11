@@ -412,8 +412,19 @@ export default function App() {
     } else {
       clearBatchAccountingEntries();
     }
-    // Googleシートの該当テーブル（一括会計受付・一括会計設定）のみを初期化して端末側レコードに置き換え
-    cleanWriteSpecificTablesToGoogleSheets(['一括会計受付', '一括会計設定']);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      'batch-accounting',
+      'batchAccounting',
+      'update',
+      data ? `一括会計受付データを保存（${Object.keys(data.entries || {}).length}件）` : '一括会計受付データをクリア',
+      activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'),
+      operator,
+      deviceInfo
+    );
+    refreshDeletedRecords();
+    // Googleシートの該当テーブル（一括会計受付・一括会計設定・操作履歴）を初期化して端末側レコードに置き換え
+    cleanWriteSpecificTablesToGoogleSheets(['一括会計受付', '一括会計設定', '操作・削除履歴']);
   };
 
   const handleSavePriests = (newPriests: Priest[]) => {
@@ -421,8 +432,19 @@ export default function App() {
     setPriests(newPriests);
     saveJsonState('temple_priests', newPriests);
     syncStateRef.current.priests = newPriests;
-    // Googleシートの該当テーブル（登録僧侶一覧）のみを初期化して端末側レコードに置き換え
-    cleanWriteSpecificTablesToGoogleSheets(['登録僧侶一覧']);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      'priests-list',
+      'priest',
+      'update',
+      `登録僧侶一覧を変更（${newPriests.length}名）`,
+      activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'),
+      operator,
+      deviceInfo
+    );
+    refreshDeletedRecords();
+    // Googleシートの該当テーブル（登録僧侶一覧・操作履歴）を初期化して端末側レコードに置き換え
+    cleanWriteSpecificTablesToGoogleSheets(['登録僧侶一覧', '操作・削除履歴']);
   };
 
   // Cross-tab states for Print Engine & List Sorting / Excluding
@@ -2109,11 +2131,18 @@ export default function App() {
       }
       const state = syncStateRef.current;
 
+      // 「データ連携中」スピナーアニメーションを確実に起動
+      setSyncStatus('syncing');
+      isCleanWritingRef.current = true;
+
+      // 操作履歴の即時整合性を担保するため、常に「操作・削除履歴」テーブルも同時に同期
+      const tablesToWrite = Array.from(new Set([...targetTables, '操作・削除履歴']));
+
       await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
         await exportSpecificTablesToSheets(
           token,
           targetId,
-          targetTables,
+          tablesToWrite,
           state.templeInfo,
           state.households,
           state.pastRecords,
@@ -2141,6 +2170,9 @@ export default function App() {
       setSyncErrorMessage(null);
     } catch (err: any) {
       console.warn('Specific tables Google Sheets clean-write warning:', err);
+      setSyncStatus('error');
+    } finally {
+      isCleanWritingRef.current = false;
     }
   }, []);
 
@@ -3734,6 +3766,7 @@ export default function App() {
       operator,
       deviceInfo
     );
+    refreshDeletedRecords();
     setTempleInfo(stampedInfo);
     saveJsonState('temple_info', stampedInfo);
     syncStateRef.current.templeInfo = stampedInfo;
@@ -3805,6 +3838,7 @@ export default function App() {
         );
       }
     });
+    refreshDeletedRecords();
     setTemples(stampedTemples);
     saveJsonState('temple_profiles_list', stampedTemples);
     saveJsonState('temple_profiles', stampedTemples);
@@ -4110,12 +4144,42 @@ export default function App() {
       syncStateRef.current.masterOptions = options;
     }
 
-    // Googleシートのマスタテーブルを初期化して端末側のレコードで置き換え
-    cleanWriteSpecificTablesToGoogleSheets(['マスタ']);
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      targetTempleId || activeTempleId || 'master-main',
+      'master',
+      'update',
+      'マスタ設定（区分・勘定科目）を変更',
+      targetTempleId || activeTempleId || (temples[0]?.id || 'temple-main'),
+      operator,
+      deviceInfo
+    );
+    refreshDeletedRecords();
+
+    // Googleシートのマスタテーブルおよび操作・削除履歴テーブルを初期化して端末側のレコードで置き換え
+    cleanWriteSpecificTablesToGoogleSheets(['マスタ', '操作・削除履歴']);
   };
 
-  const handleSaveNoticeTemplates = (t?: NoticeTemplateItem[] | { higan: string; niibon: string }) => {
+  const handleSaveNoticeTemplates = (
+    t?: NoticeTemplateItem[] | { higan: string; niibon: string },
+    logDetail?: { action?: 'create' | 'update' | 'delete'; label?: string; id?: string }
+  ) => {
     recordHistory('案内文テンプレートを変更');
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    const action = logDetail?.action || 'update';
+    const label = logDetail?.label || '案内文テンプレートの設定を保存・更新';
+    const logId = logDetail?.id || 'notice-template';
+    recordOperationLog(
+      logId,
+      'noticeTemplate',
+      action,
+      label,
+      activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'),
+      operator,
+      deviceInfo
+    );
+    refreshDeletedRecords();
+
     if (Array.isArray(t)) {
       saveNoticeTemplates(t);
       const updated = getSavedNoticeTemplates();
@@ -4130,8 +4194,8 @@ export default function App() {
       setNoticeTemplates(updated);
       syncStateRef.current.noticeTemplates = updated;
     }
-    // Googleシートの案内文テンプレートテーブルを初期化して端末側のテンプレートで置き換え
-    cleanWriteSpecificTablesToGoogleSheets(['案内文テンプレート']);
+    // Googleシートの案内文テンプレートテーブルおよび操作・削除履歴テーブルを初期化して端末側のテンプレートで置き換え
+    cleanWriteSpecificTablesToGoogleSheets(['案内文テンプレート', '操作・削除履歴']);
   };
 
   if (viewMode === 'mobile') {
