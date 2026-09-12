@@ -732,7 +732,8 @@ export function exportToExcel(
     '所属寺院',
     '所属寺院ID',
     '操作者',
-    '端末・環境'
+    '端末・環境',
+    '変更差分詳細'
   ];
 
   const deletedLogsToExport: DeletedRecordEntry[] = (exportOptions?.deletedRecords && exportOptions.deletedRecords.length > 0)
@@ -743,19 +744,29 @@ export function exportToExcel(
     ? deletedLogsToExport.filter((entry) => !entry.templeId || entry.templeId === targetTempleId)
     : deletedLogsToExport;
 
-  const deletedRows = filteredLogs.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => [
-    entry.logId || `LOG-${idx + 1}`,
-    entry.actionType || 'delete',
-    entry.entityType || '',
-    entry.id || '',
-    entry.label || '',
-    entry.deletedAt || '',
-    String(entry.deletedTimestamp || ''),
-    getTempleLabel(entry.templeId),
-    getTempleId(entry.templeId),
-    normalizeLogOperator(entry.operator),
-    entry.deviceInfo || '',
-  ]);
+  const deletedRows = filteredLogs.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => {
+    let diffPayload = '';
+    if (entry.diffs && entry.diffs.length > 0) {
+      diffPayload = JSON.stringify({ diffs: entry.diffs, beforeData: entry.beforeData });
+    } else if (entry.beforeData) {
+      diffPayload = JSON.stringify({ beforeData: entry.beforeData });
+    }
+
+    return [
+      entry.logId || `LOG-${idx + 1}`,
+      entry.actionType || 'delete',
+      entry.entityType || '',
+      entry.id || '',
+      entry.label || '',
+      entry.deletedAt || '',
+      String(entry.deletedTimestamp || ''),
+      getTempleLabel(entry.templeId),
+      getTempleId(entry.templeId),
+      normalizeLogOperator(entry.operator),
+      entry.deviceInfo || '',
+      diffPayload,
+    ];
+  });
   const wsDeleted = XLSX.utils.aoa_to_sheet([deletedHeaders, ...deletedRows]);
   XLSX.utils.book_append_sheet(wb, wsDeleted, '操作・削除履歴');
 
@@ -2218,6 +2229,7 @@ export async function importFromExcel(
       const dTempleIdIdx = findColIdx(dHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
       const operatorIdx = findColIdx(dHeaders, ['操作者', '実行者', 'ユーザー', 'operator', 'user']);
       const deviceInfoIdx = findColIdx(dHeaders, ['端末・環境', '端末', '環境', 'デバイス', 'deviceInfo', 'device']);
+      const diffColIdx = findColIdx(dHeaders, ['変更差分詳細', '差分詳細', '差分', 'diffs', 'diffPayload']);
 
       dRows.forEach((row, rowIdx) => {
         const logId = String((logIdIdx !== -1 ? row[logIdIdx] : (row[0] && String(row[0]).startsWith('LOG-') ? row[0] : '')) || '').trim();
@@ -2252,6 +2264,21 @@ export async function importFromExcel(
         const operator = normalizeLogOperator(rawOperator);
         const deviceInfo = deviceInfoIdx !== -1 ? String(row[deviceInfoIdx] || '').trim() : (row[10] ? String(row[10]) : undefined);
 
+        let diffs: any = undefined;
+        let beforeData: any = undefined;
+        const rawDiffStr = String((diffColIdx !== -1 ? row[diffColIdx] : row[11]) || '').trim();
+        if (rawDiffStr) {
+          try {
+            const parsedDiff = JSON.parse(rawDiffStr);
+            if (parsedDiff && typeof parsedDiff === 'object') {
+              if (Array.isArray(parsedDiff.diffs)) diffs = parsedDiff.diffs;
+              if (parsedDiff.beforeData) beforeData = parsedDiff.beforeData;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         parsedDeletedRecords.push({
           logId: logId || `LOG-${deletedTimestamp}-${rowIdx}`,
           id,
@@ -2263,6 +2290,8 @@ export async function importFromExcel(
           templeId,
           operator: operator || undefined,
           deviceInfo: deviceInfo || undefined,
+          diffs,
+          beforeData,
         });
       });
     }

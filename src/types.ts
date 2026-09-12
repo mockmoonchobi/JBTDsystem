@@ -486,6 +486,13 @@ export type DeletedEntityType =
   | 'master'
   | 'batchAccounting';
 
+export interface FieldDiff {
+  field: string;          // フィールドキー (例: "phone", "familyHead", "deathDate")
+  label: string;          // 日本語名称 (例: "電話番号", "世帯主名", "命日")
+  before: any;           // 変更前の値
+  after: any;            // 変更後の値
+}
+
 export interface DeletedRecordEntry {
   logId?: string; // 一意の履歴ID (例: "LOG-1725350000000-0", "LOG-1")
   id: string; // 対象レコードID (例: "1", "PR-123", "MS-456")
@@ -494,9 +501,12 @@ export interface DeletedRecordEntry {
   deletedTimestamp: number; // UNIX ms タイムスタンプ
   label?: string; // 表示名称 (例: "世帯 佐藤 太郎 (1)", "過去帳 釋浄信")
   templeId?: string; // 寺院ID
-  actionType?: 'create' | 'update' | 'delete' | 'undo' | 'batch_delete' | 'batch_create' | 'wipe';
+  actionType?: 'create' | 'update' | 'delete' | 'undo' | 'batch_delete' | 'batch_create' | 'wipe' | 'restore';
   operator?: string; // 操作ユーザー (例: "chief@renge.org", "スタッフ")
   deviceInfo?: string; // 操作端末 (例: "PC", "スマホ(スタッフ)", "スマホ")
+  diffs?: FieldDiff[]; // 変更差分リスト（更新時）
+  beforeData?: any; // 更新前または削除前の完全レコードデータ
+  afterData?: any; // 更新後または作成時のレコードデータ
 }
 
 export interface ActionHistoryEntry {

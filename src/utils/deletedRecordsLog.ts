@@ -1,6 +1,7 @@
-import { DeletedRecordEntry, DeletedEntityType } from '../types';
+import { DeletedRecordEntry, DeletedEntityType, FieldDiff } from '../types';
 import { safeStorage, saveJsonState, loadJsonState } from './storageUtils';
 import { getCurrentUser, getActiveGoogleAccountName } from '../lib/googleAuth';
+import { computeCreationDiffs, computeDeletionDiffs } from './diffUtils';
 
 export const MAX_DELETED_LOG_LENGTH = 1000;
 const STORAGE_KEY = 'temple_deleted_records_log';
@@ -88,11 +89,14 @@ export function clearDeletedRecordsLog(): void {
 export function recordOperationLog(
   id: string,
   entityType: DeletedEntityType,
-  actionType: 'create' | 'update' | 'delete' | 'undo' | 'batch_delete' | 'batch_create' | 'wipe',
+  actionType: 'create' | 'update' | 'delete' | 'undo' | 'batch_delete' | 'batch_create' | 'wipe' | 'restore',
   label?: string,
   templeId?: string,
   operator?: string,
-  deviceInfo?: string
+  deviceInfo?: string,
+  diffs?: FieldDiff[],
+  beforeData?: any,
+  afterData?: any
 ): DeletedRecordEntry[] {
   if (!id || !id.trim()) return loadDeletedRecordsLog();
   const cleanId = id.trim();
@@ -100,6 +104,16 @@ export function recordOperationLog(
   const now = new Date();
   const nowMs = now.getTime();
   const logId = `LOG-${nowMs}-${Math.floor(Math.random() * 1000)}`;
+
+  // Automatically compute diffs if not explicitly passed
+  let finalDiffs = diffs && diffs.length > 0 ? diffs : undefined;
+  if (!finalDiffs) {
+    if ((actionType === 'create' || actionType === 'batch_create') && afterData) {
+      finalDiffs = computeCreationDiffs(entityType, afterData);
+    } else if ((actionType === 'delete' || actionType === 'batch_delete') && beforeData) {
+      finalDiffs = computeDeletionDiffs(entityType, beforeData);
+    }
+  }
 
   const newEntry: DeletedRecordEntry = {
     logId,
@@ -112,12 +126,15 @@ export function recordOperationLog(
     actionType,
     operator: normalizeLogOperator(operator, deviceInfo),
     deviceInfo,
+    diffs: finalDiffs && finalDiffs.length > 0 ? finalDiffs : undefined,
+    beforeData: beforeData ? JSON.parse(JSON.stringify(beforeData)) : undefined,
+    afterData: afterData ? JSON.parse(JSON.stringify(afterData)) : undefined,
   };
 
-  // Debounce duplicate identical logs fired within 3 seconds for the same record and action
+  // Debounce duplicate identical logs fired within 2 seconds for the same record and action
   const filteredLogs = currentLogs.filter((e) => {
     const isSameTargetAndAction = e.id === cleanId && e.actionType === actionType;
-    const isWithinDebounce = Math.abs(nowMs - (e.deletedTimestamp || 0)) < 3000;
+    const isWithinDebounce = Math.abs(nowMs - (e.deletedTimestamp || 0)) < 2000;
     return !(isSameTargetAndAction && isWithinDebounce);
   });
 
@@ -136,9 +153,10 @@ export function recordDeletedRecord(
   templeId?: string,
   actionType: 'delete' | 'undo' | 'batch_delete' | 'wipe' = 'delete',
   operator?: string,
-  deviceInfo?: string
+  deviceInfo?: string,
+  beforeData?: any
 ): DeletedRecordEntry[] {
-  return recordOperationLog(id, entityType, actionType, label, templeId, operator, deviceInfo);
+  return recordOperationLog(id, entityType, actionType, label, templeId, operator, deviceInfo, undefined, beforeData);
 }
 
 /**
@@ -219,6 +237,11 @@ export function mergeDeletedRecordsLogs(
         operator: normalizedOp,
         deletedTimestamp: validTs,
       });
+    } else {
+      const existing = map.get(key)!;
+      if (!existing.diffs && entry.diffs) existing.diffs = entry.diffs;
+      if (!existing.beforeData && entry.beforeData) existing.beforeData = entry.beforeData;
+      if (!existing.afterData && entry.afterData) existing.afterData = entry.afterData;
     }
   };
 

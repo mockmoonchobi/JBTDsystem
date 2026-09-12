@@ -16,11 +16,18 @@ import {
   User as UserIcon,
   Clock,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
+  ArrowRight,
+  FileText,
+  Undo2
 } from 'lucide-react';
-import { DeletedRecordEntry } from '../types';
+import { DeletedRecordEntry, FieldDiff } from '../types';
 import { getCurrentUser } from '../lib/googleAuth';
 import { safeStorage } from '../utils/storageUtils';
+import { computeCreationDiffs, computeDeletionDiffs } from '../utils/diffUtils';
 
 interface OperationHistoryModalProps {
   isOpen: boolean;
@@ -30,6 +37,7 @@ interface OperationHistoryModalProps {
   isSyncing?: boolean;
   spreadsheetUrl?: string | null;
   isGoogleConnected?: boolean;
+  onRestoreRecord?: (entry: DeletedRecordEntry, fieldKey?: string) => { success: boolean; message: string };
 }
 
 interface ParsedOperation {
@@ -152,10 +160,34 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
   isSyncing = false,
   spreadsheetUrl,
   isGoogleConnected = false,
+  onRestoreRecord,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAction, setSelectedAction] = useState<string>('all');
   const [selectedEntity, setSelectedEntity] = useState<string>('all');
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [restoreFeedback, setRestoreFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [restoringKey, setRestoringKey] = useState<string | null>(null);
+
+  const handleRestore = (entry: DeletedRecordEntry, fieldKey?: string) => {
+    if (!onRestoreRecord) return;
+    const restoreId = fieldKey ? `${entry.logId || entry.id}-${fieldKey}` : `${entry.logId || entry.id}-all`;
+    setRestoringKey(restoreId);
+    try {
+      const res = onRestoreRecord(entry, fieldKey);
+      setRestoreFeedback({
+        type: res.success ? 'success' : 'error',
+        message: res.message
+      });
+    } catch (e: any) {
+      setRestoreFeedback({
+        type: 'error',
+        message: e?.message || '復元処理に失敗しました'
+      });
+    } finally {
+      setRestoringKey(null);
+    }
+  };
 
   // Stats calculation
   const stats = useMemo(() => {
@@ -283,8 +315,8 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-[#FAF9F5] rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-[#E5E0D8]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/60 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-[#FAF9F5] rounded-2xl shadow-2xl w-full max-w-[96vw] xl:max-w-7xl max-h-[95vh] flex flex-col overflow-hidden border border-[#E5E0D8]">
         
         {/* Header */}
         <div className="bg-[#1C2536] text-[#F9F7F2] p-4 sm:p-5 flex items-center justify-between border-b border-[#2C384E] shrink-0">
@@ -444,9 +476,39 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
         </div>
 
         {/* Content Table */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="flex-1 overflow-hidden flex flex-col p-3 sm:p-5 min-h-0 space-y-3">
+          {/* Restore Feedback Notification Banner */}
+          {restoreFeedback && (
+            <div className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 transition-all shrink-0 ${
+              restoreFeedback.type === 'success'
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              <div className="flex items-start gap-2.5">
+                {restoreFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <h4 className="text-sm font-semibold">
+                    {restoreFeedback.type === 'success' ? '復元が完了しました' : '復元できませんでした'}
+                  </h4>
+                  <p className="text-xs mt-0.5 leading-relaxed">{restoreFeedback.message}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRestoreFeedback(null)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+                title="閉じる"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {filteredRecords.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 text-center border border-dashed border-slate-200 text-slate-500 space-y-2">
+            <div className="bg-white rounded-xl p-8 text-center border border-dashed border-slate-200 text-slate-500 space-y-2 my-auto">
               <AlertCircle className="w-8 h-8 mx-auto text-slate-400" />
               <p className="font-medium text-slate-700">表示できる操作履歴がありません</p>
               <p className="text-xs text-slate-400">
@@ -456,114 +518,315 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
               </p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-600">
-                      <th className="py-3 px-3.5 whitespace-nowrap">操作種別</th>
-                      <th className="py-3 px-3.5 whitespace-nowrap">データ対象</th>
-                      <th className="py-3 px-3.5 min-w-[280px]">操作内容 / 詳細</th>
-                      <th className="py-3 px-3.5 whitespace-nowrap">操作日時</th>
-                      <th className="py-3 px-3.5 whitespace-nowrap">操作者</th>
-                      <th className="py-3 px-3.5 whitespace-nowrap">端末</th>
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="overflow-auto flex-1 min-h-0">
+                <table className="w-full text-left text-sm border-collapse min-w-[700px] sm:min-w-0">
+                  <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-xs">
+                    <tr className="text-xs font-semibold text-slate-600">
+                      <th className="py-2.5 px-3 whitespace-nowrap w-24">操作種別</th>
+                      <th className="py-2.5 px-3 whitespace-nowrap w-28">データ対象</th>
+                      <th className="py-2.5 px-3 min-w-[180px]">操作内容 / 詳細</th>
+                      <th className="py-2.5 px-3 whitespace-nowrap w-32">変更差分 / 復元</th>
+                      <th className="py-2.5 px-3 whitespace-nowrap w-36">操作日時</th>
+                      <th className="py-2.5 px-3 whitespace-nowrap w-40">操作者 / 端末</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
                     {filteredRecords.map((entry, idx) => {
                       const parsed = parseOperationDetails(entry);
-                      return (
-                        <tr key={entry.logId || `${entry.id}-${idx}`} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="py-3 px-3.5 whitespace-nowrap">
-                            {getActionBadge(entry.actionType)}
-                          </td>
-                          <td className="py-3 px-3.5 whitespace-nowrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200 font-medium">
-                              {getEntityLabel(entry.entityType)}
-                            </span>
-                          </td>
-                          <td className="py-3 px-3.5">
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-baseline gap-2">
-                                <span className="font-semibold text-slate-900 text-sm">
-                                  {parsed.headline}
-                                </span>
-                                <span className="text-xs text-slate-500 font-medium">
-                                  — {parsed.subHeadline}
-                                </span>
-                              </div>
-                              {parsed.chips.length > 0 && (
-                                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                                  {parsed.chips.map((chip, cIdx) => (
-                                    <span
-                                      key={cIdx}
-                                      className="inline-flex items-center text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/80 leading-tight"
-                                    >
-                                      {chip}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                              {parsed.recordId && (
-                                <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 pt-0.5">
-                                  <span className="text-slate-300">管理番号:</span>
-                                  <span>{parsed.recordId}</span>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3.5 whitespace-nowrap text-xs text-slate-600">
-                            <div className="flex items-center gap-1.5">
-                              <Clock className="w-3.5 h-3.5 text-slate-400" />
-                              {formatDate(entry.deletedTimestamp || entry.deletedAt)}
-                            </div>
-                          </td>
-                          <td className="py-3 px-3.5 whitespace-nowrap text-xs">
-                            {(() => {
-                              const opName = getDisplayOperatorName(entry.operator, entry.deviceInfo);
-                              const activeGoogle = currentUser?.displayName || currentUser?.email || (typeof window !== 'undefined' ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email')) : '');
-                              const isMe = activeGoogle && (
-                                opName.toLowerCase() === activeGoogle.toLowerCase() ||
-                                (currentUser?.email && opName.toLowerCase() === currentUser.email.toLowerCase()) ||
-                                (currentUser?.displayName && opName === currentUser.displayName)
-                              );
-                              const isUnlinked = opName === 'Google未連携' || opName === '未ログイン';
+                      const logIdentifier = entry.logId || `${entry.id}-${idx}`;
+                      const isExpanded = expandedLogId === logIdentifier;
+                      const isCreationRecord = entry.actionType === 'create' || entry.actionType === 'batch_create';
+                      const isDeletedRecord = entry.actionType === 'delete' || entry.actionType === 'batch_delete';
+                      const effectiveDiffs = (Array.isArray(entry.diffs) && entry.diffs.length > 0)
+                        ? entry.diffs
+                        : isCreationRecord && entry.afterData
+                        ? computeCreationDiffs(entry.afterData, entry.entityType)
+                        : isDeletedRecord && entry.beforeData
+                        ? computeDeletionDiffs(entry.beforeData, entry.entityType)
+                        : [];
+                      const hasDiffs = effectiveDiffs.length > 0;
+                      const hasBeforeData = Boolean(entry.beforeData && Object.keys(entry.beforeData).length > 0);
+                      const hasAfterData = Boolean(entry.afterData && Object.keys(entry.afterData).length > 0);
+                      const canExpand = hasDiffs || (isDeletedRecord && hasBeforeData) || (isCreationRecord && hasAfterData);
 
-                              return (
-                                <div className="flex items-center gap-1.5">
-                                  {isMe ? (
-                                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                  ) : isUnlinked ? (
-                                    <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                  ) : (
-                                    <UserIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                  )}
-                                  <span className={isMe ? 'font-semibold text-emerald-900' : (isUnlinked ? 'text-slate-500' : 'font-medium text-slate-800')}>
-                                    {opName}
+                      return (
+                        <React.Fragment key={logIdentifier}>
+                          <tr className={`hover:bg-slate-50/60 transition-colors ${isExpanded ? 'bg-blue-50/30' : ''}`}>
+                            <td className="py-2.5 px-3 whitespace-nowrap align-top">
+                              {getActionBadge(entry.actionType)}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap align-top">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                                {getEntityLabel(entry.entityType)}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 align-top min-w-0">
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-baseline gap-2">
+                                  <span className="font-semibold text-slate-900 text-sm">
+                                    {parsed.headline}
                                   </span>
-                                  {isMe && (
-                                    <span
-                                      className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-medium shrink-0"
-                                      title="現在ログイン中のGoogleアカウント"
-                                    >
-                                      自分
-                                    </span>
+                                  <span className="text-xs text-slate-500 font-medium">
+                                    — {parsed.subHeadline}
+                                  </span>
+                                </div>
+                                {parsed.chips.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                    {parsed.chips.map((chip, cIdx) => (
+                                      <span
+                                        key={cIdx}
+                                        className="inline-flex items-center text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/80 leading-tight"
+                                      >
+                                        {chip}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                                {parsed.recordId && (
+                                  <div className="text-[11px] font-mono text-slate-400 flex items-center gap-1 pt-0.5">
+                                    <span className="text-slate-300">管理番号:</span>
+                                    <span>{parsed.recordId}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap align-top">
+                              {canExpand ? (
+                                <button
+                                  onClick={() => setExpandedLogId(isExpanded ? null : logIdentifier)}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
+                                    isExpanded
+                                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                      : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                                  }`}
+                                >
+                                  {hasDiffs ? (
+                                    <>
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>差分 {effectiveDiffs.length}件</span>
+                                    </>
+                                  ) : isDeletedRecord && hasBeforeData ? (
+                                    <>
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                      <span>削除前データ</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <FileText className="w-3.5 h-3.5" />
+                                      <span>登録データ</span>
+                                    </>
+                                  )}
+                                  {isExpanded ? (
+                                    <ChevronUp className="w-3.5 h-3.5 ml-0.5" />
+                                  ) : (
+                                    <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs">—</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap text-xs text-slate-600 align-top">
+                              <div className="flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>{formatDate(entry.deletedTimestamp || entry.deletedAt)}</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap text-xs align-top">
+                              {(() => {
+                                const opName = getDisplayOperatorName(entry.operator, entry.deviceInfo);
+                                const activeGoogle = currentUser?.displayName || currentUser?.email || (typeof window !== 'undefined' ? (safeStorage.getItem('renge_google_user_name') || safeStorage.getItem('renge_google_user_email')) : '');
+                                const isMe = activeGoogle && (
+                                  opName.toLowerCase() === activeGoogle.toLowerCase() ||
+                                  (currentUser?.email && opName.toLowerCase() === currentUser.email.toLowerCase()) ||
+                                  (currentUser?.displayName && opName === currentUser.displayName)
+                                );
+                                const isUnlinked = opName === 'Google未連携' || opName === '未ログイン';
+
+                                return (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1.5">
+                                      {isMe ? (
+                                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                      ) : isUnlinked ? (
+                                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                      ) : (
+                                        <UserIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                      )}
+                                      <span className={`truncate max-w-[120px] ${isMe ? 'font-semibold text-emerald-900' : (isUnlinked ? 'text-slate-500' : 'font-medium text-slate-800')}`} title={opName}>
+                                        {opName}
+                                      </span>
+                                      {isMe && (
+                                        <span
+                                          className="text-[9px] px-1 py-0.5 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-medium shrink-0"
+                                          title="現在ログイン中のGoogleアカウント"
+                                        >
+                                          自分
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                                      {entry.deviceInfo?.includes('スマホ') ? (
+                                        <Smartphone className="w-3 h-3 text-slate-400 shrink-0" />
+                                      ) : (
+                                        <Monitor className="w-3 h-3 text-slate-400 shrink-0" />
+                                      )}
+                                      <span>{entry.deviceInfo || 'PC'}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+
+                          {/* Expanded Diff & Restoration Accordion Row */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/90 border-t border-b border-blue-100">
+                              <td colSpan={6} className="p-3 sm:p-4">
+                                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                    <div>
+                                      <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-blue-600" />
+                                        <span>操作前後の変更差分・復元コントロール</span>
+                                      </h4>
+                                      <p className="text-xs text-slate-500 mt-0.5">
+                                        変更前と変更後の値を確認し、個別の項目または全体を過去の状態に復元できます。
+                                      </p>
+                                    </div>
+
+                                    {onRestoreRecord && (
+                                      <div className="flex items-center gap-2">
+                                        {entry.actionType === 'update' && hasDiffs && (
+                                          <button
+                                            onClick={() => handleRestore(entry)}
+                                            disabled={restoringKey === `${logIdentifier}-all`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-sm transition-colors disabled:opacity-50"
+                                          >
+                                            <Undo2 className="w-3.5 h-3.5" />
+                                            {restoringKey === `${logIdentifier}-all` ? '復元中...' : 'この操作の全差分を一括復元'}
+                                          </button>
+                                        )}
+                                        {isCreationRecord && (
+                                          <button
+                                            onClick={() => handleRestore(entry)}
+                                            disabled={restoringKey === `${logIdentifier}-all`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium text-xs shadow-sm transition-colors disabled:opacity-50"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            {restoringKey === `${logIdentifier}-all` ? '処理中...' : '新規登録を取り消す（削除）'}
+                                          </button>
+                                        )}
+                                        {isDeletedRecord && hasBeforeData && (
+                                          <button
+                                            onClick={() => handleRestore(entry)}
+                                            disabled={restoringKey === `${logIdentifier}-all`}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs shadow-sm transition-colors disabled:opacity-50"
+                                          >
+                                            <RotateCcw className="w-3.5 h-3.5" />
+                                            {restoringKey === `${logIdentifier}-all` ? '復元中...' : '削除されたレコードを復元'}
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Field Diffs Comparison List */}
+                                  {hasDiffs ? (
+                                    <div className="space-y-3">
+                                      <div className="grid grid-cols-1 gap-2.5">
+                                        {effectiveDiffs.map((diff, dIdx) => {
+                                          const isItemRestoring = restoringKey === `${entry.logId || entry.id}-${diff.field}`;
+                                          const formatVal = (v: any) => {
+                                            if (v === null || v === undefined || v === '') {
+                                              return <span className="text-slate-400 italic text-xs font-mono">（空 / 未設定）</span>;
+                                            }
+                                            if (typeof v === 'boolean') {
+                                              return v ? 'はい' : 'いいえ';
+                                            }
+                                            if (typeof v === 'object') {
+                                              return <span className="text-xs font-mono">{JSON.stringify(v)}</span>;
+                                            }
+                                            return String(v);
+                                          };
+
+                                          return (
+                                            <div
+                                              key={dIdx}
+                                              className="p-3 rounded-lg border border-slate-200/90 bg-slate-50/50 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3"
+                                            >
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                  <span className="font-semibold text-xs text-slate-800 bg-slate-200/80 px-2 py-0.5 rounded">
+                                                    {diff.label || diff.field}
+                                                  </span>
+                                                  <span className="text-[11px] font-mono text-slate-400">
+                                                    ({diff.field})
+                                                  </span>
+                                                </div>
+
+                                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                                  {/* Before */}
+                                                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-50 border border-rose-200 text-rose-900 max-w-full overflow-hidden text-ellipsis">
+                                                    <span className="text-[10px] font-bold text-rose-500 uppercase">変更前:</span>
+                                                    <span className="font-medium">{formatVal(diff.before)}</span>
+                                                  </div>
+
+                                                  <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+
+                                                  {/* After */}
+                                                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-50 border border-emerald-200 text-emerald-900 max-w-full overflow-hidden text-ellipsis">
+                                                    <span className="text-[10px] font-bold text-emerald-600 uppercase">変更後:</span>
+                                                    <span className="font-medium">{formatVal(diff.after)}</span>
+                                                  </div>
+                                                </div>
+                                              </div>
+
+                                              {onRestoreRecord && entry.actionType === 'update' && (
+                                                <button
+                                                  onClick={() => handleRestore(entry, diff.field)}
+                                                  disabled={isItemRestoring}
+                                                  className="self-start md:self-center inline-flex items-center gap-1 px-2.5 py-1 rounded border border-blue-200 hover:border-blue-400 bg-white hover:bg-blue-50 text-blue-700 text-xs font-medium transition-colors disabled:opacity-50 shrink-0"
+                                                  title={`この「${diff.label || diff.field}」項目のみを変更前の状態に復元`}
+                                                >
+                                                  <Undo2 className="w-3 h-3" />
+                                                  {isItemRestoring ? '復元中...' : 'この項目のみ元に戻す'}
+                                                </button>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ) : isDeletedRecord && hasBeforeData ? (
+                                    <div className="space-y-2">
+                                      <p className="text-xs font-medium text-slate-700">削除前のレコード内容（プレビュー）:</p>
+                                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 max-h-48 overflow-y-auto text-xs space-y-1">
+                                        {Object.entries(entry.beforeData || {}).map(([key, value]) => {
+                                          if (key === 'id' || key === 'templeId') return null;
+                                          if (value === null || value === undefined || value === '') return null;
+                                          return (
+                                            <div key={key} className="flex items-baseline gap-2 py-0.5 border-b border-slate-100 last:border-0">
+                                              <span className="w-28 shrink-0 text-slate-500 font-medium">{key}:</span>
+                                              <span className="text-slate-900 font-mono break-all">
+                                                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="p-3 rounded-lg bg-slate-50 text-slate-500 text-xs">
+                                      この操作の詳細な差分データはありません。
+                                    </div>
                                   )}
                                 </div>
-                              );
-                            })()}
-                          </td>
-                          <td className="py-3 px-3.5 whitespace-nowrap text-xs text-slate-500">
-                            <div className="flex items-center gap-1">
-                              {entry.deviceInfo?.includes('スマホ') ? (
-                                <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-                              ) : (
-                                <Monitor className="w-3.5 h-3.5 text-slate-400" />
-                              )}
-                              <span>{entry.deviceInfo || 'PC'}</span>
-                            </div>
-                          </td>
-                        </tr>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>

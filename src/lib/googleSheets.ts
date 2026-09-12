@@ -38,6 +38,7 @@ import {
 import { normalizeAuditDate, normalizeAuditTime, getCurrentAuditFields } from '../utils/auditUtils';
 import { sanitizeAppDataset } from '../utils/sanitizeDataUtils';
 import { loadDeletedRecordsLog, MAX_DELETED_LOG_LENGTH, normalizeLogOperator } from '../utils/deletedRecordsLog';
+import { formatGoogleSheetDiffCell, parseGoogleSheetDiffCell } from '../utils/diffUtils';
 import { 
   getSavedBatchAccountingData, 
   getSavedBatchAccountingConfig,
@@ -1836,26 +1837,32 @@ export async function exportToSheets(
     '所属寺院',
     '所属寺院ID',
     '操作者',
-    '端末・環境'
+    '端末・環境',
+    '変更差分詳細'
   ];
 
   const deletedLogsToExport: DeletedRecordEntry[] = (exportOptions?.deletedRecords && exportOptions.deletedRecords.length > 0)
     ? exportOptions.deletedRecords
     : loadDeletedRecordsLog();
 
-  const deletedRows = deletedLogsToExport.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => [
-    entry.logId || `LOG-${idx + 1}`,
-    entry.actionType || 'delete',
-    entry.entityType || '',
-    entry.id || '',
-    entry.label || '',
-    entry.deletedAt || '',
-    String(entry.deletedTimestamp || ''),
-    getTempleLabel(entry.templeId),
-    getTempleId(entry.templeId),
-    normalizeLogOperator(entry.operator),
-    entry.deviceInfo || '',
-  ]);
+  const deletedRows = deletedLogsToExport.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => {
+    const diffCell = formatGoogleSheetDiffCell(entry);
+
+    return [
+      entry.logId || `LOG-${idx + 1}`,
+      entry.actionType || 'delete',
+      entry.entityType || '',
+      entry.id || '',
+      entry.label || '',
+      entry.deletedAt || '',
+      String(entry.deletedTimestamp || ''),
+      getTempleLabel(entry.templeId),
+      getTempleId(entry.templeId),
+      normalizeLogOperator(entry.operator),
+      entry.deviceInfo || '',
+      diffCell,
+    ];
+  });
 
   addChunkedUpdates('操作・削除履歴', [deletedHeaders, ...deletedRows]);
 
@@ -3431,9 +3438,10 @@ export async function importFromSheets(
     const dTempleIdIdx = findColIdx(dHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
     const operatorIdx = findColIdx(dHeaders, ['操作者', '実行者', 'ユーザー', 'operator', 'user']);
     const deviceInfoIdx = findColIdx(dHeaders, ['端末・環境', '端末', '環境', 'デバイス', 'deviceInfo', 'device']);
+    const diffColIdx = findColIdx(dHeaders, ['変更差分詳細', '差分詳細', '差分', 'diffs', 'diffPayload']);
 
     dRows.forEach((row: string[], rowIdx: number) => {
-      // row indices fallback: [0:履歴ID, 1:種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境]
+      // row indices fallback: [0:履歴ID, 1:種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境, 11:変更差分詳細]
       const logId = String((logIdIdx !== -1 ? row[logIdIdx] : (row[0] && String(row[0]).startsWith('LOG-') ? row[0] : '')) || '').trim();
       
       let id = '';
@@ -3469,6 +3477,17 @@ export async function importFromSheets(
       const operator = normalizeLogOperator(rawOperator);
       const deviceInfo = deviceInfoIdx !== -1 ? String(row[deviceInfoIdx] || '').trim() : (row[10] || undefined);
 
+      let diffs: any = undefined;
+      let beforeData: any = undefined;
+      let afterData: any = undefined;
+      const rawDiffStr = String((diffColIdx !== -1 ? row[diffColIdx] : row[11]) || '').trim();
+      if (rawDiffStr) {
+        const parsed = parseGoogleSheetDiffCell(rawDiffStr);
+        diffs = parsed.diffs;
+        beforeData = parsed.beforeData;
+        afterData = parsed.afterData;
+      }
+
       parsedDeletedRecords.push({
         logId: logId || `LOG-${deletedTimestamp}-${rowIdx}`,
         id,
@@ -3480,6 +3499,9 @@ export async function importFromSheets(
         templeId,
         operator: operator || undefined,
         deviceInfo: deviceInfo || undefined,
+        diffs,
+        beforeData,
+        afterData,
       });
     });
   }
@@ -3612,7 +3634,7 @@ export async function fetchLatestOperationLogs(
   limit: number = 30
 ): Promise<{ logs: DeletedRecordEntry[]; latestTimestamp: number } | null> {
   try {
-    const range = encodeURIComponent(`'操作・削除履歴'!A2:K${limit + 2}`);
+    const range = encodeURIComponent(`'操作・削除履歴'!A2:L${limit + 2}`);
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueRenderOption=FORMATTED_VALUE`;
     const res = await fetchWithRetry(
       url,
@@ -3638,7 +3660,7 @@ export async function fetchLatestOperationLogs(
     let maxTimestamp = 0;
 
     rows.forEach((row, idx) => {
-      // Row format: [0:履歴ID, 1:操作種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境]
+      // Row format: [0:履歴ID, 1:操作種別, 2:対象エンティティ, 3:対象ID, 4:対象名称/内容, 5:削除・操作日時, 6:日時(ms), 7:所属寺院, 8:所属寺院ID, 9:操作者, 10:端末・環境, 11:変更差分詳細]
       const logId = String(row[0] || '').trim();
       const id = String(row[3] || '').trim();
       if (!id || id.startsWith('LOG-') || id === 'ID' || id === '対象ID' || id === 'レコードID') return;
@@ -3665,6 +3687,16 @@ export async function fetchLatestOperationLogs(
       const operator = normalizeLogOperator(row[9], row[10]);
       const deviceInfo = row[10] ? String(row[10]).trim() : undefined;
 
+      let diffs: any = undefined;
+      let beforeData: any = undefined;
+      let afterData: any = undefined;
+      if (row[11]) {
+        const parsed = parseGoogleSheetDiffCell(String(row[11]).trim());
+        diffs = parsed.diffs;
+        beforeData = parsed.beforeData;
+        afterData = parsed.afterData;
+      }
+
       parsed.push({
         logId: logId || `LOG-${deletedTimestamp}-${idx}`,
         id,
@@ -3674,8 +3706,11 @@ export async function fetchLatestOperationLogs(
         deletedAt: deletedAt || new Date(deletedTimestamp).toISOString(),
         deletedTimestamp,
         templeId,
-        operator,
-        deviceInfo,
+        operator: operator || undefined,
+        deviceInfo: deviceInfo || undefined,
+        diffs,
+        beforeData,
+        afterData,
       });
     });
 
