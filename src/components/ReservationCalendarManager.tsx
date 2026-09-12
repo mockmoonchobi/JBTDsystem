@@ -3266,14 +3266,6 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                     <Plus className="w-3.5 h-3.5" />
                     <span>+予定追加</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenAddTodoModal(selectedDateStr)}
-                    className="px-2 py-1.5 bg-[#EFECE6] text-[#444444] font-bold text-xs hover:bg-[#D4AF37] hover:text-[#1A1A1A] transition-colors flex items-center gap-1 cursor-pointer"
-                    title="タスク追加"
-                  >
-                    <CheckSquare className="w-3.5 h-3.5" />
-                  </button>
                 </div>
               </div>
 

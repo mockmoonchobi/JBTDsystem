@@ -194,7 +194,7 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
   };
 
   const modalContent = (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 flex flex-col items-center justify-start p-2 sm:p-4 print:p-0 print:static print:bg-transparent print:overflow-visible">
+    <div className="schedule-print-modal-overlay fixed inset-0 z-50 overflow-y-auto bg-black/75 flex flex-col items-center justify-start p-2 sm:p-4 print:p-0 print:static print:bg-transparent print:overflow-visible">
       {/* Print-specific style */}
       <style>{`
         .schedule-print-container {
@@ -219,30 +219,79 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
         }
 
         @media print {
-          body * {
-            visibility: hidden;
+          /* アプリ本体UI（#root等）を完全に非表示化し、1ページ目の空白を完全に解消 */
+          #root,
+          header,
+          nav,
+          aside,
+          footer,
+          .no-print,
+          .no-print * {
+            display: none !important;
           }
-          .schedule-print-container, .schedule-print-container * {
-            visibility: visible;
+
+          @page {
+            size: A4 portrait;
+            margin: 10mm 12mm 10mm 12mm;
           }
+
+          html, body {
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          .schedule-print-modal-overlay {
+            position: static !important;
+            display: block !important;
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            box-shadow: none !important;
+          }
+
           .schedule-print-container {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: auto;
-            margin: 0;
-            padding: 10mm 15mm !important;
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: none !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: #ffffff !important;
             box-shadow: none !important;
             border: none !important;
+            overflow: visible !important;
+            page-break-before: avoid !important;
+            break-before: avoid !important;
           }
-          .no-print {
-            display: none !important;
+
+          .schedule-vertical-area {
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: 265mm !important;
+            page-break-before: avoid !important;
+            break-before: avoid !important;
           }
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
+
+          .schedule-vertical-area > div {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>
