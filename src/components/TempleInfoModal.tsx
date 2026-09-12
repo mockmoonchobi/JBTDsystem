@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Building2, 
@@ -27,7 +27,8 @@ import {
   Mail,
   UserCheck,
   BookOpen,
-  Coins
+  Coins,
+  Save
 } from 'lucide-react';
 import { TempleInfo, TempleProfile, MasterOptions, Household, PastRecord, Transaction, MemorialService, TempleTodo, Priest } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, DEFAULT_ANNUAL_EVENTS } from '../data/initialData';
@@ -193,6 +194,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [showSaveConfirm, setShowSaveConfirm] = useState<boolean>(false);
+  const initialSnapshotRef = useRef<string>('');
 
   useEffect(() => {
     if (isOpen) {
@@ -207,7 +209,8 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
 
       // Reconcile priests
       const currentPriests = Array.isArray(initialPriests) ? initialPriests : [];
-      setPriestList(reconcilePriestsWithTemples(currentTemples, currentPriests));
+      const reconciledPriests = reconcilePriestsWithTemples(currentTemples, currentPriests);
+      setPriestList(reconciledPriests);
 
       // Initialize Master State Map
       const map: Record<string, MasterOptions> = {};
@@ -219,6 +222,13 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
         map[initialActiveId] = masterOptions;
       }
       setMasterStateMap(map);
+
+      // Snapshot for unsaved changes detection
+      initialSnapshotRef.current = JSON.stringify({
+        temples: currentTemples,
+        priests: reconciledPriests,
+        master: map,
+      });
 
       if (initialTab) {
         setActiveTab(initialTab);
@@ -758,12 +768,31 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     onClose();
   };
 
+  const checkHasUnsavedChanges = (): boolean => {
+    if (!initialSnapshotRef.current) return false;
+    const currentSnapshot = JSON.stringify({
+      temples: templeList,
+      priests: priestList,
+      master: masterStateMap,
+    });
+    return currentSnapshot !== initialSnapshotRef.current;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!checkHasUnsavedChanges()) {
+      // 変更がない場合は保存をスキップするガード: データの再保存・履歴記録・Googleシート同期を行わず、単にモーダルを閉じる
+      onClose();
+      return;
+    }
     executeSaveAndClose();
   };
 
   const handleRequestClose = () => {
+    if (!checkHasUnsavedChanges()) {
+      onClose();
+      return;
+    }
     setShowSaveConfirm(true);
   };
 
@@ -1912,18 +1941,11 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
 
             <div className="flex space-x-2">
               <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 bg-[#FAF9F5] border border-[#D1CEC7] text-[#555555] font-bold text-xs hover:bg-[#EBE7DF] transition-colors cursor-pointer"
-              >
-                キャンセル
-              </button>
-              <button
                 type="submit"
-                className="px-5 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] font-bold text-xs uppercase tracking-wider transition-colors shadow-xs cursor-pointer flex items-center space-x-1.5"
+                className="px-5 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] font-bold text-xs uppercase tracking-wider transition-colors shadow-xs cursor-pointer flex items-center space-x-1.5 rounded-xs"
               >
-                <Check className="w-4 h-4" />
-                <span>寺院設定＆マスタを保存</span>
+                <Save className="w-4 h-4" />
+                <span>保存して閉じる</span>
               </button>
             </div>
           </div>
@@ -1934,14 +1956,17 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       <SaveConfirmModal
         isOpen={showSaveConfirm}
         title="寺院設定・マスタ設定の保存確認"
-        message="編集中の寺院情報・区分マスタを保存しますか？"
-        description="「保存して閉じる」を押すと変更内容を反映して閉じます。「保存せずに閉じる」を押すと今回の編集は破棄されます。"
+        message="変更を保存しますか？"
+        description="「変更を保存」を押すと、変更内容が反映されて画面が閉じます。「変更を破棄」を押すと、編集作業内容は破棄して画面を閉じます。"
         onSaveAndClose={executeSaveAndClose}
         onDiscardAndClose={() => {
           setShowSaveConfirm(false);
           onClose();
         }}
         onCancel={() => setShowSaveConfirm(false)}
+        cancelText="キャンセル"
+        discardText="変更を破棄"
+        saveText="変更を保存"
       />
 
       {/* Priest Add / Edit Sub-Modal */}

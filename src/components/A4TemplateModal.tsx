@@ -285,35 +285,20 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
   };
 
   const handleSaveAndClose = () => {
-    saveAllNoticeTemplates(allTemplates);
-    if (currentTemplate) {
-      const { operator, deviceInfo } = getCurrentOperatorInfo();
-      recordOperationLog(
-        currentTemplate.id,
-        'noticeTemplate',
-        'update',
-        `案内文テンプレート（A4）「${currentTemplate.name}」を更新`,
-        templeInfo?.id || 'temple-main',
-        operator,
-        deviceInfo
-      );
+    if (!hasChanges) {
+      // 変更がない場合は保存をスキップするガード: データの再保存・履歴記録・Googleシート同期を行わず、単にモーダルを閉じる
+      onClose();
+      return;
     }
-    setHasChanges(false);
-    setSaveSuccess(true);
-    if (onTemplatesUpdated) {
-      onTemplatesUpdated(allTemplates);
-    }
-    onClose();
+    executeSaveAndClose();
   };
 
-  const handleCloseModal = () => {
-    // 一括会計処理と同様に、閉じる操作時に端末保存およびデータ連携を実行
-    handleSaveAndClose();
-  };
-
-  const handleDiscardAndClose = () => {
-    setShowSaveConfirm(false);
-    onClose();
+  const handleRequestClose = () => {
+    if (!hasChanges) {
+      onClose();
+      return;
+    }
+    setShowSaveConfirm(true);
   };
 
   const executeSaveAndClose = () => {
@@ -332,6 +317,7 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
     }
     setShowSaveConfirm(false);
     setHasChanges(false);
+    setSaveSuccess(true);
     if (onTemplatesUpdated) {
       onTemplatesUpdated(allTemplates);
     }
@@ -424,9 +410,9 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
           <div className="flex items-center space-x-2 font-sans">
             <button
               type="button"
-              onClick={handleCloseModal}
+              onClick={handleRequestClose}
               className="p-1.5 text-[#CCCCCC] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              title="保存して閉じる"
+              title="閉じる"
             >
               <X className="w-6 h-6" />
             </button>
@@ -734,32 +720,20 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
 
         {/* Modal Footer */}
         <div className="bg-[#1A1A1A] text-[#F9F7F2] px-4 py-3 border-t border-[#D4AF37] flex flex-col sm:flex-row items-center justify-between gap-3 font-sans shrink-0">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#CCCCCC]">
-            <div className="flex items-center space-x-2">
-              <span className="text-[#999]">テンプレート数:</span>
-              <strong className="text-white font-mono text-sm">{a4Templates.length} 件</strong>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#CCCCCC]">
+              <div className="flex items-center space-x-2">
+                <span className="text-[#999]">テンプレート数:</span>
+                <strong className="text-white font-mono text-sm">{a4Templates.length} 件</strong>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-[#999]">編集中のテンプレート:</span>
+                <strong className="text-[#D4AF37] font-bold">{currentTemplate.name}</strong>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-[#999]">編集中のテンプレート:</span>
-              <strong className="text-[#D4AF37] font-bold">{currentTemplate.name}</strong>
-            </div>
-            <span className="text-[#888] text-[11px]">
-              ※ 長3封筒印刷画面で「案内文（A4）」を選択した際に、A4用紙（横置き・縦書き）として一括印刷されます。
-            </span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {hasChanges && (
-              <button
-                type="button"
-                onClick={handleDiscardAndClose}
-                className="px-3 py-2 bg-[#2A2A2A] hover:bg-stone-700 text-stone-300 text-xs font-bold transition-colors cursor-pointer border border-stone-600 rounded-xs"
-                title="編集内容を破棄して閉じます"
-              >
-                <span>破棄して閉じる</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={handleSaveAndClose}
@@ -775,15 +749,19 @@ export const A4TemplateModal: React.FC<A4TemplateModalProps> = ({
       {/* Save Confirmation Modal */}
       <SaveConfirmModal
         isOpen={showSaveConfirm}
-        title="A4テンプレートの保存確認"
-        message="編集中のA4案内状テンプレートを保存しますか？"
-        description="「保存して閉じる」を押すと、変更した案内文テンプレートを反映して閉じます。「保存せずに閉じる」を押すと今回の編集は破棄されます。"
+        title="案内文テンプレートの保存確認"
+        message="変更を保存しますか？"
+        description="「変更を保存」を押すと、変更内容が反映されて画面が閉じます。「変更を破棄」を押すと、編集作業内容は破棄して画面を閉じます。"
         onSaveAndClose={executeSaveAndClose}
         onDiscardAndClose={() => {
           setShowSaveConfirm(false);
+          setHasChanges(false);
           onClose();
         }}
         onCancel={() => setShowSaveConfirm(false)}
+        cancelText="キャンセル"
+        discardText="変更を破棄"
+        saveText="変更を保存"
       />
 
       {/* Delete Confirmation Modal */}

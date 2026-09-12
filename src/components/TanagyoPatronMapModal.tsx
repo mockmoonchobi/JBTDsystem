@@ -27,6 +27,7 @@ import {
 import { Household, Priest, TempleInfo, PastRecord, TempleProfile } from '../types';
 import { LatLng, batchGeocodeAddresses, geocodeAddressWithGSI } from '../utils/geocoding';
 import { getHouseholdSponsorName, isRelevantNiibon } from '../utils/memorialCalculator';
+import { SaveConfirmModal } from './SaveConfirmModal';
 
 interface TanagyoPatronMapModalProps {
   isOpen: boolean;
@@ -150,6 +151,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
   const [localHouseholds, setLocalHouseholds] = useState<Household[]>([]);
   // 変更フラグ
   const [hasChanges, setHasChanges] = useState<boolean>(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState<boolean>(false);
 
   // 日程候補リスト
   const [datesList, setDatesList] = useState<string[]>(candidateDates);
@@ -1275,21 +1277,28 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     onClose();
   };
 
-  // 右上×ボタン用：編集したところまで保存して終了（変更がなければそのまま終了）
-  const handleCloseWithAutoSave = () => {
-    if (hasChanges) {
-      handleSaveAndApply();
-    } else {
+  // 保存して終了ボタン用（変更がなければ保存処理をスキップして終了）
+  const handleSaveButton = () => {
+    if (!hasChanges) {
       onClose();
+      return;
     }
+    handleSaveAndApply();
+  };
+
+  // 右上×ボタンおよび閉じるボタン用（変更があれば確認モーダル、なければ即終了）
+  const handleRequestClose = () => {
+    if (!hasChanges) {
+      onClose();
+      return;
+    }
+    setShowSaveConfirm(true);
   };
 
   // 変更を保存せずに破棄して閉じる
   const handleDiscardAndClose = () => {
-    if (hasChanges && !window.confirm('編集中の計画変更を保存せずに破棄して閉じますか？')) {
-      return;
-    }
     setHasChanges(false);
+    setShowSaveConfirm(false);
     onClose();
   };
 
@@ -1345,7 +1354,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                 </span>
               </h3>
               <p className="text-[11px] text-amber-100/90 font-sans">
-                直感的に計画・割当できます（いつでも保存して終了可能・右上の「✕」または「保存して終了」で確定）
+                直感的に計画・割当できます（左下の「保存して終了」で保存・確定）
               </p>
             </div>
           </div>
@@ -1360,39 +1369,12 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
               </div>
             ) : null}
 
-            {/* 保存して終了ボタン（ヘッダーで常時ワンクリック終了可能） */}
+            {/* 右上×ボタン */}
             <button
               type="button"
-              onClick={handleSaveAndApply}
-              className={`flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-xs shadow-xs cursor-pointer transition-colors ${
-                hasChanges
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-1 ring-emerald-400 animate-pulse'
-                  : 'bg-white/15 hover:bg-white/25 text-white border border-white/20'
-              }`}
-              title="編集した内容を保存して画面を終了します"
-            >
-              <Check className="w-4 h-4 stroke-[2.5]" />
-              <span>保存して終了</span>
-            </button>
-
-            {/* 破棄して閉じる（変更がある場合のみ表示） */}
-            {hasChanges && (
-              <button
-                type="button"
-                onClick={handleDiscardAndClose}
-                className="hidden sm:inline-block text-[11px] text-amber-200 hover:text-white underline cursor-pointer px-1 py-0.5"
-                title="編集内容を保存せずに破棄して閉じます"
-              >
-                変更を破棄
-              </button>
-            )}
-
-            {/* 右上×ボタン：編集したところまでで保存終了 */}
-            <button
-              type="button"
-              onClick={handleCloseWithAutoSave}
+              onClick={handleRequestClose}
               className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded-xs cursor-pointer transition-colors"
-              title={hasChanges ? '編集した内容を保存して閉じます' : '閉じる'}
+              title="閉じる"
             >
               <X className="w-6 h-6" />
             </button>
@@ -2272,9 +2254,23 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
               </div>
             )}
 
-            {/* パネルフッター: どのステップでも保存終了可能なボタン群 */}
+            {/* パネルフッター: 左下に保存して閉じる、右側にステップ移動 */}
             <div className="p-3 bg-[#FAF7F0] border-t border-[#D1CEC7] flex flex-wrap items-center justify-between gap-2 shrink-0">
               <div className="flex items-center space-x-2">
+                {/* 左下: 保存して閉じる */}
+                <button
+                  type="button"
+                  onClick={handleSaveButton}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xs cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors"
+                  title="ここまでの計画・割当を保存して終了します"
+                >
+                  <Check className="w-4 h-4 stroke-[2.5]" />
+                  <span>保存して閉じる</span>
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {/* 前のステップへ戻る */}
                 <button
                   type="button"
                   onClick={() => {
@@ -2283,34 +2279,9 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                     }
                   }}
                   disabled={activeStep === 1}
-                  className="px-3 py-1.5 bg-gray-200 text-gray-700 disabled:opacity-40 font-bold text-xs rounded-xs cursor-pointer hover:bg-gray-300"
+                  className="px-3.5 py-2 bg-gray-200 text-gray-700 disabled:opacity-40 font-bold text-xs rounded-xs cursor-pointer hover:bg-gray-300 transition-colors"
                 >
                   ◀ 前のステップ
-                </button>
-                {hasChanges && (
-                  <button
-                    type="button"
-                    onClick={handleDiscardAndClose}
-                    className="px-2 py-1 text-gray-500 hover:text-red-700 hover:bg-red-50 text-xs font-medium rounded-xs cursor-pointer transition-colors"
-                    title="編集した内容を保存せずに破棄して閉じます"
-                  >
-                    変更を破棄して閉じる
-                  </button>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-2">
-                {/* どのステップでもいつでも保存して終了できるボタン */}
-                <button
-                  type="button"
-                  onClick={handleSaveAndApply}
-                  className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xs cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors"
-                  title="ここまでの計画・割当を保存してモーダルを閉じます"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    {activeStep === 3 ? '計画を確定・保存して終了' : 'ここまでの割当を保存して終了'}
-                  </span>
                 </button>
 
                 {/* 次のステップへ進むボタン */}
@@ -2318,7 +2289,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveStep((prev) => (prev + 1) as 1 | 2 | 3)}
-                    className="px-3.5 py-1.5 bg-[#8C2D19] text-white font-bold text-xs rounded-xs cursor-pointer hover:bg-[#702414] shadow-xs flex items-center gap-1 transition-colors"
+                    className="px-4 py-2 bg-[#8C2D19] text-white font-bold text-xs rounded-xs cursor-pointer hover:bg-[#702414] shadow-xs flex items-center gap-1 transition-colors"
                   >
                     <span>次へ進む</span>
                     <ChevronRight className="w-3.5 h-3.5" />
@@ -2348,7 +2319,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                 <span className="text-gray-500 mt-1 block">
                   ※檀家名簿自体の棚経対象設定は解除されません。
                   <br />
-                  ※右下の「保存して終了」を押すまで確定されません。
+                  ※左下の「保存して終了」を押すまで確定されません。
                 </span>
               </p>
               <div className="flex justify-end gap-2 pt-2 border-t border-gray-200">
@@ -2371,6 +2342,20 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Save Confirmation Modal */}
+        <SaveConfirmModal
+          isOpen={showSaveConfirm}
+          title="棚経訪問マップ計画の保存確認"
+          message="変更を保存しますか？"
+          description="「変更を保存」を押すと、変更内容が反映されて画面が閉じます。「変更を破棄」を押すと、編集作業内容は破棄して画面を閉じます。"
+          onSaveAndClose={handleSaveAndApply}
+          onDiscardAndClose={handleDiscardAndClose}
+          onCancel={() => setShowSaveConfirm(false)}
+          cancelText="キャンセル"
+          discardText="変更を破棄"
+          saveText="変更を保存"
+        />
       </div>
     </div>
   );

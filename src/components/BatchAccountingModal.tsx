@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Household, Transaction, MasterOptions, TempleInfo, TransactionCategory, BatchAccountingData, HouseholdBatchEntry, BatchAccountingConfig } from '../types';
 import { formatCurrency, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions } from '../utils/memorialCalculator';
+import { SaveConfirmModal } from './SaveConfirmModal';
 import { 
   getSavedBatchAccountingData, 
   getSavedBatchAccountingConfig,
@@ -114,6 +115,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   // 3. Persistence & Save status
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState<boolean>(false);
   const isLoadedRef = useRef<boolean>(false);
 
   // Load saved state when modal opens
@@ -196,8 +198,8 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     };
   }, [configDate, cat1, notes1, defaultAmount1, cat2, notes2, defaultAmount2, cat3, notes3, defaultAmount3, appliedPreset, entries, templeInfo]);
 
-  // Handle closing modal with automatic save & Google Sheets sync
-  const handleCloseModal = useCallback(() => {
+  // Handle executing save & Google Sheets sync
+  const executeSaveAndClose = useCallback(() => {
     try {
       const dataToSave = getCurrentBatchData();
       saveBatchAccountingData(dataToSave);
@@ -223,8 +225,27 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     } catch (err) {
       console.warn('Error saving batch accounting data on close:', err);
     }
+    setHasUnsavedChanges(false);
+    setShowSaveConfirm(false);
     onClose();
   }, [getCurrentBatchData, onSaveBatchData, onClose]);
+
+  const handleSaveButton = () => {
+    if (!hasUnsavedChanges) {
+      // 変更がない場合は保存をスキップするガード: データの再保存・履歴記録・Googleシート同期を行わず、単にモーダルを閉じる
+      onClose();
+      return;
+    }
+    executeSaveAndClose();
+  };
+
+  const handleRequestClose = () => {
+    if (!hasUnsavedChanges) {
+      onClose();
+      return;
+    }
+    setShowSaveConfirm(true);
+  };
 
   // Preset 1: Apply all Temple feeTypes
   const handleApplyTempleFeesPreset = () => {
@@ -826,7 +847,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-[#CCCCCC] font-sans mt-0.5">
-                入力中は快適に作業できるようGoogleシート連携は行われません。「保存して閉じる」または「☓」実行時にGoogleシートへ自動連携されます。
+                入力中は快適に作業できるようGoogleシート連携は行われません。変更を保存して閉じる際にGoogleシートへ自動連携されます。
               </p>
             </div>
           </div>
@@ -840,9 +861,10 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
             )}
 
             <button
-              onClick={handleCloseModal}
+              type="button"
+              onClick={handleRequestClose}
               className="p-1.5 text-[#CCCCCC] hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              title="保存して閉じる"
+              title="閉じる"
             >
               <X className="w-6 h-6" />
             </button>
@@ -915,41 +937,13 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
           </div>
         </div>
 
-        {/* 1. TOP CONFIGURATION BAR (設定バー: 日付・科目1・摘要1・金額1・科目2・摘要2・金額2・科目3・摘要3・金額3 ＆ 全入金処理ボタン) */}
+        {/* 1. TOP CONFIGURATION BAR (設定バー: 科目1・摘要1・金額1・科目2・摘要2・金額2・科目3・摘要3・金額3) */}
         <div className="bg-[#242424] text-[#F9F7F2] p-3 border-b-2 border-[#D4AF37] font-sans shrink-0 shadow-md">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
             
-            {/* Left/Middle: Date & 3 Preset Columns (順番: 日付 科目1 摘要1 金額1 科目2 摘要2 金額2 科目3 摘要3 金額3) */}
-            <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-10 gap-2 items-end">
+            {/* 3 Preset Columns (順番: 科目1 摘要1 金額1 科目2 摘要2 金額2 科目3 摘要3 金額3) */}
+            <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-9 gap-2 items-end">
               
-              {/* 日付 */}
-              <div className="space-y-1 lg:col-span-1">
-                <label className="text-[11px] font-bold text-[#D4AF37] block">
-                  ① 受付日付
-                </label>
-                <input
-                  type="text"
-                  value={configDate}
-                  onChange={(e) => {
-                    setConfigDate(e.target.value);
-                    setHasUnsavedChanges(true);
-                  }}
-                  onBlur={() => {
-                    if (configDate.trim()) {
-                      const norm = normalizeDateInput(configDate, {
-                        mode: 'accounting',
-                        fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4,
-                      });
-                      if (norm) {
-                        setConfigDate(formatJapaneseEraDate(norm, false));
-                      }
-                    }
-                  }}
-                  placeholder="令和8年8月21日 または 8/21"
-                  className="w-full bg-[#1A1A1A] border border-[#555] text-white px-2 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
-                />
-              </div>
-
               {/* 科目１ */}
               <div className="space-y-1 lg:col-span-1">
                 <label className="text-[11px] font-bold text-amber-300 block truncate" title="科目１（勘定科目）">
@@ -1580,55 +1574,42 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
 
         {/* Modal Footer */}
         <div className="bg-[#1A1A1A] text-[#F9F7F2] px-4 py-3 border-t border-[#D4AF37] flex flex-col sm:flex-row items-center justify-between gap-3 font-sans shrink-0">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-            <div className="flex items-center space-x-2">
-              <span className="text-[#999]">入力済み施主数:</span>
-              <strong className="text-white font-mono text-sm">{Object.keys(entries).length} 件</strong>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* 受付日付（全入金処理の左側） */}
+            <div className="flex items-center space-x-2 bg-[#252525] px-2.5 py-1.5 border border-[#555] rounded-xs shadow-xs">
+              <label className="text-xs font-bold text-[#D4AF37] whitespace-nowrap flex items-center space-x-1 shrink-0">
+                <Calendar className="w-3.5 h-3.5 text-[#D4AF37]" />
+                <span>受付日付:</span>
+              </label>
+              <input
+                type="text"
+                value={configDate}
+                onChange={(e) => {
+                  setConfigDate(e.target.value);
+                  setHasUnsavedChanges(true);
+                }}
+                onBlur={() => {
+                  if (configDate.trim()) {
+                    const norm = normalizeDateInput(configDate, {
+                      mode: 'accounting',
+                      fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4,
+                    });
+                    if (norm) {
+                      setConfigDate(formatJapaneseEraDate(norm, false));
+                    }
+                  }
+                }}
+                placeholder="令和8年8月21日 または 8/21"
+                className="w-36 sm:w-44 bg-[#141414] border border-[#666] text-white px-2 py-1 text-xs focus:border-[#D4AF37] focus:outline-none rounded-xs font-mono"
+                title="入金処理で記帳される受付日付（例: 8/21 または 令和8年8月21日）"
+              />
             </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-[#999]">生成出納レコード総数:</span>
-              <strong className="text-[#D4AF37] font-mono text-sm">{generatedRecordsSummary.totalCount} 件</strong>
-            </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-[#999]">合計受付金額:</span>
-              <strong className="text-emerald-400 font-mono text-base font-bold">
-                {formatCurrency(generatedRecordsSummary.totalSum)}
-              </strong>
-            </div>
-            {lastSavedAt && (
-              <span className="text-[#888] text-[11px] font-mono">
-                （最終保存: {lastSavedAt}）
-              </span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {Object.keys(entries).length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearAllEntries}
-                className="px-3 py-2 bg-[#2A2A2A] hover:bg-red-950/70 text-red-300 hover:text-red-100 border border-red-800/60 text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1 shadow-xs"
-                title="入力中の受付データをクリア"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>全クリア</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              className="px-4 py-2 bg-[#333] hover:bg-[#444] text-[#E0E0E0] hover:text-white text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1.5 border border-[#555]"
-            >
-              <Save className="w-3.5 h-3.5 text-[#D4AF37]" />
-              <span>保存して閉じる</span>
-            </button>
 
             <button
               type="button"
               onClick={handleExecuteBatch}
               disabled={generatedRecordsSummary.recordsToCreate.length === 0}
-              className={`px-5 py-2 font-bold text-xs tracking-wider flex items-center space-x-1.5 shadow-md transition-all cursor-pointer ${
+              className={`px-5 py-2 font-bold text-xs tracking-wider flex items-center space-x-1.5 shadow-md transition-all cursor-pointer rounded-xs ${
                 generatedRecordsSummary.recordsToCreate.length > 0
                   ? 'bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A]'
                   : 'bg-[#444] text-[#888] cursor-not-allowed'
@@ -1636,6 +1617,47 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
             >
               <CheckCircle2 className="w-4 h-4" />
               <span>全入金処理を実行する ({generatedRecordsSummary.totalCount}件)</span>
+            </button>
+
+            {Object.keys(entries).length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllEntries}
+                className="px-3 py-2 bg-[#2A2A2A] hover:bg-red-950/70 text-red-300 hover:text-red-100 border border-red-800/60 text-xs font-bold transition-colors cursor-pointer flex items-center space-x-1 shadow-xs rounded-xs"
+                title="入力中の受付データをクリア"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>全クリア</span>
+              </button>
+            )}
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#CCCCCC] pl-2 border-l border-[#444]">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-[#999]">入力施主:</span>
+                <strong className="text-white font-mono">{Object.keys(entries).length}件</strong>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <span className="text-[#999]">合計:</span>
+                <strong className="text-emerald-400 font-mono font-bold">
+                  {formatCurrency(generatedRecordsSummary.totalSum)}
+                </strong>
+              </div>
+              {lastSavedAt && (
+                <span className="text-[#888] text-[11px] font-mono">
+                  ({lastSavedAt})
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveButton}
+              className="px-5 py-2 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] hover:text-black text-xs font-bold transition-all cursor-pointer flex items-center space-x-1.5 rounded-xs shadow-md"
+            >
+              <Save className="w-4 h-4" />
+              <span>保存して閉じる</span>
             </button>
           </div>
         </div>
@@ -1881,6 +1903,23 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         </div>
       )}
 
+      {/* Save Confirmation Modal */}
+      <SaveConfirmModal
+        isOpen={showSaveConfirm}
+        title="一括会計処理の保存確認"
+        message="変更を保存しますか？"
+        description="「変更を保存」を押すと、変更内容が反映されて画面が閉じます。「変更を破棄」を押すと、編集作業内容は破棄して画面を閉じます。"
+        onSaveAndClose={executeSaveAndClose}
+        onDiscardAndClose={() => {
+          setShowSaveConfirm(false);
+          setHasUnsavedChanges(false);
+          onClose();
+        }}
+        onCancel={() => setShowSaveConfirm(false)}
+        cancelText="キャンセル"
+        discardText="変更を破棄"
+        saveText="変更を保存"
+      />
     </div>
   );
 };

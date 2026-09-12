@@ -359,14 +359,6 @@ export const DisasterMemorialModal: React.FC<DisasterMemorialModalProps> = ({
           <div className="flex items-center space-x-2.5">
             <button
               type="button"
-              onClick={handleRequestClose}
-              className="px-4 py-2 bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 rounded text-xs font-bold transition-colors cursor-pointer"
-            >
-              閉じる
-            </button>
-
-            <button
-              type="button"
               onClick={handleSave}
               className="px-5 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] rounded text-xs font-bold flex items-center space-x-1.5 transition-colors shadow cursor-pointer"
             >

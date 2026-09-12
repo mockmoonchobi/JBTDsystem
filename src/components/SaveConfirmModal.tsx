@@ -9,16 +9,22 @@ interface SaveConfirmModalProps {
   onSaveAndClose: () => void;
   onDiscardAndClose: () => void;
   onCancel: () => void;
+  cancelText?: string;
+  discardText?: string;
+  saveText?: string;
 }
 
 export const SaveConfirmModal: React.FC<SaveConfirmModalProps> = ({
   isOpen,
   title = '保存の確認',
-  message = '入力中の変更内容を保存しますか？',
-  description = '「保存して閉じる」を押すと、変更内容が反映されて画面が閉じます。「保存せずに閉じる」を押すと、変更内容は破棄されます。',
+  message = '変更を保存しますか？',
+  description = '「変更を保存」を押すと、変更内容が反映されて画面が閉じます。「変更を破棄」を押すと、編集作業内容は破棄して画面を閉じます。',
   onSaveAndClose,
   onDiscardAndClose,
   onCancel,
+  cancelText = 'キャンセル',
+  discardText = '変更を破棄',
+  saveText = '変更を保存',
 }) => {
   if (!isOpen) return null;
 
@@ -65,7 +71,7 @@ export const SaveConfirmModal: React.FC<SaveConfirmModalProps> = ({
             className="px-3.5 py-2 bg-white border border-[#D1CEC7] text-[#555555] hover:bg-[#F9F7F2] font-bold text-xs transition-colors cursor-pointer flex items-center justify-center space-x-1"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>編集を続ける</span>
+            <span>{cancelText}</span>
           </button>
 
           <button
@@ -74,7 +80,7 @@ export const SaveConfirmModal: React.FC<SaveConfirmModalProps> = ({
             className="px-3.5 py-2 bg-[#FFF5F5] border border-rose-300 text-rose-800 hover:bg-rose-100 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center space-x-1"
           >
             <X className="w-3.5 h-3.5" />
-            <span>保存せずに閉じる</span>
+            <span>{discardText}</span>
           </button>
 
           <button
@@ -83,7 +89,7 @@ export const SaveConfirmModal: React.FC<SaveConfirmModalProps> = ({
             className="px-4 py-2 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] font-bold text-xs uppercase tracking-wider transition-colors shadow-sm cursor-pointer flex items-center justify-center space-x-1.5"
           >
             <Check className="w-4 h-4 text-[#D4AF37]" />
-            <span>保存して閉じる</span>
+            <span>{saveText}</span>
           </button>
         </div>
       </div>
