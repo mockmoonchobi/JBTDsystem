@@ -8,6 +8,13 @@ import {
   TempleProfile,
   TempleInfo,
 } from '../types';
+import {
+  UNLINKED_HOUSEHOLD_ID,
+  isUnlinkedHouseholdId,
+  getUnlinkedHouseholdId,
+  cleanAndNormalizeHouseholdId,
+  getTemplePrefix,
+} from './dankaIdUtils';
 
 export interface DatasetSanitizationInput {
   households: Household[];
@@ -122,22 +129,27 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
     let hId = p.householdId || '';
     let tId = p.templeId;
 
+    // 寺院に応じた安全な世帯未設定予約ID (本寺: DK-99999, 兼務寺: K0-99999 等)
+    const targetUnlinkedId = getUnlinkedHouseholdId(tId, input.temples);
+
+    // 世帯未設定・不明ID（DK-00000, DK-UNKNOWN, 空欄等）の正規化
+    if (isUnlinkedHouseholdId(hId)) {
+      if (hId !== targetUnlinkedId) {
+        hId = targetUnlinkedId;
+        pChanged = true;
+        changed = true;
+      }
+    }
+
     // Check if p.id was corrupted to match householdId (or vice-versa)
     if (!pId || (hId && pId === hId)) {
       // If a household with this ID exists, pId was set to householdId -> give p a distinct ID
-      if (householdMap.has(hId)) {
+      if (householdMap.has(hId) && !isUnlinkedHouseholdId(hId)) {
         const numPart = hId.replace(/^[A-Z0-9]+-/, '');
         pId = `PR-${numPart}-${idx + 1}`;
       } else {
-        // If no household has this ID, maybe this ID was meant to be PR-id, or search household by head name
-        const cleanHead = (p.householdHeadName || p.chiefMourner || '').replace(/\s+/g, '');
-        const matchedH = cleanHead ? headNameToHouseholdMap.get(cleanHead) : undefined;
-        if (matchedH) {
-          hId = matchedH.id;
-          pId = `PR-${matchedH.id.replace(/^[A-Z0-9]+-/, '')}-${idx + 1}`;
-        } else {
-          pId = `PR-${Date.now()}-${idx + 1}`;
-        }
+        hId = targetUnlinkedId;
+        pId = `PR-${Date.now()}-${idx + 1}`;
       }
       pChanged = true;
       changed = true;
@@ -151,15 +163,19 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
     }
     usedPastIds.add(pId);
 
-    // If householdId is blank, attempt linking by head name
-    if (!hId) {
-      const cleanHead = (p.householdHeadName || p.chiefMourner || '').replace(/\s+/g, '');
-      const matchedH = cleanHead ? headNameToHouseholdMap.get(cleanHead) : undefined;
-      if (matchedH) {
-        hId = matchedH.id;
+    // 【最重要】世帯未設定の精霊に対して勝手に既存世帯や新規檀徒を紐づけてはならない。
+    // かつ、実在しない世帯IDが指定されている場合は、将来新規檀徒の採番（DK-00001〜, K0-00001〜）と
+    // 衝突して誤紐づけされる事故を完全に防ぐため、未設定予約ID（DK-99999 / K0-99999 等）に正規化する。
+    if (isUnlinkedHouseholdId(hId)) {
+      if (hId !== targetUnlinkedId) {
+        hId = targetUnlinkedId;
         pChanged = true;
         changed = true;
       }
+    } else if (!householdMap.has(hId)) {
+      hId = targetUnlinkedId;
+      pChanged = true;
+      changed = true;
     }
 
     // Sanitize templeId

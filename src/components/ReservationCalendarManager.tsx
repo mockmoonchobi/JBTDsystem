@@ -3436,7 +3436,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
                           {/* 3行目: 小文字で参列　⚫️名　会場　⚫️⚫️　GoogleMap (塔婆のみの場合は参列非表示) */}
                           {!isToba && (
-                            <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-3 flex-wrap">
+                            <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-2.5 flex-wrap">
                               {!isOther && s.attendeeCount && s.attendeeCount > 0 ? (
                                 <span>参列 {s.attendeeCount}名</span>
                               ) : null}
@@ -3459,7 +3459,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           {/* 4行目: 塔婆明細枠 */}
                           {serviceTobaLines.length > 0 && (
                             <div className="space-y-1.5 bg-[#FAF8F5] p-2.5 rounded-xs border border-[#E5DFD5] w-full">
-                              <div className="text-xs font-bold text-[#8C2D19] flex items-center gap-1">
+                              <div className="text-xs font-bold text-[#8C2D19] flex items-center justify-between gap-1 flex-wrap">
                                 <span>🎋 塔婆 ({serviceTobaLines.length}本)</span>
                               </div>
                               <div className="space-y-1">
@@ -3771,7 +3771,16 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           </span>
                         </td>
                         <td className="p-2.5 whitespace-nowrap font-bold text-[#1A1A1A]">
-                          {formatChiefMournerDisplay(s.chiefMourner)}
+                          <div>{formatChiefMournerDisplay(s.chiefMourner)}</div>
+                          {(() => {
+                            const hh = households.find((h) => h.id === s.householdId);
+                            const matchedPast = pastRecords.find((p) => 
+                              (s.deceasedId && p.id === s.deceasedId) || 
+                              (s.dharmaName && p.dharmaName && p.dharmaName.trim() === s.dharmaName.trim() && (!s.householdId || p.householdId === s.householdId)) ||
+                              (s.dharmaName && p.dharmaName && p.dharmaName.trim() === s.dharmaName.trim())
+                            );
+                            return null;
+                          })()}
                         </td>
                         <td className="p-2.5 whitespace-nowrap">
                           {(() => {

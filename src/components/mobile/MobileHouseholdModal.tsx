@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Household, MasterOptions, TempleProfile, TempleInfo, FamilyMember } from '../../types';
 import { X, Save, Trash2, Plus, Phone, MapPin, Building2, User, ScrollText, Coins, ChevronDown, ChevronUp, Check, Sparkles } from 'lucide-react';
-import { cleanAndNormalizeHouseholdId, generateNewHouseholdId } from '../../utils/dankaIdUtils';
+import { cleanAndNormalizeHouseholdId, generateNewHouseholdId, isUnlinkedHouseholdId } from '../../utils/dankaIdUtils';
 import { 
   getTobaSlots, 
   getHouseholdTobaApplication, 
@@ -121,7 +121,10 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
     }
 
     const targetTemple = formData.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'));
-    const finalId = cleanAndNormalizeHouseholdId(formData.id || household?.id, targetTemple, temples) || generateNewHouseholdId(targetTemple, existingHouseholds, temples);
+    let finalId = cleanAndNormalizeHouseholdId(formData.id || household?.id, targetTemple, temples);
+    if (!finalId || isUnlinkedHouseholdId(finalId)) {
+      finalId = generateNewHouseholdId(targetTemple, existingHouseholds, temples);
+    }
 
     const savedData: Household = {
       ...(household || {}),

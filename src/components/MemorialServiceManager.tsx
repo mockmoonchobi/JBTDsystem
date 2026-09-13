@@ -130,7 +130,7 @@ export const MemorialServiceManager: React.FC<MemorialServiceManagerProps> = ({
 
     const completeService: MemorialService = {
       id: formData.id || `MS-${Date.now()}`,
-      householdId: formData.householdId || households[0]?.id || '',
+      householdId: formData.householdId || '',
       deceasedId: formData.deceasedId || '',
       deceasedName: formData.deceasedName || '',
       dharmaName: formData.dharmaName || '',

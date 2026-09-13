@@ -43,6 +43,7 @@ import {
 import { normalizeDateInput, normalizeFurigana } from '../utils/memorialCalculator';
 import { mergeMasterOptionsWithData, detectNewMasterOptions, mergeSelectedMasterOptions } from '../utils/masterOptionsUtils';
 import { LinkingDecision, KakochoItemInput } from '../utils/kakochoLineageMatching';
+import { UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId } from '../utils/dankaIdUtils';
 import { KakochoLineageConfirmModal } from './KakochoLineageConfirmModal';
 
 interface ExternalDataImportModalProps {
@@ -113,7 +114,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   const [conflictMode, setConflictMode] = useState<'append' | 'replace'>('append');
   const [clearAllRelatedData, setClearAllRelatedData] = useState(false);
   const [showReplaceConfirmModal, setShowReplaceConfirmModal] = useState(false);
-  const [autoCreateHouseholdForKakocho, setAutoCreateHouseholdForKakocho] = useState(true);
+  const [autoCreateHouseholdForKakocho, setAutoCreateHouseholdForKakocho] = useState(false);
   const [defaultHouseholdType, setDefaultHouseholdType] = useState('');
   const [autoSyncMasterOptions, setAutoSyncMasterOptions] = useState(true); // Toggle to auto-sync master options
   const [selectedMasterItems, setSelectedMasterItems] = useState<Record<string, boolean>>({}); // Selective master items
@@ -1526,10 +1527,10 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     <div className="pt-2 border-t border-[#EAE7E0] flex items-center justify-between">
                       <div>
                         <label className="text-xs font-bold text-[#1A1A1A]">
-                          施主・世帯主が見つからない過去帳データの扱い:
+                          施主・世帯主が見つからない過去帳データの新規世帯自動作成:
                         </label>
                         <p className="text-[11px] text-[#666666]">
-                          該当する檀家が未登録の場合、自動的に施主名の新規檀家を作成して紐付けます。
+                          チェックOFF（推奨）の場合、世帯未設定の精霊は「DK-99999」として安全に取り込まれ、既存または新規の檀家IDを勝手に消費・紐付けることはありません。
                         </p>
                       </div>
                       <input
@@ -1770,7 +1771,15 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                               displayedPastRecords.map((p, i) => (
                                 <tr key={i} className="hover:bg-[#FAF7EE] transition-colors">
                                   <td className="p-2.5 font-mono text-[#888888] text-[11px]">{i + 1}</td>
-                                  <td className="p-2.5 font-mono text-[#D4AF37] font-bold whitespace-nowrap">{p.householdId || '-'}</td>
+                                  <td className="p-2.5 font-mono whitespace-nowrap">
+                                    {isUnlinkedHouseholdId(p.householdId) ? (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-bold bg-[#F0EDE6] text-[#777777] border border-[#D1CEC7]">
+                                        DK-99999 (世帯未設定)
+                                      </span>
+                                    ) : (
+                                      <span className="text-[#D4AF37] font-bold">{p.householdId || '-'}</span>
+                                    )}
+                                  </td>
                                   <td className="p-2.5 font-bold text-[#1A1A1A] whitespace-nowrap">{p.householdHeadName || '-'}</td>
                                   <td className="p-2.5 font-serif font-bold text-[#1A1A1A] whitespace-nowrap">{p.dharmaName || '-'}</td>
                                   <td className="p-2.5 text-[#333333] whitespace-nowrap">{p.secularName || '-'}</td>

@@ -4598,9 +4598,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     </h3>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-[#666666] mt-0.5">
                       <span className="font-mono bg-[#EBE7DF] px-1.5 py-0.5 text-[#1A1A1A]">世帯ID: {activeHouseholdForBooking.id}</span>
-                      {activeHouseholdForBooking.tombNumber && (
-                        <span className="bg-[#EBE7DF] px-1.5 py-0.5 text-[#1A1A1A]">墓地: {activeHouseholdForBooking.tombNumber}</span>
-                      )}
                       {activeHouseholdForBooking.district && (
                         <span className="bg-[#EBE7DF] px-1.5 py-0.5 text-[#1A1A1A]">役職: {activeHouseholdForBooking.district}</span>
                       )}

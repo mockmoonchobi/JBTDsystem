@@ -33,6 +33,7 @@ import {
   convertDisasterEventsToRows,
   parseDisasterEventsFromRows
 } from './disasterMemorialUtils';
+import { UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId, getUnlinkedHouseholdId } from './dankaIdUtils';
 
 export interface ExportToExcelOptions {
   targetTempleId?: string | 'ALL';
@@ -1547,7 +1548,7 @@ export async function importFromExcel(
       if (!dharmaName && !secularName) return;
 
       const recordId = String((idIdx !== -1 ? row[idIdx] : row[0]) || `PR-${Date.now()}-${idx + 1}`).trim();
-      const householdId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
+      const rawHId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
 
       let templeId = forcedTempleId || options?.defaultTempleId || 'temple-main';
       if (!forcedTempleId) {
@@ -1561,9 +1562,18 @@ export async function importFromExcel(
               break;
             }
           }
-        } else if (householdId && householdTempleMap.has(householdId)) {
-          templeId = householdTempleMap.get(householdId)!;
+        } else if (rawHId && householdTempleMap.has(rawHId)) {
+          templeId = householdTempleMap.get(rawHId)!;
         }
+      }
+
+      // 世帯IDの決定: 実在する世帯リストにない場合や未設定の場合は、
+      // 将来の新規檀徒IDとの衝突・誤紐付けを絶対に防ぐため、寺院に応じた未設定ID (DK-99999 / K0-99999 等) を設定
+      const unlinkedId = getUnlinkedHouseholdId(templeId, temples);
+      let householdId = unlinkedId;
+      if (rawHId && !isUnlinkedHouseholdId(rawHId)) {
+        const isExistingH = householdTempleMap.has(rawHId) || households.some(h => h.id === rawHId);
+        householdId = isExistingH ? rawHId : unlinkedId;
       }
 
       const furigana = normalizeFurigana(furiganaIdx !== -1 ? row[furiganaIdx] : '');

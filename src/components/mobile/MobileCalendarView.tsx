@@ -596,6 +596,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
     (service.dharmaName && p.dharmaName && p.dharmaName.trim() === service.dharmaName.trim() && (!service.householdId || p.householdId === service.householdId)) ||
     (service.dharmaName && p.dharmaName && p.dharmaName.trim() === service.dharmaName.trim())
   );
+  const tombNumber = (hh?.tombNumber || matchedPast?.burialLocation || matchedPast?.tombNumber || '').trim();
   let rawSecularName = (service.deceasedName || matchedPast?.secularName || matchedPast?.deceasedName || '').trim();
   rawSecularName = rawSecularName.replace(/^(俗名[:：\s]*|故[\s　]*)/, '').trim();
   const hasDharmaName = Boolean(service.dharmaName && service.dharmaName.trim());
@@ -722,7 +723,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
 
       {/* 3行目: 小文字で参列　⚫️名　会場　⚫️⚫️　GoogleMap (塔婆のみの場合は参列非表示) */}
       {!isToba && (
-        <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-3 flex-wrap">
+        <div className="text-xs sm:text-sm text-gray-600 flex items-center gap-2.5 flex-wrap">
           {!isOther && service.attendeeCount && service.attendeeCount > 0 ? (
             <span>参列 {service.attendeeCount}名</span>
           ) : null}
@@ -745,7 +746,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
       {/* 4行目: 塔婆明細 */}
       {serviceTobaLines.length > 0 && (
         <div className="space-y-1.5 bg-[#FAF8F5] p-2.5 rounded-xs border border-[#E5DFD5] w-full">
-          <div className="text-xs font-bold text-[#8C2D19] flex items-center gap-1">
+          <div className="text-xs font-bold text-[#8C2D19] flex items-center justify-between gap-1 flex-wrap">
             <span>🎋 塔婆 ({serviceTobaLines.length}本)</span>
           </div>
           <div className="space-y-1">

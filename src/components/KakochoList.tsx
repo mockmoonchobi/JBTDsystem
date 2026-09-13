@@ -55,6 +55,7 @@ import { SegakiPatronModal } from './SegakiPatronModal';
 import { NenkiFilterModal } from './NenkiFilterModal';
 import { YearlyMemorialPrintModal } from './YearlyMemorialPrintModal';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
+import { UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId, getUnlinkedHouseholdId } from '../utils/dankaIdUtils';
 
 interface KakochoListProps {
   pastRecords: PastRecord[];
@@ -268,14 +269,14 @@ export const KakochoList: React.FC<KakochoListProps> = ({
     setEditingRecord(null);
     setFormData({
       id: '',
-      householdId: households[0]?.id || '',
-      householdHeadName: households[0]?.familyHead || '',
+      householdId: '',
+      householdHeadName: '',
       dharmaName: '',
       secularName: '',
       deathDate: '',
       ageAtDeath: undefined,
       relationship: '',
-      burialLocation: households[0]?.tombNumber || '',
+      burialLocation: '',
       notes: '',
       niibon: '',
     });
@@ -294,7 +295,10 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
   const handleSaveInlineRecord = () => {
     if (!inlineRecordForm || !inlineRecordForm.id) return;
-    const selectedHousehold = households.find((h) => h.id === inlineRecordForm.householdId);
+    const rawHId = (inlineRecordForm.householdId || '').trim();
+    const targetTemple = inlineRecordForm.templeId || activeTempleId || 'temple-main';
+    const effectiveHId = isUnlinkedHouseholdId(rawHId) ? getUnlinkedHouseholdId(targetTemple, temples) : rawHId;
+    const selectedHousehold = households.find((h) => h.id === effectiveHId);
     const normalizedDate = inlineRecordForm.deathDate && inlineRecordForm.deathDate.trim()
       ? (normalizeDateInput(inlineRecordForm.deathDate, { mode: 'pastRecord' }) || '')
       : '';
@@ -304,7 +308,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
     const completeRecord: PastRecord = {
       id: inlineRecordForm.id,
-      householdId: inlineRecordForm.householdId || households[0]?.id || '',
+      householdId: effectiveHId,
       householdHeadName: inlineRecordForm.householdHeadName || (selectedHousehold ? selectedHousehold.familyHead : ''),
       dharmaName: inlineRecordForm.dharmaName || '',
       secularName: inlineRecordForm.secularName || '',
@@ -345,7 +349,10 @@ export const KakochoList: React.FC<KakochoListProps> = ({
       alert('戒名（法名）または俗名を入力してください。');
       return;
     }
-    const selectedHousehold = households.find((h) => h.id === formData.householdId);
+    const rawHId = (formData.householdId || '').trim();
+    const targetTemple = formData.templeId || activeTempleId || 'temple-main';
+    const effectiveHId = isUnlinkedHouseholdId(rawHId) ? getUnlinkedHouseholdId(targetTemple, temples) : rawHId;
+    const selectedHousehold = households.find((h) => h.id === effectiveHId);
     const normalizedDate = formData.deathDate && formData.deathDate.trim()
       ? (normalizeDateInput(formData.deathDate, { mode: 'pastRecord' }) || '')
       : '';
@@ -355,7 +362,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
     const completeRecord: PastRecord = {
       id: editingRecord ? editingRecord.id : `KC-${Date.now()}`,
-      householdId: formData.householdId || households[0]?.id || '',
+      householdId: effectiveHId,
       householdHeadName: formData.householdHeadName || (selectedHousehold ? selectedHousehold.familyHead : ''),
       dharmaName: formData.dharmaName || '',
       secularName: formData.secularName || '',
@@ -1487,7 +1494,15 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                           </td>
                           {/* 3. 現在の施主名 */}
                           <td className="px-2 py-3 font-bold text-[#1A1A1A] whitespace-nowrap">
-                            {currentSponsor ? currentSponsor : '—'}
+                            {currentSponsor ? (
+                              currentSponsor
+                            ) : isUnlinkedHouseholdId(record.householdId) ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-bold bg-[#F0EDE6] text-[#777777] border border-[#D1CEC7]">
+                                世帯未設定
+                              </span>
+                            ) : (
+                              '—'
+                            )}
                           </td>
                           {/* 4. 当時の施主名 */}
                           <td className="px-2 py-3 font-bold text-[#1A1A1A] whitespace-nowrap">
@@ -1683,12 +1698,23 @@ export const KakochoList: React.FC<KakochoListProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* 1. 檀家ID (入力可能) */}
                 <div>
-                  <label className="block font-bold text-[#1A1A1A] mb-1">檀家ID (世帯ID):</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="font-bold text-[#1A1A1A]">檀家ID (世帯ID):</label>
+                    {formData.householdId && !isUnlinkedHouseholdId(formData.householdId) && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, householdId: getUnlinkedHouseholdId(formData.templeId || activeTempleId, temples) })}
+                        className="text-[10px] text-[#8C2D19] hover:underline cursor-pointer"
+                      >
+                        世帯未設定にする
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={formData.householdId || ''}
                     onChange={(e) => setFormData({ ...formData, householdId: e.target.value })}
-                    placeholder="例: 1001"
+                    placeholder={`例: DK-00001 (未設定時は空欄または${getUnlinkedHouseholdId(formData.templeId || activeTempleId, temples)})`}
                     className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-2 text-xs font-bold font-mono"
                   />
                 </div>
@@ -1699,9 +1725,11 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                   <input
                     type="text"
                     value={
-                      households.find((h) => h.id === formData.householdId)?.familyHead
-                        ? `${households.find((h) => h.id === formData.householdId)?.familyHead} 様`
-                        : '（該当する世帯なし）'
+                      isUnlinkedHouseholdId(formData.householdId)
+                        ? '（世帯未設定）'
+                        : households.find((h) => h.id === formData.householdId)?.familyHead
+                          ? `${households.find((h) => h.id === formData.householdId)?.familyHead} 様`
+                          : '（該当する世帯なし / 未設定）'
                     }
                     disabled
                     readOnly

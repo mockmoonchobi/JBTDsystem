@@ -5208,6 +5208,7 @@ export default function App() {
         temples={temples}
         activeTempleId={activeTempleId}
         existingHouseholds={households}
+        existingPastRecords={pastRecords}
         priests={priests}
       />
 

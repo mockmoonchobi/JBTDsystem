@@ -14,11 +14,11 @@ export function getTemplePrefix(templeId?: string, temples?: TempleProfile[]): s
 
   if (temples && temples.length > 0) {
     const matchedTemple = temples.find(t => t.id === cleanId);
-    if (matchedTemple?.isMain) {
+    if (matchedTemple?.isMain || matchedTemple?.id === 'temple-main' || matchedTemple?.id === 'main') {
       return 'DK-';
     }
 
-    const nonMainTemples = temples.filter(t => !t.isMain);
+    const nonMainTemples = temples.filter(t => !t.isMain && t.id !== 'temple-main' && t.id !== 'main');
     const subIdx = nonMainTemples.findIndex(t => t.id === cleanId);
     if (subIdx !== -1) {
       // 0番目から9番目まで順番に K0- から K9- を付与
@@ -57,6 +57,51 @@ export function getTemplePrefix(templeId?: string, temples?: TempleProfile[]): s
 }
 
 /**
+ * 世帯未設定・檀家不明の精霊に割り当てる専用の未設定ID。
+ * 新規檀徒登録時の自動採番（DK-00001〜、K0-00001〜）と重複せず、
+ * どの実在世帯にも自動紐付けされない安全な予約IDです。
+ * 本寺用デフォルトは 'DK-99999' です。兼務寺には 'K0-99999' 等が使用されます。
+ */
+export const UNLINKED_HOUSEHOLD_ID = 'DK-99999';
+
+/**
+ * 寺院（本寺・兼務寺）に応じた世帯未設定IDを取得します。
+ * - 本寺: 'DK-99999'
+ * - 兼務寺: 'K0-99999'（兼務寺0番目）、'K1-99999' など（getTemplePrefixに基づく）
+ * 将来の新規檀徒（00001〜）で割り当てられる可能性のある数値と決して重複しない安全なIDを返します。
+ */
+export function getUnlinkedHouseholdId(templeId?: string, temples?: TempleProfile[]): string {
+  const prefix = getTemplePrefix(templeId, temples);
+  return `${prefix}99999`;
+}
+
+/**
+ * 指定された世帯IDが「世帯未設定」「未割当」「不明」であるかを判定します。
+ * DK-99999, K0-99999, K1-99999 など、末尾が 99999 のものはすべて未設定IDとして扱われます。
+ */
+export function isUnlinkedHouseholdId(id?: string | null): boolean {
+  if (!id) return true;
+  const clean = String(id).trim().toUpperCase();
+  return (
+    clean === '' ||
+    clean === 'DK-99999' ||
+    clean === 'K0-99999' ||
+    clean.endsWith('99999') ||
+    clean.includes('99999') ||
+    clean === 'DK-00000' ||
+    clean.endsWith('00000') ||
+    clean === 'DK-UNKNOWN' ||
+    clean === 'UNKNOWN' ||
+    clean === 'UNLINKED' ||
+    clean === 'DK-UNLINKED' ||
+    clean.includes('UNLINKED') ||
+    clean === '未設定' ||
+    clean === '（世帯主未設定）' ||
+    clean === '世帯主未設定'
+  );
+}
+
+/**
  * Removes duplicate suffixes like '-2', '-3', '-4' and zero-pads number to 5 digits
  * with the appropriate temple prefix (DK- / K0- / K1- ... K9-).
  * 
@@ -67,6 +112,8 @@ export function getTemplePrefix(templeId?: string, temples?: TempleProfile[]): s
  * - '2001' (sub-temple 0) -> 'K0-02001'
  * - 'K1-00001-3' -> 'K1-00001'
  * - 'K2-45' -> 'K2-00045'
+ * - 'DK-99999' -> 'DK-99999' (世帯未設定は保持)
+ * - 'K0-99999' -> 'K0-99999' (兼務寺の世帯未設定も保持)
  */
 export function cleanAndNormalizeHouseholdId(
   rawId?: string | number | null,
@@ -76,6 +123,11 @@ export function cleanAndNormalizeHouseholdId(
   if (rawId === undefined || rawId === null) return '';
   let str = String(rawId).trim();
   if (!str) return '';
+
+  // 世帯未設定の判定: 本寺はDK-99999、兼務寺はK0-99999等に正規化
+  if (isUnlinkedHouseholdId(str)) {
+    return getUnlinkedHouseholdId(templeId, temples);
+  }
 
   // 1. Identify existing prefix if already present (e.g. DK-, K0- ~ K9-, or legacy long prefix K178718817164-)
   let prefix = '';
@@ -124,39 +176,64 @@ export function cleanAndNormalizeHouseholdId(
 
 /**
  * Generates the next available 5-digit Household ID for a temple (e.g. DK-01009, K1-02003, DK-00001).
+ * 
+ * 厳格な採番保護ルール:
+ * - DK-99999 や 90000 以上の番号は「世帯未設定」等の予約番号のため、新規檀徒への自動採番では絶対に使用しません。
+ * - 過去帳に存在する精霊の世帯IDもチェックし、既存の世帯・精霊と衝突しない安全な番号を採番します。
  */
 export function generateNewHouseholdId(
   templeId: string,
   existingHouseholds: Household[],
-  temples?: TempleProfile[]
+  temples?: TempleProfile[],
+  existingPastRecords?: PastRecord[]
 ): string {
   const prefix = getTemplePrefix(templeId, temples);
   const existingNumbers = new Set<number>();
+
+  const collectNumber = (idStr?: string) => {
+    if (!idStr) return;
+    if (isUnlinkedHouseholdId(idStr)) return; // DK-99999, DK-00000 などの未設定IDは除外
+    const cleanId = cleanAndNormalizeHouseholdId(idStr, templeId, temples);
+    const match = cleanId.replace(/^[A-Z0-9]+-/, '').match(/\d+/);
+    if (match) {
+      const num = parseInt(match[0], 10);
+      // 0 および 90000以上（99999など）は通常連番から除外
+      if (!isNaN(num) && num > 0 && num < 90000) {
+        existingNumbers.add(num);
+      }
+    }
+  };
 
   existingHouseholds.forEach((h) => {
     if (!h.id) return;
     const hPrefix = getTemplePrefix(h.templeId, temples);
     if (h.id.startsWith(prefix) || hPrefix === prefix) {
-      const cleanId = cleanAndNormalizeHouseholdId(h.id, h.templeId || templeId, temples);
-      const match = cleanId.replace(/^[A-Z0-9]+-/, '').match(/\d+/);
-      if (match) {
-        const num = parseInt(match[0], 10);
-        if (!isNaN(num)) {
-          existingNumbers.add(num);
-        }
-      }
+      collectNumber(h.id);
     }
   });
 
-  // If there are existing numbers, find highest + 1; otherwise start from 1 (or 1001 if main temple legacy, but 1 is cleanest)
+  // 過去帳にすでに振られているID（ただし未設定の99999や00000等を除く）も考慮して重複防止
+  if (existingPastRecords && existingPastRecords.length > 0) {
+    existingPastRecords.forEach((p) => {
+      if (p.householdId && !isUnlinkedHouseholdId(p.householdId)) {
+        collectNumber(p.householdId);
+      }
+    });
+  }
+
+  // If there are existing numbers, find highest + 1; otherwise start from 1
   let candidateNum = 1;
   if (existingNumbers.size > 0) {
     const maxNum = Math.max(...Array.from(existingNumbers));
     candidateNum = maxNum + 1;
   }
 
-  while (existingNumbers.has(candidateNum)) {
-    candidateNum++;
+  while (existingNumbers.has(candidateNum) || candidateNum === 99999 || (candidateNum >= 90000 && candidateNum <= 99999)) {
+    if (candidateNum >= 90000 && candidateNum <= 99999) {
+      candidateNum = 100000;
+    } else {
+      candidateNum++;
+    }
   }
 
   const paddedNum = String(candidateNum).padStart(5, '0');

@@ -67,6 +67,7 @@ test('deleting a service preserves tasks explicitly linked to another same-day s
     recordHistory: noop, getCurrentOperatorInfo: () => ({}), recordDeletedRecord: noop, recordDeletedRecordsBatch: noop,
     normalizeDateInput: value => value, getPreviousDay: () => '2026/09/19', refreshDeletedRecords: noop,
     setMemorialServices: noop, saveJsonState: noop, setTempleTodos: value => { remaining = value; },
+    formatServiceLogDesc: () => '',
     safeStorage: { getItem: () => null },
   });
   assert.equal(remaining.length, 1);

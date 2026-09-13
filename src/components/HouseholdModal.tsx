@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Building2, UserCheck, Calendar, Clock, ScrollText, Coins, Sparkles } from 'lucide-react';
-import { Household, HouseholdType, HouseholdStatus, FamilyMember, MasterOptions, TempleProfile, Priest } from '../types';
+import { Household, HouseholdType, HouseholdStatus, FamilyMember, MasterOptions, TempleProfile, Priest, PastRecord } from '../types';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { normalizeFurigana, formatCurrency } from '../utils/memorialCalculator';
-import { cleanAndNormalizeHouseholdId, generateNewHouseholdId, getTemplePrefix } from '../utils/dankaIdUtils';
+import { cleanAndNormalizeHouseholdId, generateNewHouseholdId, getTemplePrefix, isUnlinkedHouseholdId } from '../utils/dankaIdUtils';
 import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 import { useAutoKana } from '../hooks/useAutoKana';
 import { FamilyMemberInputRow } from './FamilyMemberInputRow';
@@ -29,6 +29,7 @@ interface HouseholdModalProps {
   temples?: TempleProfile[];
   activeTempleId?: string;
   existingHouseholds?: Household[];
+  existingPastRecords?: PastRecord[];
   priests?: Priest[];
 }
 
@@ -43,6 +44,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
   temples = [],
   activeTempleId,
   existingHouseholds = [],
+  existingPastRecords = [],
   priests = [],
 }) => {
   const [formData, setFormData] = useState<Partial<Household>>({
@@ -182,7 +184,11 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
     }
 
     const targetTempleId = formData.templeId || (activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'));
-    const finalId = cleanAndNormalizeHouseholdId(formData.id || '', targetTempleId, temples) || generateNewHouseholdId(targetTempleId, existingHouseholds, temples);
+    let finalId = cleanAndNormalizeHouseholdId(formData.id || '', targetTempleId, temples);
+    // DK-99999 や K0-99999 などの未設定専用予約ID、または空欄の場合は新規自動採番を行う
+    if (!finalId || isUnlinkedHouseholdId(finalId)) {
+      finalId = generateNewHouseholdId(targetTempleId, existingHouseholds, temples, existingPastRecords);
+    }
 
     const completeHousehold: Household = {
       id: finalId,

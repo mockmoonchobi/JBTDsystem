@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { Household, PastRecord, Transaction, FamilyMember, MasterOptions, TempleProfile } from '../types';
 import { normalizeDateInput, normalizeFurigana } from './memorialCalculator';
 import { getCurrentAuditFields, normalizeAuditDate, normalizeAuditTime } from './auditUtils';
-import { cleanAndNormalizeHouseholdId, getTemplePrefix, generateNewHouseholdId } from './dankaIdUtils';
+import { cleanAndNormalizeHouseholdId, getTemplePrefix, generateNewHouseholdId, UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId, getUnlinkedHouseholdId } from './dankaIdUtils';
 import { 
   LinkingDecision, 
   KakochoItemInput, 
@@ -810,7 +810,7 @@ export function convertTableToData(
         // If userDecision.action === 'skip_unlinked', targetHousehold remains undefined
       } else {
         // Automatic / Fallback Matching (High Precision)
-        if (rawHouseholdId) {
+        if (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId)) {
           // 檀家IDがある場合: IDから現在の世帯を検索
           targetHousehold = findHousehold('', undefined, rawHouseholdId);
           if (!targetHousehold && (currentHeadName || originalHeadName)) {
@@ -821,44 +821,25 @@ export function convertTableToData(
           targetHousehold = findHousehold(currentHeadName || originalHeadName);
         }
 
-        // 自動世帯作成オプションが有効で、世帯が見つからない場合
-        if (!targetHousehold && (rawHouseholdId || currentHeadName || originalHeadName) && options.autoCreateHouseholdForKakocho) {
-          let newHId = rawHouseholdId ? normalizeToTempleId(rawHouseholdId) : '';
-          if (newHId && outHouseholds.some(h => h.id === newHId)) {
-            newHId = getNextAvailableId();
-          } else if (!newHId) {
-            newHId = getNextAvailableId();
-          }
-
-          const householdHead = currentHeadName || originalHeadName || '（世帯主未設定）';
-
-          targetHousehold = {
-            id: newHId,
-            templeId: targetTempleId,
-            familyHead: householdHead,
-            furigana: '',
-            postalCode: '',
-            address: '',
-            phone: '',
-            district: '',
-            tombNumber: burialLocation || '',
-            householdType: options.defaultHouseholdType || '',
-            status: '',
-            qrToken: `QR-${newHId}-${Date.now().toString(36).toUpperCase()}`,
-            familyMembers: [],
-            createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
-            createdDate,
-            createdTime,
-            updatedDate,
-            updatedTime,
-          };
-          outHouseholds.push(targetHousehold);
-          importedHouseholds.push(targetHousehold);
-          householdsCreated++;
-        }
+        // 【厳格禁止】過去帳取り込み時に世帯未設定の精霊に対して新規檀家IDを自動採番して割り当ててはならない。
+        // 自動採番された通常ID（DK-00001〜, K0-00001〜）を持つと、後から「新規檀徒」を追加した際にその檀家に勝手に紐づいてしまう重大バグとなる。
+        // したがって、ユーザーが明示的に新規世帯作成を選択（create_new_household）した場合を除き、
+        // 過去帳取り込みでの世帯自動作成・自動連番採番は絶対に行わず、世帯未設定として安全に登録する。
       }
 
-      const householdId = targetHousehold ? targetHousehold.id : (rawHouseholdId ? normalizeToTempleId(rawHouseholdId) : `${templePrefix}00000`);
+      // 世帯未設定の精霊の檀家ID決定:
+      // 「世帯未設定であれば本寺であればDK-99999にする兼務寺であればK0-99999といった決して将来割り当てられない数値にしてください。」
+      const unlinkedHouseholdId = getUnlinkedHouseholdId(targetTempleId, options.temples);
+
+      // 実在する世帯リストに存在するかチェック
+      const isRealHousehold = targetHousehold && (
+        outHouseholds.some(h => h.id === targetHousehold!.id) ||
+        options.existingHouseholds.some(h => h.id === targetHousehold!.id)
+      );
+
+      // 実在世帯に紐づかない場合は、必ず本寺ならDK-99999、兼務寺ならK0-99999などの未設定予約IDを割り当てる
+      const householdId = isRealHousehold ? targetHousehold!.id : unlinkedHouseholdId;
+
       // 当時の施主名: 空欄であれば空欄のまま保持する
       const recordedOriginalHeadName = originalHeadName || '';
       const rawNiibon = getCell(row, 'niibon');
@@ -934,9 +915,18 @@ export function convertTableToData(
       const updatedTime = rawUTime || importAudit.time;
 
       // Find or create Household
-      let h = findHousehold(headName || '未指定檀家', address, rawHouseholdId);
-      if (!h) {
-        let id = rawHouseholdId ? normalizeToTempleId(rawHouseholdId) : '';
+      const candidateHead = (headName || '').trim();
+      const hasValidHead = candidateHead && 
+        candidateHead !== '未指定檀家' && 
+        candidateHead !== '世帯主未設定' && 
+        candidateHead !== '（世帯主未設定）' && 
+        candidateHead !== '未設定' && 
+        candidateHead !== '不明' && 
+        candidateHead !== 'なし';
+
+      let h = hasValidHead ? findHousehold(candidateHead, address, rawHouseholdId) : undefined;
+      if (!h && hasValidHead) {
+        let id = (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId)) ? normalizeToTempleId(rawHouseholdId) : '';
         if (id && outHouseholds.some(hh => hh.id === id)) {
           id = getNextAvailableId();
         } else if (!id) {
@@ -946,7 +936,7 @@ export function convertTableToData(
         h = {
           id,
           templeId: targetTempleId,
-          familyHead: headName || '未指定檀家',
+          familyHead: candidateHead,
           furigana,
           postalCode,
           address,
@@ -977,7 +967,7 @@ export function convertTableToData(
         outHouseholds.push(h);
         importedHouseholds.push(h);
         householdsCreated++;
-      } else {
+      } else if (h) {
         if (options.conflictMode === 'merge') {
           if (address && !h.address) h.address = address;
           if (postalCode && !h.postalCode) h.postalCode = postalCode;
@@ -1011,17 +1001,19 @@ export function convertTableToData(
 
       // If deceased info exists, create PastRecord
       if (dharmaName || secularName) {
+        const unlinkedId = getUnlinkedHouseholdId(targetTempleId, options.temples);
+        const isRealH = h && outHouseholds.some(hh => hh.id === h!.id);
         const pastRec: PastRecord = {
           id: `P-${Date.now().toString(36)}-${rowIdx}-${Math.floor(Math.random() * 9000 + 1000)}`,
           templeId: targetTempleId,
-          householdId: h.id,
-          householdHeadName: h.familyHead,
+          householdId: isRealH ? h!.id : unlinkedId,
+          householdHeadName: h ? h.familyHead : (candidateHead || ''),
           dharmaName: dharmaName || '',
           secularName: secularName || '',
           deathDate: deathDate || '',
           ageAtDeath: ageAtDeath,
           relationship,
-          burialLocation: tombNumber || h.tombNumber || '',
+          burialLocation: tombNumber || (h ? h.tombNumber : '') || '',
           createdDate,
           createdTime,
           updatedDate,
