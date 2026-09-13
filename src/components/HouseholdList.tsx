@@ -379,6 +379,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     dharmaName: '',
     secularName: '',
     relationship: '',
+    householdHeadName: '',
     ageAtDeath: undefined,
     notes: '',
   });
@@ -391,6 +392,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       dharmaName: '',
       secularName: '',
       relationship: '',
+      householdHeadName: currentIndividualHousehold.familyHead || '',
       ageAtDeath: undefined,
       niibon: undefined,
       notes: '',
@@ -414,10 +416,14 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       ? Number(rawAge)
       : undefined;
 
+    const enteredHeadName = newPastRecordForm.householdHeadName !== undefined && newPastRecordForm.householdHeadName.trim() !== ''
+      ? newPastRecordForm.householdHeadName.trim()
+      : (currentIndividualHousehold.familyHead || '');
+
     const completeRecord: PastRecord = {
       id: `KC-${Date.now()}`,
       householdId: currentIndividualHousehold.id,
-      householdHeadName: currentIndividualHousehold.familyHead,
+      householdHeadName: enteredHeadName,
       dharmaName: newPastRecordForm.dharmaName || '',
       secularName: newPastRecordForm.secularName || '',
       deathDate: normalizedDate,
@@ -1462,7 +1468,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   // Inline Past Record Editing Handlers
   const handleStartInlinePastRecordEdit = (record: PastRecord) => {
     setEditingPastRecordId(record.id);
-    setInlinePastRecordForm({ ...record });
+    setInlinePastRecordForm({
+      ...record,
+      householdHeadName: record.householdHeadName !== undefined && record.householdHeadName !== ''
+        ? record.householdHeadName
+        : (currentIndividualHousehold?.familyHead || ''),
+    });
   };
 
   const handleSaveInlinePastRecord = () => {
@@ -1478,7 +1489,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     const updatedRecord: PastRecord = {
       id: inlinePastRecordForm.id,
       householdId: inlinePastRecordForm.householdId || currentIndividualHousehold?.id || '',
-      householdHeadName: inlinePastRecordForm.householdHeadName || currentIndividualHousehold?.familyHead || '',
+      householdHeadName: inlinePastRecordForm.householdHeadName !== undefined && inlinePastRecordForm.householdHeadName.trim() !== ''
+        ? inlinePastRecordForm.householdHeadName.trim()
+        : (currentIndividualHousehold?.familyHead || ''),
       dharmaName: inlinePastRecordForm.dharmaName || '',
       secularName: inlinePastRecordForm.secularName || '',
       deathDate: normalizedDate,
@@ -3642,7 +3655,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                         <th className="px-2.5 py-3 whitespace-nowrap bg-[#1A1A1A] w-[110px]">年月日</th>
                         <th className="px-3 py-3 whitespace-nowrap bg-[#1A1A1A] min-w-[200px] text-left">戒名</th>
                         <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[80px] text-center">新盆</th>
-                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[95px]">当時の施主</th>
+                        <th className="px-2 py-3 whitespace-nowrap bg-[#1A1A1A] w-[105px]">当時の施主</th>
                         <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[55px] text-center">続柄</th>
                         <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[80px]">俗名</th>
                         <th className="px-1 py-3 whitespace-nowrap bg-[#1A1A1A] w-[50px] text-center">享年</th>
@@ -3739,9 +3752,17 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                               className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#D4AF37]"
                             />
                           </td>
-                          {/* 当時の施主 (固定) */}
-                          <td className="px-2 py-1.5 font-bold whitespace-nowrap">
-                            {currentIndividualHousehold.familyHead} 殿
+                          {/* 当時の施主名（入力可能・初期値は現世帯主） */}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.householdHeadName !== undefined ? newPastRecordForm.householdHeadName : (currentIndividualHousehold.familyHead || '')}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, householdHeadName: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="当時の施主名"
+                              title="逝去当時の施主名（現在の世帯主と異なる場合は書き換えてください）"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#1A1A1A]"
+                            />
                           </td>
                           {/* 続柄 */}
                           <td className="px-1 py-1.5">
@@ -3871,7 +3892,8 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                     value={inlinePastRecordForm.householdHeadName || ''}
                                     onChange={(e) => setInlinePastRecordForm({ ...inlinePastRecordForm, householdHeadName: e.target.value })}
                                     onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlinePastRecord(); }}
-                                    placeholder="施主名"
+                                    placeholder="当時の施主名"
+                                    title="逝去当時の施主名"
                                     className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold"
                                   />
                                 </td>

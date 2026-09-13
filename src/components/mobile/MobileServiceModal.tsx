@@ -78,8 +78,25 @@ export const MEMORIAL_TYPE_OPTIONS = [
   '納骨法要',
   '新盆・初盆',
   '施餓鬼法要',
-  '塔婆供養',
   'その他',
+];
+
+export const HOJI_STANDARD_TYPES = [
+  '四十九日',
+  '百ヶ日',
+  '一周忌',
+  '三回忌',
+  '七回忌',
+  '十三回忌',
+  '十七回忌',
+  '二十三回忌',
+  '二十七回忌',
+  '三十三回忌',
+  '五十回忌',
+  '納骨法要',
+  '年忌法要',
+  '新盆・初盆',
+  '施餓鬼法要',
 ];
 
 export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
@@ -137,6 +154,10 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
   const [householdKanaColFilter, setHouseholdKanaColFilter] = useState('ALL');
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
+  // Custom memorial type state for "その他"
+  const [isOtherMemorialType, setIsOtherMemorialType] = useState(false);
+  const [customMemorialTypeName, setCustomMemorialTypeName] = useState('');
+
   // Initialize or reset form when modal opens or props change
   useEffect(() => {
     if (!isOpen) {
@@ -153,8 +174,13 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
         tobaItems: service.tobaItems || [],
         tobaSponsors: service.tobaSponsors || [],
       });
+      const normCur = normalizeMemorialType(service.memorialType || '');
+      const isStdHoji = HOJI_STANDARD_TYPES.includes(normCur);
+
       if (service.memorialType?.includes('塔婆')) {
         setMajorCategory('塔婆');
+        setIsOtherMemorialType(false);
+        setCustomMemorialTypeName('');
         setFormData((prev) => ({
           ...prev,
           scheduledTime: '終日',
@@ -163,14 +189,27 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
         }));
       } else if (['葬儀・枕経', '通夜', '葬儀', '枕経', '通夜・葬儀'].includes(service.memorialType)) {
         setMajorCategory('通夜・葬儀');
-      } else if (['その他', '寺院行事', '会合', '来客', '法務その他'].includes(service.memorialType)) {
+        setIsOtherMemorialType(false);
+        setCustomMemorialTypeName('');
+      } else if (['その他', '寺院行事', '会合', '来客', '法務その他'].includes(service.memorialType) && !service.householdId && !service.dharmaName) {
         setMajorCategory('その他');
+        setIsOtherMemorialType(false);
+        setCustomMemorialTypeName('');
       } else {
         setMajorCategory('法事');
+        if (!isStdHoji) {
+          setIsOtherMemorialType(true);
+          setCustomMemorialTypeName(normCur === 'その他' ? '' : normCur);
+        } else {
+          setIsOtherMemorialType(false);
+          setCustomMemorialTypeName('');
+        }
       }
       setCurrentStep('step_details');
     } else {
       // New service creation
+      setIsOtherMemorialType(false);
+      setCustomMemorialTypeName('');
       let defChief = '';
       let defAddr = '';
       let defDharma = '';
@@ -431,6 +470,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       }));
       setCurrentStep('step_select_mode');
     } else {
+      setIsOtherMemorialType(false);
+      setCustomMemorialTypeName('');
       setFormData((prev) => ({
         ...prev,
         memorialType: prev.memorialType && prev.memorialType !== 'その他' && prev.memorialType !== '通夜' && prev.memorialType !== '塔婆供養'
@@ -664,7 +705,11 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       deceasedId: formData.deceasedId || '',
       dharmaName: formData.dharmaName?.trim() || '',
       deceasedName: formData.deceasedName?.trim() || '',
-      memorialType: majorCategory === '塔婆' ? '塔婆供養' : (formData.memorialType || (majorCategory === 'その他' ? 'その他' : '年忌法要')),
+      memorialType: majorCategory === '塔婆'
+        ? '塔婆供養'
+        : (majorCategory === '法事' && isOtherMemorialType
+            ? (customMemorialTypeName.trim() || 'その他')
+            : (formData.memorialType || (majorCategory === 'その他' ? 'その他' : '年忌法要'))),
       scheduledDate: formData.scheduledDate || todayStr,
       scheduledTime: finalScheduledTime,
       endTime: finalEndTime,
@@ -1480,10 +1525,12 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                     '四十九日', '百ヶ日', '一周忌', '三回忌',
                     '七回忌', '十三回忌', '十七回忌', '二十三回忌',
                     '二十七回忌', '三十三回忌', '五十回忌', '納骨法要',
-                    '塔婆供養', '年忌法要', '新盆・初盆', '施餓鬼法要'
+                    '年忌法要', '新盆・初盆', '施餓鬼法要', 'その他'
                   ].map((type) => {
                     const normCur = normalizeMemorialType(formData.memorialType || '');
-                    const isSelected = normCur === type || formData.memorialType === type;
+                    const isOtherBtn = type === 'その他';
+                    const isOtherActive = isOtherMemorialType || normCur === 'その他' || (!HOJI_STANDARD_TYPES.includes(normCur) && !!normCur);
+                    const isSelected = isOtherBtn ? isOtherActive : (!isOtherActive && (normCur === type || formData.memorialType === type));
                     return (
                       <button
                         key={type}
@@ -1491,19 +1538,28 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                         onClick={() => {
                           const oldType = formData.memorialType;
                           const curTobaItems = [...(formData.tobaItems || [])];
-                          if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
-                            curTobaItems[0] = { ...curTobaItems[0], memorialType: type };
+                          if (isOtherBtn) {
+                            setIsOtherMemorialType(true);
+                            const nextType = customMemorialTypeName.trim() || 'その他';
+                            if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
+                              curTobaItems[0] = { ...curTobaItems[0], memorialType: nextType };
+                            }
+                            setFormData({
+                              ...formData,
+                              memorialType: nextType as any,
+                              tobaItems: curTobaItems,
+                            });
+                          } else {
+                            setIsOtherMemorialType(false);
+                            if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
+                              curTobaItems[0] = { ...curTobaItems[0], memorialType: type };
+                            }
+                            setFormData({
+                              ...formData,
+                              memorialType: type as any,
+                              tobaItems: curTobaItems,
+                            });
                           }
-                          const isToba = type === '塔婆供養';
-                          if (isToba) {
-                            setMajorCategory('塔婆');
-                          }
-                          setFormData({
-                            ...formData,
-                            memorialType: type as any,
-                            tobaItems: curTobaItems,
-                            ...(isToba ? { scheduledTime: '終日', endTime: '終日', isAllDay: true, tobaCount: formData.tobaCount && formData.tobaCount > 0 ? formData.tobaCount : 1 } : {}),
-                          });
                         }}
                         className={`py-2 px-1 rounded-xs text-xs font-bold border transition-colors cursor-pointer text-center ${
                           isSelected
@@ -1516,6 +1572,44 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                     );
                   })}
                 </div>
+
+                {/* 「その他」選択時の自由入力欄 */}
+                {(isOtherMemorialType || (
+                  !HOJI_STANDARD_TYPES.includes(normalizeMemorialType(formData.memorialType || ''))
+                  && !!formData.memorialType
+                )) && (
+                  <div className="mt-2.5 p-3 bg-amber-50/90 border border-[#D4AF37] rounded-xs space-y-1.5 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-bold text-xs text-[#8C2D19]">
+                        法要種別・名称を入力 <span className="text-red-600">*</span>
+                      </label>
+                      <span className="text-[10px] text-gray-500">
+                        例：墓経、開眼供養、厄除祈祷、水子供養、得度式 など
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="法要名・種別を入力してください（例：墓前供養、開眼法要 等）"
+                      value={customMemorialTypeName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCustomMemorialTypeName(val);
+                        const nextType = val.trim() || 'その他';
+                        const curTobaItems = [...(formData.tobaItems || [])];
+                        if (curTobaItems.length > 0) {
+                          curTobaItems[0] = { ...curTobaItems[0], memorialType: nextType };
+                        }
+                        setFormData((prev) => ({
+                          ...prev,
+                          memorialType: nextType as any,
+                          tobaItems: curTobaItems,
+                        }));
+                      }}
+                      className="w-full p-2.5 border-2 border-[#8C2D19] bg-white text-sm font-bold rounded-xs focus:outline-none focus:ring-1 focus:ring-[#8C2D19] text-[#1A1A1A]"
+                      autoFocus
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -1868,19 +1962,40 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                       <div className="sm:col-span-4">
                         <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌・法要種別</label>
                         <select
-                          value={normalizeMemorialType(formData.memorialType || '年忌法要')}
+                          value={
+                            isOtherMemorialType || (
+                              !HOJI_STANDARD_TYPES.includes(normalizeMemorialType(formData.memorialType || ''))
+                              && !!formData.memorialType
+                            )
+                              ? 'その他'
+                              : normalizeMemorialType(formData.memorialType || '年忌法要')
+                          }
                           onChange={(e) => {
                             const newType = e.target.value;
                             const oldType = formData.memorialType;
                             const curTobaItems = [...(formData.tobaItems || [])];
-                            if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
-                              curTobaItems[0] = { ...curTobaItems[0], memorialType: newType };
+                            if (newType === 'その他') {
+                              setIsOtherMemorialType(true);
+                              const nextType = customMemorialTypeName.trim() || 'その他';
+                              if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
+                                curTobaItems[0] = { ...curTobaItems[0], memorialType: nextType };
+                              }
+                              setFormData({
+                                ...formData,
+                                memorialType: nextType as any,
+                                tobaItems: curTobaItems,
+                              });
+                            } else {
+                              setIsOtherMemorialType(false);
+                              if (curTobaItems.length > 0 && (!curTobaItems[0].memorialType || curTobaItems[0].memorialType === oldType || curTobaItems[0].memorialType === '一周忌' || curTobaItems[0].memorialType === '年忌法要')) {
+                                curTobaItems[0] = { ...curTobaItems[0], memorialType: newType };
+                              }
+                              setFormData({
+                                ...formData,
+                                memorialType: newType as any,
+                                tobaItems: curTobaItems,
+                              });
                             }
-                            setFormData({
-                              ...formData,
-                              memorialType: newType as any,
-                              tobaItems: curTobaItems,
-                            });
                           }}
                           className="w-full p-2 border border-[#D1CEC7] bg-white font-bold text-xs rounded-xs"
                         >
@@ -1888,6 +2003,31 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                             <option key={type} value={type}>{type}</option>
                           ))}
                         </select>
+                        {(isOtherMemorialType || (
+                          !HOJI_STANDARD_TYPES.includes(normalizeMemorialType(formData.memorialType || ''))
+                          && !!formData.memorialType
+                        )) && (
+                          <input
+                            type="text"
+                            placeholder="法要種別を入力"
+                            value={customMemorialTypeName}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomMemorialTypeName(val);
+                              const nextType = val.trim() || 'その他';
+                              const curTobaItems = [...(formData.tobaItems || [])];
+                              if (curTobaItems.length > 0) {
+                                curTobaItems[0] = { ...curTobaItems[0], memorialType: nextType };
+                              }
+                              setFormData((prev) => ({
+                                ...prev,
+                                memorialType: nextType as any,
+                                tobaItems: curTobaItems,
+                              }));
+                            }}
+                            className="w-full mt-1.5 p-1.5 border border-[#8C2D19] bg-white text-xs font-bold rounded-xs text-[#1A1A1A]"
+                          />
+                        )}
                       </div>
                       <div className="sm:col-span-5">
                         <label className="block text-[10px] font-bold text-[#8C2D19] mb-0.5">戒名・法名 (必須)</label>
@@ -1934,12 +2074,17 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 text-xs">
                         <div className="sm:col-span-4">
-                          <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌</label>
+                          <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌・法要種別</label>
                           <select
-                            value={normalizeMemorialType(sub.memorialType || '七回忌')}
+                            value={
+                              !HOJI_STANDARD_TYPES.includes(normalizeMemorialType(sub.memorialType || ''))
+                                ? 'その他'
+                                : normalizeMemorialType(sub.memorialType || '七回忌')
+                            }
                             onChange={(e) => {
                               const curSubs = [...(formData.additionalDeceased || [])];
-                              curSubs[idx] = { ...curSubs[idx], memorialType: e.target.value };
+                              const val = e.target.value;
+                              curSubs[idx] = { ...curSubs[idx], memorialType: val === 'その他' ? (curSubs[idx].memorialType && !HOJI_STANDARD_TYPES.includes(curSubs[idx].memorialType) ? curSubs[idx].memorialType : '') : val };
                               setFormData({ ...formData, additionalDeceased: curSubs });
                             }}
                             className="w-full p-2 border border-[#D1CEC7] bg-white font-bold text-xs rounded-xs"
@@ -1948,6 +2093,19 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                               <option key={type} value={type}>{type}</option>
                             ))}
                           </select>
+                          {(!HOJI_STANDARD_TYPES.includes(normalizeMemorialType(sub.memorialType || '')) || sub.memorialType === 'その他') && (
+                            <input
+                              type="text"
+                              placeholder="法要名を入力"
+                              value={sub.memorialType === 'その他' ? '' : sub.memorialType || ''}
+                              onChange={(e) => {
+                                const curSubs = [...(formData.additionalDeceased || [])];
+                                curSubs[idx] = { ...curSubs[idx], memorialType: e.target.value };
+                                setFormData({ ...formData, additionalDeceased: curSubs });
+                              }}
+                              className="w-full mt-1.5 p-1.5 border border-[#8C2D19] bg-white text-xs font-bold rounded-xs text-[#1A1A1A]"
+                            />
+                          )}
                         </div>
                         <div className="sm:col-span-5">
                           <label className="block text-[10px] font-bold text-gray-700 mb-0.5">戒名・法名</label>
@@ -2439,14 +2597,30 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                               <div className="sm:col-span-3">
                                 <label className="block text-[10px] font-bold text-gray-600 mb-0.5">回忌・法要</label>
                                 <select
-                                  value={normalizeMemorialType(item.memorialType || formData.memorialType || '一周忌')}
-                                  onChange={(e) => updateTobaItem({ memorialType: e.target.value })}
+                                  value={
+                                    !HOJI_STANDARD_TYPES.includes(normalizeMemorialType(item.memorialType || ''))
+                                      ? 'その他'
+                                      : normalizeMemorialType(item.memorialType || formData.memorialType || '一周忌')
+                                  }
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    updateTobaItem({ memorialType: val === 'その他' ? (item.memorialType && !HOJI_STANDARD_TYPES.includes(item.memorialType) ? item.memorialType : '') : val });
+                                  }}
                                   className="w-full p-1.5 border border-[#D1CEC7] bg-white font-bold text-xs rounded-xs"
                                 >
                                   {MEMORIAL_TYPE_OPTIONS.map((type) => (
                                     <option key={type} value={type}>{type}</option>
                                   ))}
                                 </select>
+                                {(!HOJI_STANDARD_TYPES.includes(normalizeMemorialType(item.memorialType || '')) || item.memorialType === 'その他') && (
+                                  <input
+                                    type="text"
+                                    placeholder="法要名を入力"
+                                    value={item.memorialType === 'その他' ? '' : item.memorialType || ''}
+                                    onChange={(e) => updateTobaItem({ memorialType: e.target.value })}
+                                    className="w-full mt-1 p-1 border border-[#8C2D19] bg-white text-xs font-bold rounded-xs text-[#1A1A1A]"
+                                  />
+                                )}
                               </div>
                               <div className="sm:col-span-5">
                                 <label className="block text-[10px] font-bold text-[#8C2D19] mb-0.5">供養精霊／為書き</label>

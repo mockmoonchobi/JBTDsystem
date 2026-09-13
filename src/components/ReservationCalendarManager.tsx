@@ -2486,7 +2486,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     setEditingService(null);
   };
 
-  // Open Multi-Item Accounting Recording Modal (過去の同一檀家会計履歴を参考にして仮データ作成)
+  // Open Multi-Item Accounting Recording Modal (前回の履歴から情報をもってくる方式をやめ、金額は空欄、摘要に予定の戒名と忌日を入力)
   const handleOpenAccountingModal = (service: MemorialService) => {
     // 既に記帳済みの場合は二重入力を防止するためモーダルを開かない
     const currentStatus = getServiceAccountingStatus(service);
@@ -2496,180 +2496,57 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     }
 
     const normDate = normalizeDateInput(service.scheduledDate) || todayStr;
-    
-    // 過去の同一檀家（householdId）の収入取引履歴を検索
-    const sameHouseholdTxs = transactions.filter(
-      (t) => t.householdId && t.householdId === service.householdId && t.type === '収入'
-    );
 
-    let initialRows: AccountingItemRow[] = [];
-    let sourceNotice: string | null = null;
+    // 予定の戒名と忌日を取得
+    const dharmaInfo = getServiceEffectiveDharmaInfo(service, pastRecords, households);
+    const dharmaName = (dharmaInfo?.dharmaName || service.dharmaName || '').trim();
+    const memorialType = (service.memorialType || '').trim();
 
-    if (sameHouseholdTxs.length > 0) {
-      // 過去の日付順（新しい順）で並び替え
-      const sortedPastTxs = [...sameHouseholdTxs].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-      
-      // 今回の法要IDと異なる過去取引を探索
-      const pastHistoricalTxs = sortedPastTxs.filter((t) => t.relatedServiceId !== service.id);
+    // 戒名と忌日を組み合わせた摘要
+    const memoParts: string[] = [];
+    if (dharmaName) memoParts.push(dharmaName);
+    if (memorialType) memoParts.push(memorialType);
 
-      if (pastHistoricalTxs.length > 0) {
-        const targetMemorialType = (service.memorialType || '').trim();
-
-        // 過去取引を日付ごとにグループ化
-        const txsByDate = new Map<string, Transaction[]>();
-        pastHistoricalTxs.forEach((t) => {
-          const d = t.date || 'unknown';
-          if (!txsByDate.has(d)) txsByDate.set(d, []);
-          txsByDate.get(d)!.push(t);
-        });
-
-        // 判定キーワード群（備考・科目に記載される主要な法要名・回忌）
-        const specificMemorialKeywords = [
-          '四十九日', '満中陰', '初七日', '二七日', '三七日', '四七日', '五七日', '六七日', '百ヶ日',
-          '一周忌', '三回忌', '七回忌', '十三回忌', '十七回忌', '二十三回忌', '二十七回忌', '三十三回忌', '五十回忌', '百回忌'
-        ];
-        const generalMemorialKeywords = ['年忌', '法事', '法要', '追悼', '供養', '引導', '葬儀', '枕経', '納骨', '布施'];
-
-        let bestBatch: Transaction[] | null = null;
-        let bestBatchDate: string | null = null;
-        let matchedReason: string | null = null;
-
-        // 1. 完全一致判定: 今回の法要種別（例: 「一周忌」「四十九日」）が備考(notes)や科目(category)に明記されている過去取引グループ
-        if (targetMemorialType && targetMemorialType !== '年忌法要' && targetMemorialType !== '法要') {
-          for (const [d, batch] of txsByDate.entries()) {
-            const hasExact = batch.some((t) => {
-              const combinedText = `${t.notes || ''} ${t.category || ''}`;
-              return combinedText.includes(targetMemorialType);
-            });
-            if (hasExact) {
-              bestBatch = batch;
-              bestBatchDate = d;
-              matchedReason = `同一施主の過去の「${targetMemorialType}」記載履歴（${d}）`;
-              break;
-            }
-          }
-        }
-
-        // 2. 類似年忌・忌日判定: 今回の指定と完全一致がない場合、他の年忌・忌日名（例: 一周忌、三回忌、四十九日等）が備考に含まれる過去取引グループ
-        if (!bestBatch) {
-          for (const [d, batch] of txsByDate.entries()) {
-            for (const kw of specificMemorialKeywords) {
-              const hasKw = batch.some((t) => {
-                const combinedText = `${t.notes || ''} ${t.category || ''}`;
-                return combinedText.includes(kw);
-              });
-              if (hasKw) {
-                bestBatch = batch;
-                bestBatchDate = d;
-                matchedReason = `同一施主の過去の「${kw}」記載履歴（${d}）`;
-                break;
-              }
-            }
-            if (bestBatch) break;
-          }
-        }
-
-        // 3. 一般法要・布施判定: 備考または科目に法要・法事・供養・布施などの記載がある過去取引グループ
-        if (!bestBatch) {
-          for (const [d, batch] of txsByDate.entries()) {
-            for (const kw of generalMemorialKeywords) {
-              const hasKw = batch.some((t) => {
-                const combinedText = `${t.notes || ''} ${t.category || ''}`;
-                return combinedText.includes(kw);
-              });
-              if (hasKw) {
-                bestBatch = batch;
-                bestBatchDate = d;
-                matchedReason = `同一施主の過去の「${kw}」関連履歴（${d}）`;
-                break;
-              }
-            }
-            if (bestBatch) break;
-          }
-        }
-
-        // 4. マッチした取引グループから会計行を展開
-        if (bestBatch && bestBatch.length > 0) {
-          const seenCategories = new Set<string>();
-          bestBatch.forEach((pt, idx) => {
-            if (!seenCategories.has(pt.category)) {
-              seenCategories.add(pt.category);
-              initialRows.push({
-                id: `ROW-${Date.now()}-${idx}`,
-                category: pt.category,
-                amount: pt.amount || 0,
-                notes: pt.notes || `${service.memorialType}布施`,
-              });
-            }
-          });
-
-          if (initialRows.length > 0) {
-            sourceNotice = `${matchedReason}から同一施主実績（${initialRows.length}件）を参考に仮データを作成しました`;
-          }
-        }
-      }
+    // 戒名がなく俗名がある場合の補完（例: 枕経・通夜など）
+    if (!dharmaName && (dharmaInfo?.secularName || service.deceasedName)) {
+      const secular = (dharmaInfo?.secularName || service.deceasedName || '').trim();
+      if (secular) memoParts.unshift(secular);
     }
 
-    // 過去実績がなかった場合、または今回の予約固有の項目が不足している場合の補正
-    if (initialRows.length === 0) {
-      const defaultOffering = service.memorialType === '塔婆供養' ? 0 : (service.offeringAmount || 30000);
-      const defaultTobaFee = service.tobaFee || (service.tobaCount ? service.tobaCount * 3000 : 0);
+    const defaultNotes = memoParts.join(' ');
 
-      // 予約時の備考があればそれを明細備考の初期値に、なければ法要名布施
-      const defaultOfferingNote = service.notes?.trim() || `${service.memorialType}布施`;
+    const initialRows: AccountingItemRow[] = [];
 
-      if (defaultOffering > 0 || service.memorialType !== '塔婆供養') {
-        initialRows.push({
-          id: `ROW-${Date.now()}-1`,
-          category: '法要布施',
-          amount: defaultOffering || 30000,
-          notes: defaultOfferingNote,
-        });
-      }
+    // 基本科目: 「法要布施」または登録された収入科目
+    const defaultCategory =
+      availableIncomeCategories.find((c) => c === '法要布施' || c.includes('布施')) ||
+      availableIncomeCategories[0] ||
+      '法要布施';
 
-      if (service.tobaCount && service.tobaCount > 0) {
-        initialRows.push({
-          id: `ROW-${Date.now()}-2`,
-          category: '塔婆料',
-          amount: defaultTobaFee || (service.tobaCount * 3000),
-          notes: `塔婆${service.tobaCount}本供養料`,
-        });
-      }
+    // 1行目: 金額は空欄 (0)、摘要には予定の戒名と忌日
+    initialRows.push({
+      id: `ROW-${Date.now()}-1`,
+      category: defaultCategory,
+      amount: 0,
+      notes: defaultNotes,
+    });
 
-      // 御車代・御膳料
-      if (service.venue && service.venue !== '本堂') {
-        initialRows.push({
-          id: `ROW-${Date.now()}-3`,
-          category: '御車代・御膳料',
-          amount: 10000,
-          notes: '御車代・御膳料',
-        });
-      }
-    } else {
-      // 過去データがあり、今回塔婆指定があるのに塔婆料がなければ追加
-      if (service.tobaCount && service.tobaCount > 0 && !initialRows.some((r) => r.category.includes('塔婆'))) {
-        const tobaFee = service.tobaFee || (service.tobaCount * 3000);
-        initialRows.push({
-          id: `ROW-${Date.now()}-toba`,
-          category: '塔婆料',
-          amount: tobaFee,
-          notes: `塔婆${service.tobaCount}本供養料`,
-        });
-      }
-    }
-
-    // もしそれでも0件なら基本の1行を用意
-    if (initialRows.length === 0) {
+    // 塔婆予約がある場合は塔婆料の行も用意（金額は空欄）
+    if (service.tobaCount && service.tobaCount > 0) {
+      const tobaCategory =
+        availableIncomeCategories.find((c) => c.includes('塔婆')) ||
+        '塔婆料';
+      const tobaNote = [defaultNotes, `塔婆${service.tobaCount}本`].filter(Boolean).join(' ');
       initialRows.push({
-        id: `ROW-${Date.now()}-0`,
-        category: availableIncomeCategories[0] || '法要布施',
-        amount: 30000,
-        notes: service.notes?.trim() || `${service.memorialType}布施`,
+        id: `ROW-${Date.now()}-2`,
+        category: tobaCategory,
+        amount: 0,
+        notes: tobaNote,
       });
     }
 
     setAccountingItemRows(initialRows);
-    setAccountingHistoricalSourceInfo(sourceNotice);
+    setAccountingHistoricalSourceInfo(null);
     setAccountingPaymentMethod('現金受付');
     setAccountingReceivedDate(normDate);
     setAccountingCustomNote('');
@@ -2678,13 +2555,21 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
   // Handlers for Accounting Row CRUD (自由な追加・削除・編集)
   const handleAddAccountingRow = () => {
+    // 予定の戒名と忌日を行追加時にも取得
+    const dharmaInfo = accountingModalService
+      ? getServiceEffectiveDharmaInfo(accountingModalService, pastRecords, households)
+      : null;
+    const dharmaName = (dharmaInfo?.dharmaName || accountingModalService?.dharmaName || '').trim();
+    const memorialType = (accountingModalService?.memorialType || '').trim();
+    const defaultNotes = [dharmaName, memorialType].filter(Boolean).join(' ');
+
     setAccountingItemRows((prev) => [
       ...prev,
       {
         id: `ROW-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         category: availableIncomeCategories[0] || '法要布施',
-        amount: 10000,
-        notes: '',
+        amount: 0,
+        notes: defaultNotes,
       },
     ]);
   };
@@ -2764,6 +2649,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
         paymentMethod: accountingPaymentMethod,
         receiptNumber: `R${dateStr.replace(/\//g, '')}-${Date.now().toString().slice(-4)}-${idx + 1}`,
         relatedServiceId: s.id,
+        description: finalNote,
         notes: finalNote,
       };
       onAddTransaction(tx);
