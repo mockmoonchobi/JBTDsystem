@@ -41,6 +41,9 @@ interface PostcardTemplateModalProps {
 
 export const POSTCARD_NOTICE_TAGS = [
   { tag: '{施主名}', description: '施主名（「様」無し）' },
+  { tag: '{区分１}', description: '檀家種別・区分1（例: 檀家）' },
+  { tag: '{区分２}', description: '状態区分・区分2（例: 健在）' },
+  { tag: '{役職}', description: '役職（例: 総代・世話人）' },
   { tag: '{彼岸}', description: '直近の彼岸（「秋彼岸」または「春彼岸」・年無し）' },
   { tag: '{次彼岸}', description: '直近の彼岸の次（「来年の春彼岸」または「秋彼岸」）' },
   { tag: '{本年}', description: '今年（例: 「令和八年」）' },

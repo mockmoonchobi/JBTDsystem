@@ -227,21 +227,6 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
     safeStorage.setItem('temple_print_kaku2_memo_enabled', String(val));
   };
 
-  // 角2封筒宛名面メモ枠線（区切り線・外枠）印刷の有無
-  const [showKaku2MemoBorder, setShowKaku2MemoBorder] = useState<boolean>(() => {
-    try {
-      const val = safeStorage.getItem('temple_print_kaku2_memo_show_border');
-      return val !== 'false';
-    } catch {
-      return true;
-    }
-  });
-
-  const handleToggleKaku2MemoBorder = (val: boolean) => {
-    setShowKaku2MemoBorder(val);
-    safeStorage.setItem('temple_print_kaku2_memo_show_border', String(val));
-  };
-
   // 角2封筒宛名面メモの文字サイズオフセット
   const [kaku2MemoFontSizeOffset, setKaku2MemoFontSizeOffset] = useState<number>(() => {
     try {
@@ -1027,19 +1012,6 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                 </select>
               </div>
 
-              {/* 枠線印刷の有無 */}
-              <div className="pt-1">
-                <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
-                  <input
-                    type="checkbox"
-                    checked={showKaku2MemoBorder}
-                    onChange={(e) => handleToggleKaku2MemoBorder(e.target.checked)}
-                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-3.5 w-3.5 accent-[#1A1A1A] cursor-pointer"
-                  />
-                  <span className="font-bold text-[11px]">枠線（区切り線・外枠）を印刷する</span>
-                </label>
-              </div>
-
               {/* Font Size and Textarea */}
               <div className="space-y-2 pt-2 border-t border-[#D1CEC7]">
                 <div className="flex items-center justify-between">
@@ -1383,7 +1355,6 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   showPostalCodeFrame={showPostalCodeFrame}
                   showKaku2Memo={showKaku2Memo}
                   kaku2MemoText={customKaku2Memo}
-                  showKaku2MemoBorder={showKaku2MemoBorder}
                   kaku2MemoFontSizeOffset={kaku2MemoFontSizeOffset}
                   milestoneTargetsMap={milestoneTargetsMap}
                   milestonePeriodLabel={milestonePeriodLabel}
@@ -1420,7 +1391,6 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               showPostalCodeFrame={showPostalCodeFrame}
               showKaku2Memo={showKaku2Memo}
               kaku2MemoText={customKaku2Memo}
-              showKaku2MemoBorder={showKaku2MemoBorder}
               kaku2MemoFontSizeOffset={kaku2MemoFontSizeOffset}
               isPrint
               isLast={index === printItems.length - 1}
@@ -1499,7 +1469,6 @@ interface PreviewCanvasProps {
   showPostalCodeFrame?: boolean;
   showKaku2Memo?: boolean;
   kaku2MemoText?: string;
-  showKaku2MemoBorder?: boolean;
   kaku2MemoFontSizeOffset?: number;
   isPrint?: boolean;
   isLast?: boolean;
@@ -1800,7 +1769,6 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   showPostalCodeFrame = false,
   showKaku2Memo = false,
   kaku2MemoText = '',
-  showKaku2MemoBorder = true,
   kaku2MemoFontSizeOffset = 0,
   isPrint = false,
   isLast = false,
@@ -2206,7 +2174,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           <div
             className="absolute left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
             style={{
-              top: showKaku2Memo ? '68mm' : '50%',
+              top: showKaku2Memo ? '53mm' : '50%',
               transform: showKaku2Memo
                 ? 'translate(calc(-50% - 2mm), 0)'
                 : 'translate(calc(-50% - 2mm), -50%)',
@@ -2219,34 +2187,31 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             {formatRecipientName(household.familyHead, honorific)}
           </div>
 
-          {/* 角2封筒 宛名面メモ印刷 (区切り線・外枠線・縦書き文章) */}
+          {/* 角2封筒 宛名面メモ印刷 (上部区切り横線 + 枠線なし縦書き文章) */}
           {showKaku2Memo && (
             <>
               {/* 上部区切り線 (横線) */}
-              {showKaku2MemoBorder && (
-                <div
-                  className="absolute"
-                  style={{
-                    top: '238mm',
-                    left: '66mm',
-                    right: '12mm',
-                    height: '1.2px',
-                    backgroundColor: '#1c1917',
-                  }}
-                />
-              )}
+              <div
+                className="absolute"
+                style={{
+                  top: '223mm',
+                  left: '66mm',
+                  right: '12mm',
+                  height: '1.2px',
+                  backgroundColor: '#1c1917',
+                }}
+              />
 
-              {/* メモ枠 (赤線位置・縦書き文章エリア) */}
+              {/* メモ文章エリア (縦書き文章・枠線なし) */}
               <div
                 className="absolute flex flex-col justify-start"
                 style={{
-                  top: '244mm',
+                  top: '225mm',
                   left: '66mm',
                   right: '12mm',
-                  height: '68mm',
-                  border: showKaku2MemoBorder ? '1.2px solid #1c1917' : '1.2px solid transparent',
+                  height: '86mm',
                   boxSizing: 'border-box',
-                  padding: '4mm 6mm',
+                  padding: '2mm 4mm',
                   overflow: 'hidden',
                 }}
               >

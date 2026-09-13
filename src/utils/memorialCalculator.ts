@@ -1731,7 +1731,19 @@ export function applyNoticeTemplate(
   householdHeadName: string = '',
   templeInfo?: { name?: string; mountainName?: string; feeType1?: string; feeType2?: string; feeType3?: string },
   sponsorName?: string,
-  household?: { fee1?: string | number; fee2?: string | number; fee3?: string | number; fee1Amount?: number; fee2Amount?: number; fee3Amount?: number; familyHead?: string } | null
+  household?: {
+    fee1?: string | number;
+    fee2?: string | number;
+    fee3?: string | number;
+    fee1Amount?: number;
+    fee2Amount?: number;
+    fee3Amount?: number;
+    familyHead?: string;
+    householdType?: string;
+    status?: string;
+    district?: string;
+    [key: string]: any;
+  } | null
 ): string {
   if (!templateStr) return '';
 
@@ -1873,6 +1885,18 @@ export function applyNoticeTemplate(
   result = result.replace(/\{檀信徒QRコード\}|\{檀信徒QR\}|｛檀信徒QRコード｝|｛檀信徒QR｝|\{檀家QRコード\}|\{檀家QR\}|｛檀家QRコード｝|｛檀家QR｝|\{受付QRコード\}|\{受付QR\}|｛受付QRコード｝|｛受付QR｝/g, '[[QR_HOUSEHOLD]]');
   result = result.replace(/\{寺院サイトQRコード\}|\{寺院QRコード\}|\{寺院QR\}|｛寺院サイトQRコード｝|｛寺院QRコード｝|｛寺院QR｝|\{公式HP_QRコード\}|｛公式HP_QRコード｝/g, '[[QR_TEMPLE]]');
 
+  // 区分１ (檀家種別・区分1)
+  const householdTypeVal = (household?.householdType || '').trim();
+  result = result.replace(/\{区分１\}|\{区分1\}|｛区分１｝|｛区分1｝/g, householdTypeVal);
+
+  // 区分２ (状態区分・区分2)
+  const statusVal = (household?.status || '').trim();
+  result = result.replace(/\{区分２\}|\{区分2\}|｛区分２｝|｛区分2｝/g, statusVal);
+
+  // 役職 (総代・世話人・役職)
+  const districtVal = (household?.district || '').trim();
+  result = result.replace(/\{役職\}|｛役職｝/g, districtVal);
+
   return result;
 }
 
@@ -1887,7 +1911,19 @@ export function generatePoliteMemorialNoticeText(
   templeInfo?: { name?: string; mountainName?: string; feeType1?: string; feeType2?: string; feeType3?: string },
   customTemplateOverride?: string,
   sponsorName?: string,
-  household?: { fee1?: string | number; fee2?: string | number; fee3?: string | number; fee1Amount?: number; fee2Amount?: number; fee3Amount?: number; familyHead?: string } | null
+  household?: {
+    fee1?: string | number;
+    fee2?: string | number;
+    fee3?: string | number;
+    fee1Amount?: number;
+    fee2Amount?: number;
+    fee3Amount?: number;
+    familyHead?: string;
+    householdType?: string;
+    status?: string;
+    district?: string;
+    [key: string]: any;
+  } | null
 ): string {
   if (!targets || targets.length === 0) return '';
 
@@ -1909,11 +1945,18 @@ export function generatePoliteMemorialNoticeText(
 
 /**
  * Applies tags for Kaku2 envelope memo template.
- * Supported tags: {施主名}, {寺院名}, {山号}, {本年}, {次年}
+ * Supported tags: {施主名}, {寺院名}, {山号}, {本年}, {次年}, {区分１}, {区分２}, {役職}
  */
 export function applyEnvelopeMemoTemplate(
   templateStr: string,
-  household?: { familyHead?: string; familyMembers?: any[] } | null,
+  household?: {
+    familyHead?: string;
+    familyMembers?: any[];
+    householdType?: string;
+    status?: string;
+    district?: string;
+    [key: string]: any;
+  } | null,
   templeInfo?: { name?: string; mountainName?: string } | null
 ): string {
   if (!templateStr) return '';

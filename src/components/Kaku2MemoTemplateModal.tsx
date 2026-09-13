@@ -34,6 +34,9 @@ interface Kaku2MemoTemplateModalProps {
 
 export const KAKU2_MEMO_TAGS = [
   { tag: '{施主名}', description: '施主名（「様」無し）' },
+  { tag: '{区分１}', description: '檀家種別・区分1（例: 正檀家）' },
+  { tag: '{区分２}', description: '状態区分・区分2（例: 健在）' },
+  { tag: '{役職}', description: '役職（例: 総代・世話人）' },
   { tag: '{寺院名}', description: '寺院名（例: 光明寺）' },
   { tag: '{山号}', description: '寺院の山号（例: 補陀落山）' },
   { tag: '{本年}', description: '今年（例: 「令和八年」）' },
@@ -72,10 +75,10 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
     address: '東京都港区芝公園四―七―三十五',
     phone: '03-3432-1111',
     templeId: templeInfo?.id || 'temple-main',
-    householdType: '檀家',
-    district: '',
+    householdType: '正檀家',
+    district: '総代',
     tombNumber: '',
-    status: 'active',
+    status: '健在',
     familyMembers: [],
     notes: '',
     createdAt: '2026-01-01',
@@ -457,7 +460,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
                   value={currentTemplate.content}
                   onChange={(e) => handleUpdateCurrentTemplate({ content: e.target.value })}
                   className="w-full p-3 border border-stone-300 text-xs font-serif leading-relaxed text-stone-900 focus:outline-none focus:border-stone-900 focus:ring-1 focus:ring-stone-900"
-                  placeholder="角２封筒宛名面の下部枠内に縦書きで印字する文章を入力してください..."
+                  placeholder="角２封筒宛名面の下部に縦書きで印字する文章を入力してください..."
                 />
               </div>
             </div>
@@ -535,7 +538,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
                 ))}
               </div>
 
-              {/* 料金別納 */}
+              {/* 料金別納マーク */}
               <div
                 className="absolute top-[8px] left-[4px] border border-stone-800 p-0.5 text-center flex flex-col items-center justify-center"
                 style={{ width: '26px', height: '32px' }}
@@ -563,7 +566,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
               <div
                 className="absolute left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
                 style={{
-                  top: '74px',
+                  top: '58px',
                   transform: 'translateX(-50%)',
                   writingMode: 'vertical-rl',
                   textOrientation: 'upright',
@@ -587,11 +590,11 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
                 <div>東京都港区芝公園四❘七❘三十五</div>
               </div>
 
-              {/* 区切り線 (横線) */}
+              {/* 上部区切り線 (横線) */}
               <div
                 className="absolute"
                 style={{
-                  bottom: '100px',
+                  bottom: '116px',
                   left: '70px',
                   right: '14px',
                   height: '1px',
@@ -599,17 +602,16 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
                 }}
               />
 
-              {/* メモ枠 (縦書き文章エリア) */}
+              {/* メモ文章（枠線なし・縦書き文章エリア） */}
               <div
                 className="absolute flex flex-col justify-start"
                 style={{
                   bottom: '20px',
                   left: '70px',
                   right: '14px',
-                  height: '75px',
-                  border: '1px solid #1c1917',
+                  height: '94px',
                   boxSizing: 'border-box',
-                  padding: '4px 6px',
+                  padding: '2px 4px',
                   overflow: 'hidden',
                 }}
               >
