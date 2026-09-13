@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'households', label: '檀家名簿・世帯', icon: Users },
     { id: 'kakocho', label: '過去帳・年回忌', icon: BookOpen },
     { id: 'reservations', label: '法事・予約・カレンダー', icon: Calendar },
-    { id: 'print', label: '長3封筒・はがき印刷', icon: Printer },
+    { id: 'print', label: '封筒・はがき印刷', icon: Printer },
     { id: 'accounting', label: '会計管理', icon: CreditCard },
   ];
 
@@ -466,14 +466,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center space-x-2 px-4 py-2 text-xs sm:text-sm font-bold tracking-wider font-sans transition-all border-b-2 cursor-pointer ${
+                  className={`flex items-center space-x-2 px-3.5 sm:px-4 py-2 text-xs sm:text-sm font-bold tracking-wider font-sans transition-all border-b-2 cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'bg-[#1A1A1A] text-[#D4AF37] border-[#D4AF37]'
                       : 'text-[#999999] hover:text-[#F9F7F2] border-transparent hover:bg-[#1A1A1A]/50'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-[#D4AF37]' : 'text-[#888888]'}`} />
-                  <span>{item.label}</span>
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#D4AF37]' : 'text-[#888888]'}`} />
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               );
             })}

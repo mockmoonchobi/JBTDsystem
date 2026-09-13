@@ -551,7 +551,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               印
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider">封筒・はがき 印刷</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider whitespace-nowrap">封筒・はがき 印刷</h2>
               <div className="text-xs text-[#D4AF37] font-sans flex items-center gap-1.5 mt-0.5">
                 <span>差出人寺院:</span>
                 <span className="font-bold text-[#F9F7F2]">
@@ -807,12 +807,13 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
             </div>
           </div>
 
-          {/* Honorific & Basic Print Settings Box */}
-          <div className="bg-white border border-[#D1CEC7] p-4 space-y-3 text-xs shadow-sm font-sans">
-            <h3 className="text-xs font-bold text-[#1A1A1A] border-b border-[#F0EFEA] pb-2 flex items-center space-x-1.5 uppercase tracking-wider">
-              <Settings className="w-4 h-4 text-[#1A1A1A]" />
-              <span>宛名設定</span>
-            </h3>
+          {/* Honorific & Basic Print Settings Box (A4案内文選択時は不要なため非表示) */}
+          {!(docType === 'envelope' && envelopeTab === 'a4_notice') && (
+            <div className="bg-white border border-[#D1CEC7] p-4 space-y-3 text-xs shadow-sm font-sans">
+              <h3 className="text-xs font-bold text-[#1A1A1A] border-b border-[#F0EFEA] pb-2 flex items-center space-x-1.5 uppercase tracking-wider">
+                <Settings className="w-4 h-4 text-[#1A1A1A]" />
+                <span>宛名設定</span>
+              </h3>
 
             {/* 封筒サイズ切り替え (封筒選択時) */}
             {docType === 'envelope' && (
@@ -973,9 +974,10 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               </div>
             )}
           </div>
+        )}
 
-          {/* Kaku2 Envelope Address Memo Options (角2封筒 宛名面メモ - 案内文とは別) */}
-          {docType === 'envelope' && envelopeSize === 'kaku2' && showKaku2Memo && (
+          {/* Kaku2 Envelope Address Memo Options (角2封筒 宛名面メモ - 宛名印刷時限定) */}
+          {docType === 'envelope' && envelopeSize === 'kaku2' && envelopeTab === 'address' && showKaku2Memo && (
             <div className="bg-white border border-[#D4AF37] p-4 space-y-3 text-xs shadow-md font-sans animate-fadeIn">
               <div className="flex items-center justify-between border-b border-[#F0EFEA] pb-2">
                 <h3 className="text-xs font-bold text-[#1A1A1A] flex items-center space-x-1.5 uppercase tracking-wider">
@@ -1144,7 +1146,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
             </div>
           )}
 
-          {/* A4 Notice Options (案内文オプション - 長3封筒の案内文(A4)選択時限定) */}
+          {/* A4 Notice Options (案内文オプション - A4案内文選択時) */}
           {docType === 'envelope' && envelopeTab === 'a4_notice' && (
             <div className="bg-white border border-[#D4AF37] p-4 space-y-3 text-xs shadow-md font-sans animate-fadeIn">
               <div className="flex items-center justify-between border-b border-[#F0EFEA] pb-2">
@@ -1234,6 +1236,22 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-2 text-[#2D2D2D] text-xs font-serif leading-relaxed focus:border-[#1A1A1A] focus:outline-none"
                   placeholder="A4用紙の案内状本文を入力..."
                 ></textarea>
+              </div>
+
+              {/* 寺院HPのQRコードを印刷する */}
+              <div className="pt-2 border-t border-[#D1CEC7]">
+                <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
+                  <input
+                    type="checkbox"
+                    checked={showTempleQrCode}
+                    onChange={(e) => handleToggleTempleQrCode(e.target.checked)}
+                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-4 w-4 accent-[#1A1A1A] cursor-pointer"
+                  />
+                  <span className="font-bold text-xs">寺院HPのQRコードを印刷する</span>
+                </label>
+                <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
+                  ※ A4案内文末尾（寺院名の下）に寺院ウェブサイトのQRコードを印刷します
+                </span>
               </div>
             </div>
           )}
