@@ -12,23 +12,28 @@ import {
   Sliders,
   Search,
   Eye,
-  RotateCcw
+  RotateCcw,
+  Save
 } from 'lucide-react';
 import { Household, TempleInfo, TempleProfile } from '../types';
 import {
   getPostcardBackTypography,
   getHouseholdSponsorName,
   applyNoticeTemplate,
+  applyEnvelopeMemoTemplate,
   getAllSavedNoticeTemplates,
+  saveAllNoticeTemplates,
   DEFAULT_HIGAN_TEMPLATE,
   DEFAULT_A4_MEMORIAL_TEMPLATE,
   DEFAULT_A4_GENERAL_TEMPLATE,
+  DEFAULT_KAKU2_MEMO_TEMPLATE,
   NoticeTemplateItem,
   MemorialNoticeTarget,
 } from '../utils/memorialCalculator';
 import { safeStorage } from '../utils/storageUtils';
 import { PostcardTemplateModal } from './PostcardTemplateModal';
 import { A4TemplateModal } from './A4TemplateModal';
+import { Kaku2MemoTemplateModal } from './Kaku2MemoTemplateModal';
 import { VerticalNoticeContent } from './VerticalNoticeContent';
 import { toGraphemes, safeJoinWithSpace } from '../utils/unicodeUtils';
 
@@ -207,6 +212,74 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
     safeStorage.setItem('temple_print_show_betsuno_stamp', String(val));
   };
 
+  // 角2封筒宛名面メモ印刷の有無
+  const [showKaku2Memo, setShowKaku2Memo] = useState<boolean>(() => {
+    try {
+      const val = safeStorage.getItem('temple_print_kaku2_memo_enabled');
+      return val === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleKaku2Memo = (val: boolean) => {
+    setShowKaku2Memo(val);
+    safeStorage.setItem('temple_print_kaku2_memo_enabled', String(val));
+  };
+
+  // 角2封筒宛名面メモ枠線（区切り線・外枠）印刷の有無
+  const [showKaku2MemoBorder, setShowKaku2MemoBorder] = useState<boolean>(() => {
+    try {
+      const val = safeStorage.getItem('temple_print_kaku2_memo_show_border');
+      return val !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleKaku2MemoBorder = (val: boolean) => {
+    setShowKaku2MemoBorder(val);
+    safeStorage.setItem('temple_print_kaku2_memo_show_border', String(val));
+  };
+
+  // 角2封筒宛名面メモの文字サイズオフセット
+  const [kaku2MemoFontSizeOffset, setKaku2MemoFontSizeOffset] = useState<number>(() => {
+    try {
+      const val = safeStorage.getItem('temple_print_kaku2_memo_font_size_offset');
+      return val ? parseFloat(val) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const handleKaku2MemoFontSizeChange = (delta: number) => {
+    setKaku2MemoFontSizeOffset((prev) => {
+      const next = Math.max(-4, Math.min(6, prev + delta));
+      safeStorage.setItem('temple_print_kaku2_memo_font_size_offset', String(next));
+      return next;
+    });
+  };
+
+  // 角2封筒宛名面メモ本文
+  const [customKaku2Memo, setCustomKaku2Memo] = useState<string>(() => {
+    try {
+      const val = safeStorage.getItem('temple_print_kaku2_memo_text');
+      if (val !== null && val !== undefined) return val;
+    } catch {
+      // ignore
+    }
+    return DEFAULT_KAKU2_MEMO_TEMPLATE;
+  });
+
+  const handleCustomKaku2MemoChange = (val: string) => {
+    setCustomKaku2Memo(val);
+    safeStorage.setItem('temple_print_kaku2_memo_text', val);
+  };
+
+  // 選択中の角2宛名面メモテンプレートID
+  const [selectedKaku2MemoTemplateId, setSelectedKaku2MemoTemplateId] = useState<string>('tpl-kaku2-memo-default');
+  const [isKaku2MemoModalOpen, setIsKaku2MemoModalOpen] = useState<boolean>(false);
+
   // Reload saved templates
   const reloadTemplates = () => {
     const loaded = getAllSavedNoticeTemplates();
@@ -226,6 +299,50 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
           setCustomA4Title(foundA4.title);
         }
       }
+    }
+    if (selectedKaku2MemoTemplateId) {
+      const foundMemo = loaded.find((t) => t.id === selectedKaku2MemoTemplateId);
+      if (foundMemo) {
+        handleCustomKaku2MemoChange(foundMemo.content);
+      }
+    }
+  };
+
+  const handleSelectKaku2MemoTemplate = (tplId: string) => {
+    setSelectedKaku2MemoTemplateId(tplId);
+    if (!tplId) {
+      // Direct input mode
+    } else {
+      const found = savedTemplates.find((t) => t.id === tplId);
+      if (found) {
+        handleCustomKaku2MemoChange(found.content);
+      }
+    }
+  };
+
+  const handleSaveCurrentAsKaku2MemoTemplate = () => {
+    const loaded = getAllSavedNoticeTemplates();
+    const existing = loaded.find((t) => t.id === selectedKaku2MemoTemplateId && t.type === 'kaku2_memo');
+    let updated: NoticeTemplateItem[];
+    if (existing && !existing.isDefault) {
+      updated = loaded.map((t) => (t.id === existing.id ? { ...t, content: customKaku2Memo } : t));
+    } else {
+      const newId = `tpl-kaku2-memo-${Date.now()}`;
+      const newTpl: NoticeTemplateItem = {
+        id: newId,
+        name: `角２宛名面メモ ${new Date().toLocaleDateString('ja-JP')}`,
+        type: 'kaku2_memo',
+        category: 'custom',
+        content: customKaku2Memo,
+        isDefault: false,
+      };
+      updated = [...loaded, newTpl];
+      setSelectedKaku2MemoTemplateId(newId);
+    }
+    saveAllNoticeTemplates(updated);
+    setSavedTemplates(updated);
+    if (onSaveNoticeTemplates) {
+      onSaveNoticeTemplates(updated);
     }
   };
 
@@ -852,7 +969,129 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   : '※ はがき宛名面の氏名（様の30mm左）に受付用檀信徒QRを印刷'}
               </span>
             </div>
+
+            {/* 角2封筒専用: 封筒宛名面に文章を印刷する */}
+            {docType === 'envelope' && envelopeSize === 'kaku2' && (
+              <div className="pt-2 border-t border-[#F0EFEA]">
+                <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
+                  <input
+                    type="checkbox"
+                    checked={showKaku2Memo}
+                    onChange={(e) => handleToggleKaku2Memo(e.target.checked)}
+                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-4 w-4 accent-[#1A1A1A] cursor-pointer"
+                  />
+                  <span className="font-bold text-xs text-stone-900">封筒宛名面に文章を印刷する</span>
+                </label>
+                <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
+                  ※ 氏名を少し上に配置し、宛名面下部枠内に縦書きで文章（案内・注意メモ等）を印刷
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Kaku2 Envelope Address Memo Options (角2封筒 宛名面メモ - 案内文とは別) */}
+          {docType === 'envelope' && envelopeSize === 'kaku2' && showKaku2Memo && (
+            <div className="bg-white border border-[#D4AF37] p-4 space-y-3 text-xs shadow-md font-sans animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-[#F0EFEA] pb-2">
+                <h3 className="text-xs font-bold text-[#1A1A1A] flex items-center space-x-1.5 uppercase tracking-wider">
+                  <FileText className="w-4 h-4 text-[#D4AF37]" />
+                  <span>角２宛名面メモ設定</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsKaku2MemoModalOpen(true)}
+                  className="px-2.5 py-1 bg-[#1A1A1A] hover:bg-[#333333] text-[#D4AF37] border border-[#D4AF37] text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                  title="角２宛名面メモテンプレートの追加・編集"
+                >
+                  <Sliders className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>案内文テンプレート</span>
+                </button>
+              </div>
+
+              {/* Template Selector for Kaku2 Memo */}
+              <div className="space-y-1.5">
+                <label className="block text-[#444444] font-bold">角２宛名面メモ テンプレート選択:</label>
+                <select
+                  value={selectedKaku2MemoTemplateId}
+                  onChange={(e) => handleSelectKaku2MemoTemplate(e.target.value)}
+                  className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-1.5 text-xs text-[#2D2D2D] font-serif focus:border-[#1A1A1A] focus:outline-none cursor-pointer"
+                >
+                  <option value="">（直接入力した文章を使用）</option>
+                  {savedTemplates
+                    .filter((t) => t.type === 'kaku2_memo')
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* 枠線印刷の有無 */}
+              <div className="pt-1">
+                <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
+                  <input
+                    type="checkbox"
+                    checked={showKaku2MemoBorder}
+                    onChange={(e) => handleToggleKaku2MemoBorder(e.target.checked)}
+                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-3.5 w-3.5 accent-[#1A1A1A] cursor-pointer"
+                  />
+                  <span className="font-bold text-[11px]">枠線（区切り線・外枠）を印刷する</span>
+                </label>
+              </div>
+
+              {/* Font Size and Textarea */}
+              <div className="space-y-2 pt-2 border-t border-[#D1CEC7]">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[#444444] font-bold">メモ本文 (縦書き印字):</label>
+                  <div className="flex items-center space-x-1 bg-[#F9F7F2] border border-[#D1CEC7] px-1.5 py-0.5 shadow-2xs">
+                    <span className="text-[10px] text-[#666666] font-bold">文字サイズ:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleKaku2MemoFontSizeChange(-0.5)}
+                      disabled={kaku2MemoFontSizeOffset <= -4}
+                      className="w-5 h-5 bg-white hover:bg-[#1A1A1A] hover:text-[#D4AF37] border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+                      title="文字を小さくする（－0.5pt）"
+                    >
+                      －
+                    </button>
+                    <span className="text-[11px] font-mono font-bold px-1 text-[#1A1A1A] min-w-[42px] text-center">
+                      {(13.0 + kaku2MemoFontSizeOffset).toFixed(1)}pt
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleKaku2MemoFontSizeChange(0.5)}
+                      disabled={kaku2MemoFontSizeOffset >= 6}
+                      className="w-5 h-5 bg-white hover:bg-[#1A1A1A] hover:text-[#D4AF37] border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs flex items-center justify-center transition-colors disabled:opacity-40 cursor-pointer"
+                      title="文字を大きくする（＋0.5pt）"
+                    >
+                      ＋
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={customKaku2Memo}
+                  onChange={(e) => handleCustomKaku2MemoChange(e.target.value)}
+                  className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-2 text-[#2D2D2D] text-xs font-serif leading-relaxed focus:border-[#1A1A1A] focus:outline-none"
+                  placeholder="角２封筒宛名面の下部に縦書きで印字する文章を入力..."
+                />
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={handleSaveCurrentAsKaku2MemoTemplate}
+                    className="px-2.5 py-1 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                    title="入力中の文章を角２宛名面メモのテンプレートとして記録します"
+                  >
+                    <Save className="w-3.5 h-3.5 text-[#D4AF37]" />
+                    <span>現在の内容をテンプレート保存</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Postcard Notice Options (案内文オプション - はがき裏面限定) */}
           {docType === 'postcard' && (postcardTab === 'back' || postcardTab === 'both') && (
@@ -1142,6 +1381,10 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   showBetsunoStamp={showBetsunoStamp}
                   hideSender={hideSender}
                   showPostalCodeFrame={showPostalCodeFrame}
+                  showKaku2Memo={showKaku2Memo}
+                  kaku2MemoText={customKaku2Memo}
+                  showKaku2MemoBorder={showKaku2MemoBorder}
+                  kaku2MemoFontSizeOffset={kaku2MemoFontSizeOffset}
                   milestoneTargetsMap={milestoneTargetsMap}
                   milestonePeriodLabel={milestonePeriodLabel}
                 />
@@ -1175,6 +1418,10 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               showBetsunoStamp={showBetsunoStamp}
               hideSender={hideSender}
               showPostalCodeFrame={showPostalCodeFrame}
+              showKaku2Memo={showKaku2Memo}
+              kaku2MemoText={customKaku2Memo}
+              showKaku2MemoBorder={showKaku2MemoBorder}
+              kaku2MemoFontSizeOffset={kaku2MemoFontSizeOffset}
               isPrint
               isLast={index === printItems.length - 1}
               milestoneTargetsMap={milestoneTargetsMap}
@@ -1215,6 +1462,22 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
           }
         }}
       />
+
+      {/* Kaku2 Envelope Memo Template Settings Modal */}
+      <Kaku2MemoTemplateModal
+        isOpen={isKaku2MemoModalOpen}
+        onClose={() => {
+          setIsKaku2MemoModalOpen(false);
+          reloadTemplates();
+        }}
+        templeInfo={templeInfo}
+        onTemplatesUpdated={(updated) => {
+          reloadTemplates();
+          if (onSaveNoticeTemplates) {
+            onSaveNoticeTemplates(updated);
+          }
+        }}
+      />
     </div>
   );
 };
@@ -1234,6 +1497,10 @@ interface PreviewCanvasProps {
   showBetsunoStamp?: boolean;
   hideSender?: boolean;
   showPostalCodeFrame?: boolean;
+  showKaku2Memo?: boolean;
+  kaku2MemoText?: string;
+  showKaku2MemoBorder?: boolean;
+  kaku2MemoFontSizeOffset?: number;
   isPrint?: boolean;
   isLast?: boolean;
   milestoneTargetsMap?: Record<string, MemorialNoticeTarget[]>;
@@ -1531,6 +1798,10 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   showBetsunoStamp = true,
   hideSender = false,
   showPostalCodeFrame = false,
+  showKaku2Memo = false,
+  kaku2MemoText = '',
+  showKaku2MemoBorder = true,
+  kaku2MemoFontSizeOffset = 0,
   isPrint = false,
   isLast = false,
   milestoneTargetsMap,
@@ -1931,11 +2202,14 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             );
           })()}
 
-          {/* 宛名 (中央・大文字・長3封筒を踏襲した中央縦書き) */}
+          {/* 宛名 (中央・大文字・長3封筒を踏襲した中央縦書き。メモ印刷時は少々上へ配置) */}
           <div
-            className="absolute top-[50%] left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
+            className="absolute left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
             style={{
-              transform: 'translate(calc(-50% - 2mm), -50%)',
+              top: showKaku2Memo ? '68mm' : '50%',
+              transform: showKaku2Memo
+                ? 'translate(calc(-50% - 2mm), 0)'
+                : 'translate(calc(-50% - 2mm), -50%)',
               writingMode: 'vertical-rl',
               textOrientation: 'upright',
               fontSize: '38pt',
@@ -1944,6 +2218,53 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           >
             {formatRecipientName(household.familyHead, honorific)}
           </div>
+
+          {/* 角2封筒 宛名面メモ印刷 (区切り線・外枠線・縦書き文章) */}
+          {showKaku2Memo && (
+            <>
+              {/* 上部区切り線 (横線) */}
+              {showKaku2MemoBorder && (
+                <div
+                  className="absolute"
+                  style={{
+                    top: '238mm',
+                    left: '66mm',
+                    right: '12mm',
+                    height: '1.2px',
+                    backgroundColor: '#1c1917',
+                  }}
+                />
+              )}
+
+              {/* メモ枠 (赤線位置・縦書き文章エリア) */}
+              <div
+                className="absolute flex flex-col justify-start"
+                style={{
+                  top: '244mm',
+                  left: '66mm',
+                  right: '12mm',
+                  height: '68mm',
+                  border: showKaku2MemoBorder ? '1.2px solid #1c1917' : '1.2px solid transparent',
+                  boxSizing: 'border-box',
+                  padding: '4mm 6mm',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  className="font-serif text-stone-950 h-full tracking-wide"
+                  style={{
+                    writingMode: 'vertical-rl',
+                    textOrientation: 'upright',
+                    fontSize: `${13 + (kaku2MemoFontSizeOffset || 0)}pt`,
+                    lineHeight: '1.65',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {applyEnvelopeMemoTemplate(kaku2MemoText || DEFAULT_KAKU2_MEMO_TEMPLATE, household, templeInfo)}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* 差出人情報 (左下) */}
           {!hideSender && (

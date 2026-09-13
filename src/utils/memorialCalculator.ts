@@ -1174,17 +1174,21 @@ export function toKanjiNumber(n: number): string {
 /**
  * Notice template types and default templates for Postcard & A4 notices
  */
-export type NoticeTemplatePaperType = 'postcard' | 'a4';
+export type NoticeTemplatePaperType = 'postcard' | 'a4' | 'kaku2_memo';
 
 export interface NoticeTemplateItem {
   id: string;
-  name: string; // テンプレート名（例: 「秋彼岸法要のご案内」「新盆法要案内」「A4 年忌法要通知書」）
+  name: string; // テンプレート名（例: 「秋彼岸法要のご案内」「新盆法要案内」「A4 年忌法要通知書」「角２宛名面メモ」）
   title?: string; // 文書タイトル（例: 「年回忌法要のご案内」「年中行事のご案内」）
-  type: NoticeTemplatePaperType; // 種別: 'postcard' (はがき) | 'a4' (A4)
+  type: NoticeTemplatePaperType; // 種別: 'postcard' (はがき) | 'a4' (A4) | 'kaku2_memo' (角2宛名面メモ)
   category?: 'higan' | 'niibon' | 'general' | 'memorial' | 'custom' | string;
   content: string; // 本文（タグ含む）
   isDefault?: boolean;
 }
+
+export const DEFAULT_KAKU2_MEMO_TEMPLATE = `※ 重要書類在中
+　年回忌法要のご案内状ならびに振込取扱票を同封申し上げております。
+　ご査収のほど、よろしくお願い申し上げます。`;
 
 export const DEFAULT_HIGAN_TEMPLATE = `謹啓　時下、{施主名}様におかれましては益々ご清祥のこととお慶び申し上げます。日頃より当寺の護持運営につきまして多大なるご理解とご協力を賜り厚く御礼申し上げます。
 　さて、{彼岸}の時期が近づいてまいりました。{次彼岸}までに下記精霊の年回忌法要をお迎えになります。
@@ -1307,6 +1311,25 @@ export const INITIAL_NOTICE_TEMPLATES: NoticeTemplateItem[] = [
     content: DEFAULT_A4_GENERAL_TEMPLATE,
     isDefault: true,
   },
+  {
+    id: 'tpl-kaku2-memo-default',
+    name: '【角２宛名面メモ】重要書類同封（標準）',
+    title: '',
+    type: 'kaku2_memo',
+    category: 'custom',
+    content: DEFAULT_KAKU2_MEMO_TEMPLATE,
+    isDefault: true,
+  },
+  {
+    id: 'tpl-kaku2-memo-urgency',
+    name: '【角２宛名面メモ】返信期日・お問い合わせ',
+    title: '',
+    type: 'kaku2_memo',
+    category: 'custom',
+    content: `※ ご出欠のご返信は〇月〇日（〇）までにお願い申し上げます。
+　ご不明な点がございましたら当寺（電話〇〇―〇〇〇〇）までご連絡ください。`,
+    isDefault: false,
+  },
 ];
 
 export const TEMPLATE_STORAGE_KEY = 'temple_notice_templates_v1';
@@ -1315,6 +1338,16 @@ export const TEMPLATES_LIST_STORAGE_KEY = 'temple_notice_templates_list_v2';
 export function getAllSavedNoticeTemplates(): NoticeTemplateItem[] {
   const loadedList = loadJsonState<NoticeTemplateItem[] | null>(TEMPLATES_LIST_STORAGE_KEY, null);
   if (loadedList && Array.isArray(loadedList) && loadedList.length > 0) {
+    // If user has saved templates but none for kaku2_memo, append the default kaku2_memo templates
+    const hasKaku2 = loadedList.some((t) => t.type === 'kaku2_memo');
+    if (!hasKaku2) {
+      const defaultKaku2 = INITIAL_NOTICE_TEMPLATES.filter((t) => t.type === 'kaku2_memo');
+      if (defaultKaku2.length > 0) {
+        const merged = [...loadedList, ...defaultKaku2];
+        saveJsonState(TEMPLATES_LIST_STORAGE_KEY, merged);
+        return merged;
+      }
+    }
     return loadedList;
   }
 
@@ -1871,6 +1904,29 @@ export function generatePoliteMemorialNoticeText(
     templeInfo,
     sponsorName,
     household
+  );
+}
+
+/**
+ * Applies tags for Kaku2 envelope memo template.
+ * Supported tags: {施主名}, {寺院名}, {山号}, {本年}, {次年}
+ */
+export function applyEnvelopeMemoTemplate(
+  templateStr: string,
+  household?: { familyHead?: string; familyMembers?: any[] } | null,
+  templeInfo?: { name?: string; mountainName?: string } | null
+): string {
+  if (!templateStr) return '';
+  const headName = household?.familyHead || '';
+  const sponsorName = getHouseholdSponsorName(household as any);
+  return applyNoticeTemplate(
+    templateStr,
+    [],
+    '',
+    headName,
+    templeInfo || undefined,
+    sponsorName,
+    household as any
   );
 }
 
