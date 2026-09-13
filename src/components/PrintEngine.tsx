@@ -64,8 +64,62 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
 }) => {
   const [searchFilter, setSearchFilter] = useState<string>('');
 
-  // Primary Document Type: 長3封筒 or 官製はがき
+  // Primary Document Type: 封筒 (長3 or 角2) or 官製はがき
   const [docType, setDocType] = useState<'envelope' | 'postcard'>(initialCustomMessage ? 'postcard' : 'envelope');
+
+  // Envelope Size: 'naga3' (長3: 120×235mm) or 'kaku2' (角2: 240×332mm)
+  const [envelopeSize, setEnvelopeSize] = useState<'naga3' | 'kaku2'>(() => {
+    try {
+      const saved = safeStorage.getItem('temple_print_envelope_size');
+      if (saved === 'kaku2' || saved === 'naga3') {
+        return saved;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return 'naga3';
+  });
+
+  const handleSelectEnvelopeSize = (size: 'naga3' | 'kaku2') => {
+    setEnvelopeSize(size);
+    safeStorage.setItem('temple_print_envelope_size', size);
+  };
+
+  // 差出人は印刷せず (角2・長3封筒共通・デフォルトOFF)
+  const [hideSender, setHideSender] = useState<boolean>(() => {
+    try {
+      const saved = safeStorage.getItem('temple_print_hide_sender');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch (e) {
+      // ignore
+    }
+    return false;
+  });
+
+  const handleToggleHideSender = (val: boolean) => {
+    setHideSender(val);
+    safeStorage.setItem('temple_print_hide_sender', String(val));
+  };
+
+  // 郵便番号枠の印刷 (長3・角2封筒共通・デフォルトOFF)
+  const [showPostalCodeFrame, setShowPostalCodeFrame] = useState<boolean>(() => {
+    try {
+      const saved = safeStorage.getItem('temple_print_show_postal_frame');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+    } catch (e) {
+      // ignore
+    }
+    return false;
+  });
+
+  const handleTogglePostalCodeFrame = (val: boolean) => {
+    setShowPostalCodeFrame(val);
+    safeStorage.setItem('temple_print_show_postal_frame', String(val));
+  };
 
   // Sub-modes:
   // For envelope: 'address' (宛名) or 'a4_notice' (案内文（A4）)
@@ -343,7 +397,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
 
     const items: Array<{
       household: Household;
-      effectiveDocType: 'envelope' | 'postcard' | 'a4_notice';
+      effectiveDocType: 'envelope' | 'envelope_kaku2' | 'postcard' | 'a4_notice';
       postcardTab: 'front' | 'back';
       key: string;
     }> = [];
@@ -358,11 +412,12 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
             key: `print-${h.id}-a4-${hIdx}`,
           });
         } else {
+          const isKaku2 = envelopeSize === 'kaku2';
           items.push({
             household: h,
-            effectiveDocType: 'envelope',
+            effectiveDocType: isKaku2 ? 'envelope_kaku2' : 'envelope',
             postcardTab: 'front',
-            key: `print-${h.id}-env-${hIdx}`,
+            key: `print-${h.id}-${isKaku2 ? 'kaku2' : 'env'}-${hIdx}`,
           });
         }
       } else {
@@ -382,7 +437,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
     });
 
     return items;
-  }, [printTargetMode, currentPreviewHousehold, targetHouseholds, docType, envelopeTab, postcardTab]);
+  }, [printTargetMode, currentPreviewHousehold, targetHouseholds, docType, envelopeSize, envelopeTab, postcardTab]);
 
   return (
     <div className="space-y-3 font-serif">
@@ -394,7 +449,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               印
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider">長3封筒・はがき 印刷</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider">封筒・はがき 印刷</h2>
               <div className="text-xs text-[#D4AF37] font-sans flex items-center gap-1.5 mt-0.5">
                 <span>差出人寺院:</span>
                 <span className="font-bold text-[#F9F7F2]">
@@ -414,12 +469,26 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
           {/* Document Type Toggle */}
           <div className="bg-[#2A2A2A] p-1 border border-[#D4AF37]/50 flex space-x-1">
             <button
-              onClick={() => setDocType('envelope')}
+              onClick={() => {
+                setDocType('envelope');
+                handleSelectEnvelopeSize('naga3');
+              }}
               className={`px-3 py-1.5 font-bold uppercase tracking-wider transition-colors cursor-pointer ${
-                docType === 'envelope' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-[#CCCCCC] hover:text-white'
+                docType === 'envelope' && envelopeSize === 'naga3' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-[#CCCCCC] hover:text-white'
               }`}
             >
               長3封筒 (120×235mm)
+            </button>
+            <button
+              onClick={() => {
+                setDocType('envelope');
+                handleSelectEnvelopeSize('kaku2');
+              }}
+              className={`px-3 py-1.5 font-bold uppercase tracking-wider transition-colors cursor-pointer ${
+                docType === 'envelope' && envelopeSize === 'kaku2' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-[#CCCCCC] hover:text-white'
+              }`}
+            >
+              角2封筒 (240×332mm)
             </button>
             <button
               onClick={() => setDocType('postcard')}
@@ -643,6 +712,37 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               <span>宛名設定</span>
             </h3>
 
+            {/* 封筒サイズ切り替え (封筒選択時) */}
+            {docType === 'envelope' && (
+              <div>
+                <label className="block text-[#444444] font-bold mb-1">封筒サイズ:</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectEnvelopeSize('naga3')}
+                    className={`px-2.5 py-1.5 text-xs font-bold transition-colors cursor-pointer text-center ${
+                      envelopeSize === 'naga3'
+                        ? 'bg-[#1A1A1A] text-[#D4AF37]'
+                        : 'bg-[#F9F7F2] border border-[#D1CEC7] text-[#666666] hover:text-[#1A1A1A]'
+                    }`}
+                  >
+                    長3 (120×235mm)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectEnvelopeSize('kaku2')}
+                    className={`px-2.5 py-1.5 text-xs font-bold transition-colors cursor-pointer text-center ${
+                      envelopeSize === 'kaku2'
+                        ? 'bg-[#1A1A1A] text-[#D4AF37]'
+                        : 'bg-[#F9F7F2] border border-[#D1CEC7] text-[#666666] hover:text-[#1A1A1A]'
+                    }`}
+                  >
+                    角2 (240×332mm)
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-[#444444] font-bold mb-1">敬称 (Honorific):</label>
               <div className="flex space-x-2">
@@ -660,20 +760,59 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               </div>
             </div>
 
-            {/* 封筒・A4案内文用の寺院HP QRコード（※はがき宛名印刷では削除） */}
+            {/* 郵便番号枠を印刷する チェック (封筒印刷時) */}
             {docType === 'envelope' && (
               <div className="pt-2 border-t border-[#F0EFEA]">
                 <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
                   <input
                     type="checkbox"
+                    checked={showPostalCodeFrame}
+                    onChange={(e) => handleTogglePostalCodeFrame(e.target.checked)}
+                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-4 w-4 accent-[#1A1A1A] cursor-pointer"
+                  />
+                  <span className="font-bold text-xs">郵便番号の枠を印刷する</span>
+                </label>
+                <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
+                  ※ チェック時は封筒右上の郵便番号枠（赤枠）を印刷します。枠付き封筒をご利用の場合はチェックを外してください
+                </span>
+              </div>
+            )}
+
+            {/* 差出人は印刷せず チェック (角2・長3封筒共通) */}
+            {docType === 'envelope' && (
+              <div className="pt-2 border-t border-[#F0EFEA]">
+                <label className="flex items-center space-x-2 cursor-pointer select-none text-[#333333]">
+                  <input
+                    type="checkbox"
+                    checked={hideSender}
+                    onChange={(e) => handleToggleHideSender(e.target.checked)}
+                    className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-4 w-4 accent-[#1A1A1A] cursor-pointer"
+                  />
+                  <span className="font-bold text-xs">差出人は印刷せず</span>
+                </label>
+                <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
+                  ※ チェック時は封筒の差出人情報（山号・寺院名・住所・電話・QR）を印字しません
+                </span>
+              </div>
+            )}
+
+            {/* 封筒・A4案内文用の寺院HP QRコード（※はがき宛名印刷では削除） */}
+            {docType === 'envelope' && (
+              <div className="pt-2 border-t border-[#F0EFEA]">
+                <label className={`flex items-center space-x-2 cursor-pointer select-none ${hideSender ? 'opacity-50' : 'text-[#333333]'}`}>
+                  <input
+                    type="checkbox"
                     checked={showTempleQrCode}
+                    disabled={hideSender}
                     onChange={(e) => handleToggleTempleQrCode(e.target.checked)}
                     className="rounded-xs text-[#1A1A1A] focus:ring-[#D4AF37] h-4 w-4 accent-[#1A1A1A] cursor-pointer"
                   />
                   <span className="font-bold text-xs">寺院HPのQRコードを印刷する</span>
                 </label>
                 <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
-                  ※ 封筒の差出人欄およびA4案内文末尾の寺院ウェブサイトQRコード
+                  {hideSender
+                    ? '※ 「差出人は印刷せず」が有効のため差出人QRコードは印字されません'
+                    : '※ 封筒の差出人欄およびA4案内文末尾の寺院ウェブサイトQRコード'}
                 </span>
               </div>
             )}
@@ -709,7 +848,7 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               </label>
               <span className="text-[10px] text-[#888888] block ml-6 mt-0.5">
                 {docType === 'envelope'
-                  ? '※ 封筒宛名面の右最下部（住所直下・差出人QRと並列）に受付用檀信徒QRを印刷'
+                  ? `※ ${envelopeSize === 'kaku2' ? '角2' : '長3'}封筒宛名面の右最下部（住所直下・差出人QRと並列）に受付用檀信徒QRを印刷`
                   : '※ はがき宛名面の氏名（様の30mm左）に受付用檀信徒QRを印刷'}
               </span>
             </div>
@@ -984,7 +1123,15 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                 <PreviewCanvas
                   household={currentPreviewHousehold}
                   templeInfo={previewTempleInfo}
-                  docType={docType === 'envelope' ? (envelopeTab === 'a4_notice' ? 'a4_notice' : 'envelope') : 'postcard'}
+                  docType={
+                    docType === 'envelope'
+                      ? envelopeTab === 'a4_notice'
+                        ? 'a4_notice'
+                        : envelopeSize === 'kaku2'
+                        ? 'envelope_kaku2'
+                        : 'envelope'
+                      : 'postcard'
+                  }
                   postcardTab={postcardTab}
                   honorific={honorific}
                   customMessage={docType === 'envelope' ? customA4Message : customPostcardMessage}
@@ -993,6 +1140,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
                   showTempleQrCode={showTempleQrCode}
                   showHouseholdQrCode={showHouseholdQrCode}
                   showBetsunoStamp={showBetsunoStamp}
+                  hideSender={hideSender}
+                  showPostalCodeFrame={showPostalCodeFrame}
                   milestoneTargetsMap={milestoneTargetsMap}
                   milestonePeriodLabel={milestonePeriodLabel}
                 />
@@ -1024,6 +1173,8 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
               showTempleQrCode={showTempleQrCode}
               showHouseholdQrCode={showHouseholdQrCode}
               showBetsunoStamp={showBetsunoStamp}
+              hideSender={hideSender}
+              showPostalCodeFrame={showPostalCodeFrame}
               isPrint
               isLast={index === printItems.length - 1}
               milestoneTargetsMap={milestoneTargetsMap}
@@ -1068,11 +1219,11 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
   );
 };
 
-// Canvas Component that renders actual 120x235mm (envelope), 100x148mm (postcard), or 297x210mm (A4 landscape)
+// Canvas Component that renders actual 120x235mm (envelope), 240x332mm (envelope_kaku2), 100x148mm (postcard), or 297x210mm (A4 landscape)
 interface PreviewCanvasProps {
   household: Household;
   templeInfo: TempleInfo;
-  docType: 'envelope' | 'postcard' | 'a4_notice';
+  docType: 'envelope' | 'envelope_kaku2' | 'postcard' | 'a4_notice';
   postcardTab: 'front' | 'back' | 'both';
   honorific: string;
   customMessage: string;
@@ -1081,6 +1232,8 @@ interface PreviewCanvasProps {
   showTempleQrCode?: boolean;
   showHouseholdQrCode?: boolean;
   showBetsunoStamp?: boolean;
+  hideSender?: boolean;
+  showPostalCodeFrame?: boolean;
   isPrint?: boolean;
   isLast?: boolean;
   milestoneTargetsMap?: Record<string, MemorialNoticeTarget[]>;
@@ -1196,40 +1349,47 @@ function formatVerticalDigitsAndHyphens(text?: string): string {
   return result;
 }
 
-// 3-column layout for Long 3 Envelope sender (郵便番号+住所, 山号+寺院名, 電話+FAX, 下部にQRコード)
+// 3-column layout for Envelope sender (郵便番号+住所, 山号+寺院名, 電話+FAX, 下部にQRコード)
 const TempleEnvelopeSenderBlock: React.FC<{
   templeInfo: TempleInfo;
   showQrCode?: boolean;
-}> = ({ templeInfo, showQrCode = true }) => {
+  isKaku2?: boolean;
+}> = ({ templeInfo, showQrCode = true, isKaku2 = false }) => {
   const postalDigits = formatVerticalDigitsAndHyphens(templeInfo.postalCode || '367-0033');
   const addrText = formatVerticalAddress(templeInfo.address || '埼玉県本庄市栗崎155');
   const phoneDigits = formatVerticalDigitsAndHyphens(templeInfo.phone || '0495-24-2290');
   const faxDigits = formatVerticalDigitsAndHyphens(templeInfo.fax || '0495-23-1576');
 
-  // 2列目 (中央): 山号 寺院名 (全角1文字分近づけ、文字を少し大きく 19pt、文字間 letter-spacing: 0.52em)
+  // 2列目 (中央): 山号 寺院名 (全角1文字分近づけ、文字を少し大きく、文字間 letter-spacing: 0.52em)
   const mName = (templeInfo.mountainName || '西光山').trim();
   const tName = (templeInfo.name || '宥勝寺').trim();
   const templeFullLine = mName ? `${mName}　${tName}` : tName;
 
-  // 3列目 (左側): 電話番号・FAX番号 (1行連結・文字を少し小さく 6.5pt)
+  // 3列目 (左側): 電話番号・FAX番号 (1行連結)
   const phoneFormatted = templeInfo.phone ? `電話${phoneDigits}` : '';
   const faxFormatted = templeInfo.fax ? `FAX${faxDigits}` : '';
   const fullContactLine = [phoneFormatted, faxFormatted].filter(Boolean).join('　');
+
+  const postalAddrFontSize = isKaku2 ? '11.5pt' : '8.5pt';
+  const templeNameFontSize = isKaku2 ? '24pt' : '19pt';
+  const contactFontSize = isKaku2 ? '8.5pt' : '6.5pt';
+  const qrSize = isKaku2 ? 56 : 44;
+  const qrLabelFontSize = isKaku2 ? '8pt' : '6.5pt';
 
   return (
     <div
       className="text-stone-950 font-serif flex flex-col items-center select-none"
       style={{ writingMode: 'horizontal-tb' }}
     >
-      {/* 3列の縦書きテキスト (隙間は最小限の 1.5mm) */}
-      <div className="flex flex-row-reverse items-start justify-center gap-[1.5mm]">
+      {/* 3列の縦書きテキスト */}
+      <div className={`flex flex-row-reverse items-start justify-center ${isKaku2 ? 'gap-[2.5mm]' : 'gap-[1.5mm]'}`}>
         {/* 1列目 (右側): 郵便番号・住所 (郵便番号の数字とハイフンのみフォントを30%縮小) */}
         <div
           className="text-stone-900 whitespace-nowrap select-none"
           style={{
             writingMode: 'vertical-rl',
             textOrientation: 'upright',
-            fontSize: '8.5pt',
+            fontSize: postalAddrFontSize,
             lineHeight: '1.0',
             letterSpacing: '0.08em',
           }}
@@ -1250,7 +1410,7 @@ const TempleEnvelopeSenderBlock: React.FC<{
           style={{
             writingMode: 'vertical-rl',
             textOrientation: 'upright',
-            fontSize: '19pt',
+            fontSize: templeNameFontSize,
             lineHeight: '1.0',
             letterSpacing: '0.52em',
           }}
@@ -1264,7 +1424,7 @@ const TempleEnvelopeSenderBlock: React.FC<{
           style={{
             writingMode: 'vertical-rl',
             textOrientation: 'upright',
-            fontSize: '6.5pt',
+            fontSize: contactFontSize,
             lineHeight: '1.0',
             letterSpacing: '0.05em',
           }}
@@ -1275,10 +1435,10 @@ const TempleEnvelopeSenderBlock: React.FC<{
 
       {/* QRコード (3列の中央真下に濃紅で配置) */}
       {showQrCode && (
-        <div className="flex flex-col items-center justify-center shrink-0 mt-[2.5mm]">
+        <div className={`flex flex-col items-center justify-center shrink-0 ${isKaku2 ? 'mt-[3.5mm]' : 'mt-[2.5mm]'}`}>
           <QRCodeSVG
             value={templeInfo?.website || templeInfo?.websiteUrl || 'https://temple-portal.jp'}
-            size={44}
+            size={qrSize}
             fgColor="#8B0000"
             bgColor="transparent"
             level="M"
@@ -1286,7 +1446,7 @@ const TempleEnvelopeSenderBlock: React.FC<{
           <span
             className="font-serif text-stone-900 font-bold text-center block mt-0.5 tracking-wider whitespace-nowrap"
             style={{
-              fontSize: '6.5pt',
+              fontSize: qrLabelFontSize,
               lineHeight: '1.2',
               writingMode: 'horizontal-tb',
             }}
@@ -1301,11 +1461,14 @@ const TempleEnvelopeSenderBlock: React.FC<{
 
 const TempleSenderVerticalBlock: React.FC<{
   templeInfo: TempleInfo;
-  variant: 'envelope' | 'postcard' | 'a4';
+  variant: 'envelope' | 'envelope_kaku2' | 'postcard' | 'a4';
   showQrCode?: boolean;
 }> = ({ templeInfo, variant, showQrCode = true }) => {
   if (variant === 'envelope') {
-    return <TempleEnvelopeSenderBlock templeInfo={templeInfo} showQrCode={showQrCode} />;
+    return <TempleEnvelopeSenderBlock templeInfo={templeInfo} showQrCode={showQrCode} isKaku2={false} />;
+  }
+  if (variant === 'envelope_kaku2') {
+    return <TempleEnvelopeSenderBlock templeInfo={templeInfo} showQrCode={showQrCode} isKaku2={true} />;
   }
 
   const postalDigits = formatVerticalDigitsAndHyphens(templeInfo.postalCode || '105-0011');
@@ -1366,6 +1529,8 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   showTempleQrCode = true,
   showHouseholdQrCode = true,
   showBetsunoStamp = true,
+  hideSender = false,
+  showPostalCodeFrame = false,
   isPrint = false,
   isLast = false,
   milestoneTargetsMap,
@@ -1374,8 +1539,9 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   const zipDigits = formatPostalCodeFullWidthDigits(household.postalCode || '1050011');
 
   const isA4 = docType === 'a4_notice';
-  const canvasWidth = isA4 ? '297mm' : docType === 'envelope' ? '120mm' : '100mm';
-  const canvasHeight = isA4 ? '210mm' : docType === 'envelope' ? '235mm' : '148mm';
+  const isKaku2 = docType === 'envelope_kaku2';
+  const canvasWidth = isA4 ? '297mm' : isKaku2 ? '240mm' : docType === 'envelope' ? '120mm' : '100mm';
+  const canvasHeight = isA4 ? '210mm' : isKaku2 ? '332mm' : docType === 'envelope' ? '235mm' : '148mm';
 
   // Resolved milestone spirit targets for this specific household
   const householdTargets = (milestoneTargetsMap && household)
@@ -1393,13 +1559,20 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         minWidth: canvasWidth,
         minHeight: canvasHeight,
         boxSizing: 'border-box',
-        padding: isA4 ? '18mm 20mm' : docType === 'postcard' && postcardTab === 'back' ? '0' : '8mm',
+        padding: isA4 ? '18mm 20mm' : isKaku2 ? '12mm 14mm' : docType === 'postcard' && postcardTab === 'back' ? '0' : '8mm',
         userSelect: 'none',
         ...(isA4 && !isPrint
           ? {
               transform: 'scale(0.62)',
               transformOrigin: 'top center',
               marginBottom: '-60mm',
+            }
+          : {}),
+        ...(isKaku2 && !isPrint
+          ? {
+              transform: 'scale(0.55)',
+              transformOrigin: 'top center',
+              marginBottom: '-135mm',
             }
           : {}),
       }}
@@ -1477,14 +1650,37 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             className="absolute flex items-center justify-end"
             style={{ top: '4mm', right: '4mm' }}
           >
-            {zipDigits.map((digit, idx) => (
+            {(showPostalCodeFrame
+              ? Array.from({ length: 7 }, (_, idx) => zipDigits[idx] || '')
+              : zipDigits
+            ).map((digit, idx) => (
               <div
                 key={idx}
-                className={`w-[5.4mm] h-[7.0mm] flex items-center justify-center font-bold text-stone-950 ${
+                className={`w-[5.4mm] h-[7.0mm] flex items-center justify-center font-bold text-stone-950 relative ${
                   idx === 3 ? 'ml-[2.8mm]' : idx > 0 ? 'ml-[1.2mm]' : ''
                 }`}
-                style={{ fontSize: '13pt' }}
+                style={{
+                  fontSize: '13pt',
+                  border: showPostalCodeFrame ? '1px solid #dc2626' : '1px solid transparent',
+                  boxSizing: 'border-box',
+                }}
               >
+                {/* 3桁目と4桁目の間のハイフン線 (枠表示時) */}
+                {idx === 3 && showPostalCodeFrame && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: '100%',
+                      marginRight: '0.8mm',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '1.2mm',
+                      height: '1px',
+                      backgroundColor: '#dc2626',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
                 {digit}
               </div>
             ))}
@@ -1547,9 +1743,11 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           </div>
 
           {/* 差出人情報 (左下・1cm上に配置) */}
-          <div className="absolute bottom-[14mm] left-[4mm]">
-            <TempleSenderVerticalBlock templeInfo={templeInfo} variant="envelope" showQrCode={showTempleQrCode} />
-          </div>
+          {!hideSender && (
+            <div className="absolute bottom-[14mm] left-[4mm]">
+              <TempleSenderVerticalBlock templeInfo={templeInfo} variant="envelope" showQrCode={showTempleQrCode} />
+            </div>
+          )}
 
           {/* 施主QRコード (右最下部・寺院HP QRコードと平行・住所と垂直で交わる位置) */}
           {showHouseholdQrCode && (
@@ -1571,6 +1769,213 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                 className="font-serif text-stone-900 font-bold text-center block mt-0.5 tracking-wider whitespace-nowrap"
                 style={{
                   fontSize: '6.5pt',
+                  lineHeight: '1.2',
+                  writingMode: 'horizontal-tb',
+                }}
+              >
+                御檀家様QR
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 1-B. 角2封筒 表面 (240mm x 332mm - 長3封筒のレイアウトを踏襲) */}
+      {docType === 'envelope_kaku2' && (
+        <div
+          className="w-full h-full relative text-stone-900"
+          style={{
+            transform: 'translate(4mm, 4mm)',
+          }}
+        >
+          {/* 切手貼付枠：料金別納郵便 マーク (四角形・角2封筒用 24mm×30mm) */}
+          {showBetsunoStamp && (
+            <div
+              id="envelope-kaku2-betsuno-stamp"
+              className="absolute bg-white select-none pointer-events-none"
+              style={{
+                top: '8mm',
+                left: '2mm',
+                width: '24mm',
+                height: '30mm',
+                border: '1.2px solid #1c1917',
+                display: 'flex',
+                flexDirection: 'column',
+                boxSizing: 'border-box',
+              }}
+            >
+              {/* 上部スペース (空欄) */}
+              <div
+                style={{
+                  height: '9mm',
+                  borderBottom: '1.2px solid #1c1917',
+                  boxSizing: 'border-box',
+                  width: '100%',
+                }}
+              />
+
+              {/* 下部：料金別納 郵便 */}
+              <div
+                className="flex-1 flex flex-col items-center justify-center font-serif text-stone-900"
+                style={{
+                  boxSizing: 'border-box',
+                }}
+              >
+                <div
+                  className="font-medium text-center whitespace-nowrap"
+                  style={{
+                    fontSize: '9.5pt',
+                    letterSpacing: '0.05em',
+                    textIndent: '0.05em',
+                    lineHeight: '1.2',
+                  }}
+                >
+                  料金別納
+                </div>
+                <div
+                  className="font-medium text-center whitespace-nowrap"
+                  style={{
+                    fontSize: '9.5pt',
+                    letterSpacing: '0.3em',
+                    textIndent: '0.3em',
+                    lineHeight: '1.2',
+                    marginTop: '1.5mm',
+                  }}
+                >
+                  郵便
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 郵便番号枠 (7桁・右揃え) */}
+          <div
+            className="absolute flex items-center justify-end"
+            style={{ top: '8mm', right: '8mm' }}
+          >
+            {(showPostalCodeFrame
+              ? Array.from({ length: 7 }, (_, idx) => zipDigits[idx] || '')
+              : zipDigits
+            ).map((digit, idx) => (
+              <div
+                key={idx}
+                className={`w-[7.5mm] h-[10.0mm] flex items-center justify-center font-bold text-stone-950 relative ${
+                  idx === 3 ? 'ml-[4.0mm]' : idx > 0 ? 'ml-[1.8mm]' : ''
+                }`}
+                style={{
+                  fontSize: '18pt',
+                  border: showPostalCodeFrame ? '1.2px solid #dc2626' : '1.2px solid transparent',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {/* 3桁目と4桁目の間のハイフン線 (枠表示時) */}
+                {idx === 3 && showPostalCodeFrame && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: '100%',
+                      marginRight: '1.2mm',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '1.6mm',
+                      height: '1.2px',
+                      backgroundColor: '#dc2626',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
+                {digit}
+              </div>
+            ))}
+          </div>
+
+          {/* 住所 (縦書き) */}
+          {(() => {
+            const lines = splitVerticalAddress(household.address);
+            return (
+              <div
+                className="absolute top-[34mm] right-[12mm] flex flex-row-reverse gap-[6mm] font-serif"
+                style={{
+                  maxHeight: '230mm',
+                }}
+              >
+                <div
+                  className="text-stone-900 tracking-wide select-none"
+                  style={{
+                    writingMode: 'vertical-rl',
+                    textOrientation: 'upright',
+                    fontSize: '18pt',
+                    lineHeight: '1.45',
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {lines[0] || ''}
+                </div>
+
+                {lines.length > 1 && (
+                  <div
+                    className="text-stone-900 tracking-wide select-none"
+                    style={{
+                      writingMode: 'vertical-rl',
+                      textOrientation: 'upright',
+                      fontSize: '16pt',
+                      lineHeight: '1.45',
+                      alignSelf: 'flex-start',
+                      marginTop: '16mm',
+                    }}
+                  >
+                    {lines[1]}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* 宛名 (中央・大文字・長3封筒を踏襲した中央縦書き) */}
+          <div
+            className="absolute top-[50%] left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
+            style={{
+              transform: 'translate(calc(-50% - 2mm), -50%)',
+              writingMode: 'vertical-rl',
+              textOrientation: 'upright',
+              fontSize: '38pt',
+              lineHeight: '1.4',
+            }}
+          >
+            {formatRecipientName(household.familyHead, honorific)}
+          </div>
+
+          {/* 差出人情報 (左下) */}
+          {!hideSender && (
+            <div className="absolute bottom-[20mm] left-[8mm]">
+              <TempleSenderVerticalBlock
+                templeInfo={templeInfo}
+                variant="envelope_kaku2"
+                showQrCode={showTempleQrCode}
+              />
+            </div>
+          )}
+
+          {/* 施主QRコード (右最下部・寺院HP QRコードと平行・住所と垂直で交わる位置) */}
+          {showHouseholdQrCode && (
+            <div
+              className="absolute bottom-[20mm] right-[12mm] flex flex-col items-center justify-center p-1 bg-white select-none"
+              style={{
+                writingMode: 'horizontal-tb',
+              }}
+            >
+              <QRCodeSVG
+                value={(household?.id || 'H001').trim()}
+                size={56}
+                level="M"
+                bgColor="#FFFFFF"
+                fgColor="#000000"
+                includeMargin={false}
+              />
+              <span
+                className="font-serif text-stone-900 font-bold text-center block mt-0.5 tracking-wider whitespace-nowrap"
+                style={{
+                  fontSize: '7.5pt',
                   lineHeight: '1.2',
                   writingMode: 'horizontal-tb',
                 }}
