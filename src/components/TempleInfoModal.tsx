@@ -35,6 +35,7 @@ import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, DEFAULT_ANNUAL_EVENTS } f
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { PostalAddressSearchButton } from './PostalAddressSearchButton';
+import { PRIEST_COLOR_PALETTE, getPriestColor } from '../utils/priestColorUtils';
 
 interface TempleInfoModalProps {
   isOpen: boolean;
@@ -103,6 +104,8 @@ const reconcilePriestsWithTemples = (
         notes: prevAuto?.notes || (isMain ? '本寺代表役員・住職' : '兼務寺住職'),
         isAutoChief: true,
         isMainChief: isMain,
+        isDanmu: prevAuto?.isDanmu !== undefined ? prevAuto.isDanmu : true,
+        color: prevAuto?.color || getPriestColor(prevAuto?.id || `priest-chief-${templeId}`, existingPriests),
       };
     });
 
@@ -575,6 +578,8 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       notes: '',
       isAutoChief: false,
       isMainChief: false,
+      isDanmu: true,
+      color: PRIEST_COLOR_PALETTE[reconciledPriestList.length % PRIEST_COLOR_PALETTE.length].hex,
     });
     setIsPriestModalOpen(true);
   };
@@ -604,6 +609,8 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       notes: editingPriest.notes?.trim() || '',
       isAutoChief: Boolean(editingPriest.isAutoChief),
       isMainChief: Boolean(editingPriest.isMainChief),
+      isDanmu: editingPriest.isDanmu !== undefined ? editingPriest.isDanmu : true,
+      color: editingPriest.color || getPriestColor(editingPriest.id, priestList),
     };
 
     let nextTemples = templeList;
@@ -1839,6 +1846,20 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                                       自動連動
                                     </span>
                                   )}
+                                  {priest.isDanmu !== false ? (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-2xs bg-emerald-50 text-emerald-800 border border-emerald-300">
+                                      檀務担当
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-2xs bg-gray-100 text-gray-600 border border-gray-300">
+                                      棚経のみ
+                                    </span>
+                                  )}
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 shrink-0"
+                                    style={{ backgroundColor: priest.color || getPriestColor(priest.id, reconciledPriestList) }}
+                                    title="カレンダー表示色"
+                                  />
                                 </div>
                                 <h5 className="font-bold text-sm text-[#1A1A1A] truncate mt-0.5" title={priest.name}>
                                   {priest.name || '（未設定）'}
@@ -2137,6 +2158,70 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                   onChange={(e) => setEditingPriest({ ...editingPriest, notes: e.target.value })}
                   className="w-full bg-[#FAF9F5] border border-[#D1CEC7] px-2.5 py-1.5 focus:bg-white focus:border-[#1A1A1A] focus:outline-hidden"
                 />
+              </div>
+
+              {/* 檀務担当僧侶チェック項目 */}
+              <div className="bg-[#FAF9F5] border border-[#D1CEC7] p-3 rounded-xs space-y-2">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={editingPriest.isDanmu !== false}
+                    onChange={(e) => setEditingPriest({ ...editingPriest, isDanmu: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 text-[#8C2D19] border-[#D1CEC7] rounded-2xs focus:ring-[#8C2D19] cursor-pointer"
+                  />
+                  <div>
+                    <span className="font-bold text-[#1A1A1A] text-xs flex items-center gap-1.5">
+                      <span>檀務担当僧侶（法事・葬儀等の檀務を担当）</span>
+                      {editingPriest.isDanmu !== false ? (
+                        <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-2xs font-bold">
+                          担当対象
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.2 bg-gray-200 text-gray-700 text-[10px] rounded-2xs font-bold">
+                          棚経のみ（檀務除外）
+                        </span>
+                      )}
+                    </span>
+                    <p className="text-[11px] text-gray-600 mt-1 leading-relaxed">
+                      チェックを入れると、予定作成時（PC・スマホ版）に担当僧侶の選択肢として表示されます。
+                      名目上の住職や檀務を行わない僧侶はチェックを外すことで、予定作成時の担当僧侶候補から除外できます。
+                      <br />
+                      <span className="text-amber-800 font-bold">※棚経に関しては、このチェックの有無に関わらず全ての登録僧侶が選択肢に表示されます。</span>
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* カレンダー表示色 */}
+              <div className="space-y-1.5">
+                <label className="block font-bold text-[#333333] flex items-center gap-1.5">
+                  <Palette className="w-3.5 h-3.5 text-[#8C2D19]" />
+                  <span>カレンダー表示色（予定の担当僧侶カラー）</span>
+                </label>
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {PRIEST_COLOR_PALETTE.map((c) => {
+                    const isSelected = (editingPriest.color || '').toLowerCase() === c.hex.toLowerCase();
+                    return (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() => setEditingPriest({ ...editingPriest, color: c.hex })}
+                        title={c.name}
+                        className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-2xs border text-[11px] font-medium transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-[#1A1A1A] bg-white ring-2 ring-black/10 shadow-xs'
+                            : 'border-transparent bg-gray-100 hover:bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        <span
+                          className="w-3.5 h-3.5 rounded-full shrink-0 border border-black/20"
+                          style={{ backgroundColor: c.hex }}
+                        />
+                        <span>{c.name.split(' ')[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex justify-end space-x-2 pt-3 border-t border-[#E5E0D8]">

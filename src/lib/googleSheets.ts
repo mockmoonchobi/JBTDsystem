@@ -61,6 +61,7 @@ import {
   getFamilyMemberTobaApplication
 } from '../utils/tobaUtils';
 import { TobaApplicationItem } from '../types';
+import { partitionTransactionsByFiscalRetention } from '../utils/fiscalYearUtils';
 
 export const SPREADSHEET_NAME = '寺院管理・檀家過去帳データ';
 
@@ -195,6 +196,7 @@ const BASE_REQUIRED_SHEETS = [
   '法事予約',
   '寺院ToDo',
   '出納・会計',
+  '出納アーカイブ',
   '案内文テンプレート',
   '登録僧侶一覧',
   '一括会計設定',
@@ -669,6 +671,7 @@ export async function ensureAllSheetsExist(
           '法事予約',
           '寺院ToDo',
           '出納・会計',
+          '出納アーカイブ',
           '案内文テンプレート',
           '一括会計受付',
           '戦没・災害物故者命日設定',
@@ -1483,6 +1486,7 @@ export async function exportToSheets(
     '施主名',
     '戒名・法名',
     '俗名 (故人名)',
+    '担当僧侶',
     '会場',
     '訪問先住所',
     '参列予定人数',
@@ -1497,6 +1501,7 @@ export async function exportToSheets(
     '世帯ID',
     '過去帳ID',
     '出納伝票ID',
+    '担当僧侶ID',
     '備考・特記',
     '作成日',
     '作成時間',
@@ -1517,6 +1522,7 @@ export async function exportToSheets(
       s.chiefMourner || '',
       s.dharmaName || '',
       s.deceasedName || '',
+      s.priestName || '',
       s.venue || '',
       s.address || '',
       s.attendeeCount || 0,
@@ -1531,6 +1537,7 @@ export async function exportToSheets(
       s.householdId || '',
       s.deceasedId || '',
       s.transactionId || '',
+      s.priestId || '',
       s.notes || '',
       cDate,
       cTime,
@@ -1586,7 +1593,10 @@ export async function exportToSheets(
     ];
   });
 
-  // 8. Transactions Sheet Rows (出納・会計) - Unified with Excel
+  // 8. Transactions Sheet Rows (出納・会計 & 出納アーカイブ) - Unified with Excel
+  // 本会計年度＋前会計年度を「出納・会計」に、前々年度以前を「出納アーカイブ」に分離
+  const { activeTransactions, archiveTransactions } = partitionTransactionsByFiscalRetention(filteredTransactions);
+
   const transactionHeaders = [
     '伝票ID',
     '所属寺院',
@@ -1606,7 +1616,7 @@ export async function exportToSheets(
     '所属寺院ID'
   ];
 
-  const transactionRows = filteredTransactions.map((t) => {
+  const mapTxToRow = (t: Transaction) => {
     const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(t);
     return [
       t.id,
@@ -1626,7 +1636,10 @@ export async function exportToSheets(
       uTime,
       getTempleId(t.templeId)
     ];
-  });
+  };
+
+  const transactionRows = activeTransactions.map(mapTxToRow);
+  const archiveTransactionRows = archiveTransactions.map(mapTxToRow);
 
   // 9. Master Options Rows (区分・勘定科目マスタ) - Unified with Excel
   const masterHeaders = [
@@ -1729,6 +1742,7 @@ export async function exportToSheets(
   addChunkedUpdates('法事予約', [memorialServiceHeaders, ...memorialRows]);
   addChunkedUpdates('寺院ToDo', [todoHeaders, ...todoRows]);
   addChunkedUpdates('出納・会計', [transactionHeaders, ...transactionRows]);
+  addChunkedUpdates('出納アーカイブ', [transactionHeaders, ...archiveTransactionRows]);
 
   if (isIndividualExport && currentSingleTemple) {
     const templeMaster = getTempleMasterOptions(targetTempleId, map, allTemples, currentMaster);
@@ -1752,6 +1766,8 @@ export async function exportToSheets(
     '僧侶名',
     'フリガナ',
     '役職・区分',
+    '檀務担当',
+    '表示色',
     '所属寺院名',
     '電話番号',
     'メールアドレス',
@@ -1773,6 +1789,7 @@ export async function exportToSheets(
         notes: t.isMain ? '本寺代表役員住職' : '兼務寺住職',
         isAutoChief: true,
         isMainChief: t.isMain || false,
+        isDanmuAssigned: true,
       })).filter((p) => p.name.trim() !== '');
 
   const priestRows = priestsToExport.map((p) => [
@@ -1781,6 +1798,8 @@ export async function exportToSheets(
     p.name || '',
     p.furigana || '',
     p.role || '僧侶',
+    p.isDanmuAssigned !== false ? '担当' : '対象外',
+    p.color || '',
     p.templeName || getTempleLabel(p.templeId),
     p.phone || '',
     p.email || '',
@@ -2176,15 +2195,53 @@ export async function importFromSheets(
     return { headers: [], rows: [] };
   };
 
-  const findSheet = (aliases: string[]): string | undefined => {
+  const findSheet = (aliases: string[], discriminatingHeaders: string[] = []): string | undefined => {
+    const normalize = (s: string) => s.toLowerCase().replace(/[\s_（）()・/\\-]/g, '');
+
+    // 1. Exact match pass first
     for (const a of aliases) {
-      const found = allSheetNames.find((name) => {
-        const cleanName = name.toLowerCase().replace(/[\s_（）()]/g, '');
-        const cleanA = a.toLowerCase().replace(/[\s_（）()]/g, '');
-        return cleanName === cleanA || cleanName.includes(cleanA);
-      });
+      const cleanA = normalize(a);
+      const found = allSheetNames.find((name) => normalize(name) === cleanA);
       if (found) return found;
     }
+
+    // 2. Keyword priority pass with disambiguation
+    for (const a of aliases) {
+      const cleanA = normalize(a);
+      const found = allSheetNames.find((name) => {
+        const cleanName = normalize(name);
+        // Guard against false match: when searching for transactions/出納, never match '一括会計設定' or '一括会計受付'
+        if (cleanA.includes('出納') || cleanA === '会計') {
+          if (cleanName.includes('一括会計') || cleanName.includes('設定') || cleanName.includes('受付')) {
+            return false;
+          }
+        }
+        return cleanName.includes(cleanA);
+      });
+      if (found) {
+        if (discriminatingHeaders.length > 0) {
+          const { headers } = getSheetDataByName(found);
+          const hasHeaderMatch = discriminatingHeaders.some((dh) => findColIdx(headers, [dh]) !== -1);
+          if (hasHeaderMatch) return found;
+        } else {
+          return found;
+        }
+      }
+    }
+
+    // 3. Fallback to column header inspection
+    if (discriminatingHeaders.length > 0) {
+      for (const name of allSheetNames) {
+        const { headers } = getSheetDataByName(name);
+        if (headers.length > 0) {
+          const matchCount = discriminatingHeaders.filter((dh) => findColIdx(headers, [dh]) !== -1).length;
+          if (matchCount >= Math.min(2, discriminatingHeaders.length)) {
+            return name;
+          }
+        }
+      }
+    }
+
     return undefined;
   };
 
@@ -2977,6 +3034,8 @@ export async function importFromSheets(
     const mournerIdx = findColIdx(memorialHeaders, ['施主名', '施主', '申込者']);
     const dharmaIdx = findColIdx(memorialHeaders, ['戒名・法名', '戒名', '法名']);
     const decIdx = findColIdx(memorialHeaders, ['俗名 (故人名)', '故人名', '俗名']);
+    const priestNameIdx = findColIdx(memorialHeaders, ['担当僧侶', '担当僧侶名', '担当僧', '担当', 'priestName']);
+    const priestIdIdx = findColIdx(memorialHeaders, ['担当僧侶ID', '僧侶ID', 'priestId']);
     const venueIdx = findColIdx(memorialHeaders, ['会場', '場所']);
     const addrIdx = findColIdx(memorialHeaders, ['訪問先住所', '住所', '会場住所']);
     const attIdx = findColIdx(memorialHeaders, ['参列予定人数', '参列人数', '人数']);
@@ -3024,10 +3083,14 @@ export async function importFromSheets(
       const createdTime = normalizeAuditTime(msCTimeIdx !== -1 ? row[msCTimeIdx] : '') || '00:00:00';
       const updatedDate = normalizeAuditDate(msUDateIdx !== -1 ? row[msUDateIdx] : '') || createdDate;
       const updatedTime = normalizeAuditTime(msUTimeIdx !== -1 ? row[msUTimeIdx] : '') || (msUDateIdx !== -1 && row[msUDateIdx] ? '00:00:00' : createdTime);
+      const priestName = String((priestNameIdx !== -1 ? row[priestNameIdx] : '') || '').trim();
+      const priestId = String((priestIdIdx !== -1 ? row[priestIdIdx] : '') || '').trim();
 
       memorialServices.push({
         id: String((idIdx !== -1 ? row[idIdx] : row[0]) || `MS-${Date.now()}-${i + 1}`),
         templeId,
+        priestId,
+        priestName,
         scheduledDate: normalizeDateInput(dateIdx !== -1 ? row[dateIdx] : '') || '',
         scheduledTime: String((timeIdx !== -1 ? row[timeIdx] : '') || '10:00'),
         endTime: String((endTimeIdx !== -1 ? row[endTimeIdx] : '') || '11:30'),
@@ -3146,32 +3209,48 @@ export async function importFromSheets(
     }
   }
 
-  // 8. Parse Transactions (出納・会計)
-  const txSheetName = findSheet(['出納・会計', '出納帳', '会計', '出納', '会計管理', '取引履歴']);
-  const { headers: txHeaders, rows: transactionValues } = getSheetDataByName(txSheetName);
+  // 8. Parse Transactions (出納・会計 & 出納アーカイブ)
+  const txSheetName = findSheet(
+    ['出納・会計', '出納帳', '出納', '会計管理', '取引履歴', '会計'],
+    ['勘定科目', '金額', '収支区分', '日付', '取引日']
+  );
+  const archiveTxSheetName = findSheet(
+    ['出納アーカイブ', '出納・会計（過年度）', '出納過年度', '出納アーカイブ（過去）'],
+    ['勘定科目', '金額', '収支区分', '日付', '取引日']
+  );
+
   const transactions: Transaction[] = [];
+  const seenTxIds = new Set<string>();
 
-  if (transactionValues.length > 0) {
-    const idIdx = findColIdx(txHeaders, ['伝票ID', 'ID', 'id', '伝票番号', '番号']);
-    const templeColIdx = findColIdx(txHeaders, ['所属寺院', '寺院名', '寺院']);
-    const templeIdColIdx = findColIdx(txHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
-    const dateIdx = findColIdx(txHeaders, ['日付', '取引日', '年月日']);
-    const typeIdx = findColIdx(txHeaders, ['収支区分', '区分', '種別', '収支']);
-    const catIdx = findColIdx(txHeaders, ['勘定科目', '科目', '科目名']);
-    const amtIdx = findColIdx(txHeaders, ['金額', '取引金額', '収支金額']);
-    const nameIdx = findColIdx(txHeaders, ['施主・支払者名', '施主名', '支払者', '相手先', '世帯主名']);
-    const payIdx = findColIdx(txHeaders, ['支払方法', '受取方法', '決済方法']);
-    const receiptIdx = findColIdx(txHeaders, ['領収書番号', '領収書No', 'レシート番号']);
-    const hIdIdx = findColIdx(txHeaders, ['世帯ID', '檀家ID', 'householdId']);
-    const notesIdx = findColIdx(txHeaders, ['備考', 'メモ', '摘要', '特記']);
-    const txCDateIdx = findColIdx(txHeaders, ['作成日', '作成年月日', '登録日', 'createdDate', 'createdAt']);
-    const txCTimeIdx = findColIdx(txHeaders, ['作成時間', '作成時刻', 'createdTime']);
-    const txUDateIdx = findColIdx(txHeaders, ['修正日', '更新日', '修正年月日', '更新年月日', 'updatedDate', 'updatedAt']);
-    const txUTimeIdx = findColIdx(txHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
+  const parseTxSheetRows = (sheetName: string) => {
+    if (!sheetName) return;
+    const { headers: tHeaders, rows: tRows } = getSheetDataByName(sheetName);
+    if (!tRows || tRows.length === 0) return;
 
-    for (let i = 0; i < transactionValues.length; i++) {
-      const row = transactionValues[i];
+    const idIdx = findColIdx(tHeaders, ['伝票ID', 'ID', 'id', '伝票番号', '番号']);
+    const templeColIdx = findColIdx(tHeaders, ['所属寺院', '寺院名', '寺院']);
+    const templeIdColIdx = findColIdx(tHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
+    const dateIdx = findColIdx(tHeaders, ['日付', '取引日', '年月日']);
+    const typeIdx = findColIdx(tHeaders, ['収支区分', '区分', '種別', '収支']);
+    const catIdx = findColIdx(tHeaders, ['勘定科目', '科目', '科目名']);
+    const amtIdx = findColIdx(tHeaders, ['金額', '取引金額', '収支金額']);
+    const nameIdx = findColIdx(tHeaders, ['施主・支払者名', '施主名', '支払者', '相手先', '世帯主名']);
+    const payIdx = findColIdx(tHeaders, ['支払方法', '受取方法', '決済方法']);
+    const receiptIdx = findColIdx(tHeaders, ['領収書番号', '領収書No', 'レシート番号']);
+    const hIdIdx = findColIdx(tHeaders, ['世帯ID', '檀家ID', 'householdId']);
+    const notesIdx = findColIdx(tHeaders, ['備考', 'メモ', '摘要', '特記']);
+    const txCDateIdx = findColIdx(tHeaders, ['作成日', '作成年月日', '登録日', 'createdDate', 'createdAt']);
+    const txCTimeIdx = findColIdx(tHeaders, ['作成時間', '作成時刻', 'createdTime']);
+    const txUDateIdx = findColIdx(tHeaders, ['修正日', '更新日', '修正年月日', '更新年月日', 'updatedDate', 'updatedAt']);
+    const txUTimeIdx = findColIdx(tHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
+
+    for (let i = 0; i < tRows.length; i++) {
+      const row = tRows[i];
       if (!row || row.length === 0 || !row[0]) continue;
+
+      const id = String((idIdx !== -1 ? row[idIdx] : row[0]) || `TX-${Date.now()}-${i + 1}`);
+      if (seenTxIds.has(id)) continue;
+      seenTxIds.add(id);
 
       const householdId = String((hIdIdx !== -1 ? row[hIdIdx] : '') || '').trim();
       const hhTempleId = householdId ? householdTempleMap.get(householdId) : undefined;
@@ -3179,7 +3258,6 @@ export async function importFromSheets(
 
       if (templeIdColIdx !== -1 && row[templeIdColIdx]) {
         const rawTempleId = String(row[templeIdColIdx]).trim();
-        // もし世帯が兼務寺院なのにシートのtempleIdが本寺（temple-main等）になっている場合は世帯の所属寺院を優先
         if (hhTempleId && hhTempleId !== 'temple-main' && (rawTempleId === 'temple-main' || rawTempleId === options?.defaultTempleId)) {
           templeId = hhTempleId;
         } else {
@@ -3187,9 +3265,9 @@ export async function importFromSheets(
         }
       } else if (templeColIdx !== -1 && row[templeColIdx]) {
         const tVal = String(row[templeColIdx]).trim();
-        for (const [tName, id] of templeNameToIdMap.entries()) {
+        for (const [tName, tMapId] of templeNameToIdMap.entries()) {
           if (tVal.includes(tName) || tName.includes(tVal)) {
-            templeId = id;
+            templeId = tMapId;
             break;
           }
         }
@@ -3202,7 +3280,7 @@ export async function importFromSheets(
       const updatedTime = normalizeAuditTime(txUTimeIdx !== -1 ? row[txUTimeIdx] : '') || (txUDateIdx !== -1 && row[txUDateIdx] ? '00:00:00' : createdTime);
 
       transactions.push({
-        id: String((idIdx !== -1 ? row[idIdx] : row[0]) || `TX-${Date.now()}-${i + 1}`),
+        id,
         templeId,
         date: normalizeDateInput(dateIdx !== -1 ? row[dateIdx] : '') || new Date().toISOString().split('T')[0],
         type: ((typeIdx !== -1 ? row[typeIdx] : '収入') as '収入' | '支出') || '収入',
@@ -3219,6 +3297,13 @@ export async function importFromSheets(
         updatedTime,
       });
     }
+  };
+
+  // 出納・会計シート（現行＋前年度）を読み込み
+  parseTxSheetRows(txSheetName);
+  // 出納アーカイブシート（前々年度以前）が存在すれば読み込んでマージ
+  if (archiveTxSheetName && archiveTxSheetName !== txSheetName) {
+    parseTxSheetRows(archiveTxSheetName);
   }
 
   // 9. Parse Master Options (マスタ設定（総合） / マスタ設定 & Per-temple master sheets)
@@ -3386,6 +3471,8 @@ export async function importFromSheets(
     const nameIdx = findColIdx(priestHeaders, ['僧侶名', '氏名', '名前', '僧名', 'name']);
     const furiIdx = findColIdx(priestHeaders, ['フリガナ', 'ふりがな', 'カナ', 'furigana']);
     const roleIdx = findColIdx(priestHeaders, ['役職・区分', '役職', '区分', '立場', 'role']);
+    const danmuIdx = findColIdx(priestHeaders, ['檀務担当', '檀務担当僧侶', '檀務', 'isDanmuAssigned']);
+    const colorIdx = findColIdx(priestHeaders, ['表示色', 'カラー', '色', 'color']);
     const templeNameIdx = findColIdx(priestHeaders, ['所属寺院名', '寺院名', '所属']);
     const phoneIdx = findColIdx(priestHeaders, ['電話番号', '電話', '連絡先', 'phone', 'tel']);
     const emailIdx = findColIdx(priestHeaders, ['メールアドレス', 'メール', 'email']);
@@ -3400,6 +3487,9 @@ export async function importFromSheets(
       const id = idIdx !== -1 && row[idIdx] ? String(row[idIdx]).trim() : `priest-sheet-${Date.now()}-${idx}`;
       const furigana = furiIdx !== -1 ? normalizeFurigana(String(row[furiIdx] || '')) : '';
       const role = roleIdx !== -1 && row[roleIdx] ? String(row[roleIdx]).trim() : '僧侶';
+      const danmuStr = danmuIdx !== -1 ? String(row[danmuIdx] || '').trim() : '';
+      const isDanmuAssigned = danmuStr ? (danmuStr.includes('担当') || danmuStr.includes('true') || danmuStr === '1' || danmuStr === '○' || danmuStr === '可') : true;
+      const color = colorIdx !== -1 && row[colorIdx] ? String(row[colorIdx]).trim() : undefined;
       const templeName = templeNameIdx !== -1 ? String(row[templeNameIdx] || '').trim() : '';
       const phone = phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '';
       const email = emailIdx !== -1 ? String(row[emailIdx] || '').trim() : '';
@@ -3412,6 +3502,8 @@ export async function importFromSheets(
         name,
         furigana,
         role,
+        isDanmuAssigned,
+        color,
         templeId: rawTempleId || (temples && temples[0]?.id ? temples[0].id : 'temple-main'),
         templeName: templeName || temples?.find((t) => t.id === rawTempleId)?.name || '',
         phone,

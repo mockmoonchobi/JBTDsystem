@@ -218,3 +218,47 @@ export function calculatePriorCarryoverBalance(
   };
 }
 
+/**
+ * Splits transactions into "active" (current and immediately prior fiscal year = 2 years)
+ * and "archive" (2 years or older prior fiscal years).
+ */
+export function partitionTransactionsByFiscalRetention(
+  transactions: Transaction[],
+  templeInfo?: TempleInfo,
+  refDate: Date = new Date()
+): {
+  activeTransactions: Transaction[];
+  archiveTransactions: Transaction[];
+  currentFY: number;
+  priorFY: number;
+} {
+  const currentFY = getFiscalYearOfDate(refDate.toISOString().slice(0, 10), templeInfo);
+  const priorFY = currentFY - 1;
+
+  const activeTransactions: Transaction[] = [];
+  const archiveTransactions: Transaction[] = [];
+
+  transactions.forEach((tx) => {
+    if (!tx.date) {
+      // Transactions with no date remain in active so they can be viewed and fixed
+      activeTransactions.push(tx);
+      return;
+    }
+    const txFY = getFiscalYearOfDate(tx.date, templeInfo);
+    // If transaction belongs to current FY or prior FY, keep in active sheet (直近2ヵ年)
+    // If it belongs to an even older FY (txFY < priorFY), archive it.
+    // If future date (txFY > currentFY), keep in active.
+    if (txFY >= priorFY) {
+      activeTransactions.push(tx);
+    } else {
+      archiveTransactions.push(tx);
+    }
+  });
+
+  return {
+    activeTransactions,
+    archiveTransactions,
+    currentFY,
+    priorFY,
+  };
+}

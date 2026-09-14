@@ -79,6 +79,7 @@ import {
   getHouseholdNiibonStatus,
   resolveSpiritMemorialType
 } from '../utils/memorialCalculator';
+import { getPriestColor, getPriestTextColor, filterDanmuPriests, sortPriestsForTemple } from '../utils/priestColorUtils';
 import { DateInputWithEra, TimeSelectorInput } from './DateTimeInputs';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { MobileServiceModal } from './mobile/MobileServiceModal';
@@ -1168,6 +1169,9 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
 
+  // カレンダー・予定の担当僧侶フィルター（ALL: 全僧侶合算表示、または特定の僧侶ID）
+  const [selectedPriestFilter, setSelectedPriestFilter] = useState<string>('ALL');
+
   // --- お盆棚経・巡回計画ステート ---
   const [tanagyoSearchTerm, setTanagyoSearchTerm] = useState('');
   const [tanagyoPriestFilter, setTanagyoPriestFilter] = useState<string>('ALL');
@@ -2061,37 +2065,59 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     return templeInfo?.address || templeInfo?.name || '本堂';
   };
 
-  // Helper to determine styling for service chips and cards (兼務寺も本寺と同様の落ち着いた色調で統一)
+  // Helper to determine styling for service chips and cards (兼務寺も本寺と同様の落ち着いた色調で統一、担当僧侶色も解決)
   const getServiceChipStyle = (s: MemorialService) => {
     const isAffiliated = isAffiliatedTempleService(s);
     const templeMeta = getServiceTempleInfo(s);
 
-    if (s.memorialType === '寺院行事') {
-      return { chipClass: 'bg-indigo-100 text-indigo-900 border-l-2 border-indigo-600 font-bold', badgeClass: 'bg-indigo-200 text-indigo-900', badgeText: '寺院行事', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '他寺院助法・出向') {
-      return { chipClass: 'bg-teal-100 text-teal-900 border-l-2 border-teal-600 font-bold', badgeClass: 'bg-teal-200 text-teal-900', badgeText: '他寺助法', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '会議・教区・公務') {
-      return { chipClass: 'bg-blue-100 text-blue-900 border-l-2 border-blue-600 font-bold', badgeClass: 'bg-blue-200 text-blue-900', badgeText: '会議', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '住職個人用務・私用') {
-      return { chipClass: 'bg-stone-200 text-stone-900 border-l-2 border-stone-600 font-bold', badgeClass: 'bg-stone-300 text-stone-900', badgeText: '私用', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '地域行事') {
-      return { chipClass: 'bg-cyan-100 text-cyan-900 border-l-2 border-cyan-600 font-bold', badgeClass: 'bg-cyan-200 text-cyan-900', badgeText: '地域', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '棚経') {
-      return { chipClass: 'bg-emerald-100 text-emerald-900 border-l-2 border-emerald-600 font-bold', badgeClass: 'bg-emerald-200 text-emerald-900', badgeText: '棚経', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '塔婆供養') {
-      return { chipClass: 'bg-amber-100 text-amber-900 border-l-2 border-amber-600 font-bold', badgeClass: 'bg-amber-200 text-amber-900', badgeText: '塔婆', isAffiliated, templeName: templeMeta.name };
-    } else if (s.memorialType === '枕経' || s.memorialType === '通夜' || s.memorialType === '葬儀' || s.memorialType === '枕経・通夜・葬儀') {
-      return { chipClass: 'bg-red-950 text-amber-200 border-l-2 border-red-500 font-bold', badgeClass: 'bg-red-900 text-amber-100', badgeText: '葬儀', isAffiliated, templeName: templeMeta.name };
-    }
+    // 担当僧侶情報の解決
+    const assignedPriest = s.priestId 
+      ? (priests.find((p) => p.id === s.priestId) || (s.priestName ? { id: s.priestId, name: s.priestName, color: getPriestColor(s.priestId, priests), role: '' } : null))
+      : (s.priestName ? (priests.find((p) => p.name === s.priestName?.trim()) || { id: '', name: s.priestName, color: getPriestColor(s.priestName, priests), role: '' }) : null);
 
-    // 通常の檀家法事（漆黒・金）
-    return {
-      chipClass: 'bg-[#1A1A1A] text-[#D4AF37] border-l-2 border-[#D4AF37] font-bold',
-      badgeClass: 'bg-[#2A2A2A] text-[#D4AF37]',
-      badgeText: isAffiliated ? templeMeta.name : '本寺法要',
+    const priestColor = assignedPriest 
+      ? (assignedPriest.color || getPriestColor(assignedPriest.id || assignedPriest.name, priests))
+      : (s.priestId ? getPriestColor(s.priestId, priests) : (s.priestName ? getPriestColor(s.priestName, priests) : null));
+
+    const priestName = assignedPriest?.name || s.priestName || '';
+
+    let baseChip = {
+      chipClass: '',
+      badgeClass: '',
+      badgeText: '',
       isAffiliated,
       templeName: templeMeta.name,
+      priestColor,
+      priestName,
     };
+
+    if (s.memorialType === '寺院行事') {
+      baseChip = { ...baseChip, chipClass: 'bg-indigo-100 text-indigo-900 border-l-3 border-indigo-600 font-bold', badgeClass: 'bg-indigo-200 text-indigo-900', badgeText: '寺院行事' };
+    } else if (s.memorialType === '他寺院助法・出向') {
+      baseChip = { ...baseChip, chipClass: 'bg-teal-100 text-teal-900 border-l-3 border-teal-600 font-bold', badgeClass: 'bg-teal-200 text-teal-900', badgeText: '他寺助法' };
+    } else if (s.memorialType === '会議・教区・公務') {
+      baseChip = { ...baseChip, chipClass: 'bg-blue-100 text-blue-900 border-l-3 border-blue-600 font-bold', badgeClass: 'bg-blue-200 text-blue-900', badgeText: '会議' };
+    } else if (s.memorialType === '住職個人用務・私用') {
+      baseChip = { ...baseChip, chipClass: 'bg-stone-200 text-stone-900 border-l-3 border-stone-600 font-bold', badgeClass: 'bg-stone-300 text-stone-900', badgeText: '私用' };
+    } else if (s.memorialType === '地域行事') {
+      baseChip = { ...baseChip, chipClass: 'bg-cyan-100 text-cyan-900 border-l-3 border-cyan-600 font-bold', badgeClass: 'bg-cyan-200 text-cyan-900', badgeText: '地域' };
+    } else if (s.memorialType === '棚経') {
+      baseChip = { ...baseChip, chipClass: 'bg-emerald-100 text-emerald-900 border-l-3 border-emerald-600 font-bold', badgeClass: 'bg-emerald-200 text-emerald-900', badgeText: '棚経' };
+    } else if (s.memorialType === '塔婆供養') {
+      baseChip = { ...baseChip, chipClass: 'bg-amber-100 text-amber-900 border-l-3 border-amber-600 font-bold', badgeClass: 'bg-amber-200 text-amber-900', badgeText: '塔婆' };
+    } else if (s.memorialType === '枕経' || s.memorialType === '通夜' || s.memorialType === '葬儀' || s.memorialType === '枕経・通夜・葬儀') {
+      baseChip = { ...baseChip, chipClass: 'bg-red-950 text-amber-200 border-l-3 border-red-500 font-bold', badgeClass: 'bg-red-900 text-amber-100', badgeText: '葬儀' };
+    } else {
+      // 通常の檀家法事（漆黒・金）
+      baseChip = {
+        ...baseChip,
+        chipClass: 'bg-[#1A1A1A] text-[#D4AF37] border-l-3 border-[#D4AF37] font-bold',
+        badgeClass: 'bg-[#2A2A2A] text-[#D4AF37]',
+        badgeText: isAffiliated ? templeMeta.name : '本寺法要',
+      };
+    }
+
+    return baseChip;
   };
 
   // Helper to format multiple memorial milestone types (e.g. 一周忌・七回忌)
@@ -2323,10 +2349,25 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     return normalizeTimeForSort(a).localeCompare(normalizeTimeForSort(b));
   };
 
+  // 担当僧侶フィルター適用後の予定リスト（ALLの場合は全件合算）
+  const priestFilteredServices = useMemo(() => {
+    if (selectedPriestFilter === 'ALL') {
+      return memorialServices;
+    }
+    const targetPriest = priests.find((p) => p.id === selectedPriestFilter);
+    const targetName = targetPriest ? targetPriest.name.trim() : '';
+
+    return memorialServices.filter((s) => {
+      if (s.priestId && s.priestId === selectedPriestFilter) return true;
+      if (targetName && s.priestName && s.priestName.trim() === targetName) return true;
+      return false;
+    });
+  }, [memorialServices, selectedPriestFilter, priests]);
+
   // Map of dateStr -> items (sorted by scheduledTime in ascending order within each day)
   const servicesByDate = useMemo(() => {
     const map = new Map<string, MemorialService[]>();
-    memorialServices.forEach((s) => {
+    priestFilteredServices.forEach((s) => {
       const norm = normalizeDateInput(s.scheduledDate);
       if (!map.has(norm)) map.set(norm, []);
       map.get(norm)!.push(s);
@@ -2336,7 +2377,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       list.sort((a, b) => compareScheduledTime(a.scheduledTime, b.scheduledTime));
     });
     return map;
-  }, [memorialServices]);
+  }, [priestFilteredServices]);
 
   const todosByDate = useMemo(() => {
     const map = new Map<string, TempleTodo[]>();
@@ -2371,12 +2412,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
   // All household memorial services (excluding general temple events/meetings/personal tasks)
   const householdServices = useMemo(() => {
-    return memorialServices.filter(isHouseholdMemorialService);
-  }, [memorialServices]);
+    return priestFilteredServices.filter(isHouseholdMemorialService);
+  }, [priestFilteredServices]);
 
   // Filtered reservations for list view (Excludes general temple events, meetings, and personal tasks)
   const filteredServices = useMemo(() => {
-    return memorialServices.filter((s) => {
+    return priestFilteredServices.filter((s) => {
       // Only include household memorial services (excludes general temple events, other temple assistance, meetings, personal tasks)
       if (!isHouseholdMemorialService(s)) return false;
 
@@ -2851,8 +2892,42 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
             </div>
           </div>
 
-          {/* Quick Action Buttons */}
+          {/* Quick Action Buttons & Priest Filter */}
           <div className="flex flex-wrap items-center gap-2 font-sans text-xs">
+            {/* 担当僧侶フィルター（合算表示 / 各僧侶） */}
+            <div className="flex items-center bg-[#262626] border border-[#D4AF37]/50 px-2 py-1 gap-1.5 shadow-xs">
+              <span className="text-[#D4AF37] font-bold text-xs flex items-center gap-1">
+                <Users className="w-3.5 h-3.5" />
+                <span>表示:</span>
+              </span>
+              <select
+                value={selectedPriestFilter}
+                onChange={(e) => setSelectedPriestFilter(e.target.value)}
+                className="bg-[#1A1A1A] text-[#F9F7F2] font-bold text-xs border border-[#555555] px-2 py-1 cursor-pointer focus:border-[#D4AF37] outline-hidden"
+                title="カレンダーおよび予定一覧の表示を担当僧侶ごとに切り替えます"
+              >
+                <option value="ALL">合算表示（全僧侶）</option>
+                {priests.map((p) => {
+                  const pColor = p.color || getPriestColor(p.id, priests);
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name} {p.role ? `(${p.role})` : ''} {p.isMainChief ? '★住職' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+              {selectedPriestFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedPriestFilter('ALL')}
+                  className="px-1.5 py-0.5 text-[10px] bg-amber-500/20 text-[#D4AF37] border border-[#D4AF37]/40 hover:bg-[#D4AF37] hover:text-[#1A1A1A] font-bold cursor-pointer transition-colors"
+                  title="合算表示に戻す"
+                >
+                  合算に戻す
+                </button>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => handleOpenAddServiceModal()}
@@ -2988,14 +3063,61 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                 </div>
               </div>
 
-              {/* Color Legend Bar */}
-              <div className="flex flex-wrap items-center gap-2 text-[10px] font-sans pb-2.5 mb-2 border-b border-[#F0ECE1] text-[#555555]">
-                <span className="font-bold text-[#1A1A1A]">色分け凡例:</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#1A1A1A] border-l-2 border-[#D4AF37] inline-block"></span>法事・年忌</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-red-950 border-l-2 border-red-500 inline-block"></span>葬儀・枕経</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-indigo-100 border-l-2 border-indigo-600 inline-block"></span>寺院行事</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-teal-100 border-l-2 border-teal-600 inline-block"></span>他寺助法</span>
-                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-100 border-l-2 border-emerald-600 inline-block"></span>棚経</span>
+              {/* Color Legend Bar & Priest Filter */}
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-sans pb-2.5 mb-2 border-b border-[#F0ECE1] text-[#555555]">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-[#1A1A1A]">種別凡例:</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-[#1A1A1A] border-l-2 border-[#D4AF37] inline-block"></span>法事・年忌</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-red-950 border-l-2 border-red-500 inline-block"></span>葬儀・枕経</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-indigo-100 border-l-2 border-indigo-600 inline-block"></span>寺院行事</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-teal-100 border-l-2 border-teal-600 inline-block"></span>他寺助法</span>
+                  <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 bg-emerald-100 border-l-2 border-emerald-600 inline-block"></span>棚経</span>
+                </div>
+
+                {/* 担当僧侶カラー凡例（クリックで即座に担当僧侶別絞り込み表示） */}
+                {priests.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 sm:pt-0 border-t sm:border-t-0 border-[#F0ECE1] w-full sm:w-auto">
+                    <span className="font-bold text-[#1A1A1A] flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-[#8C2D19]" />
+                      <span>担当僧侶:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPriestFilter('ALL')}
+                      className={`px-1.5 py-0.5 rounded-2xs font-bold transition-all cursor-pointer ${
+                        selectedPriestFilter === 'ALL'
+                          ? 'bg-[#1A1A1A] text-[#D4AF37] ring-1 ring-[#D4AF37]'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      合算表示
+                    </button>
+                    {priests.map((p) => {
+                      const pColor = p.color || getPriestColor(p.id, priests);
+                      const isSelected = selectedPriestFilter === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setSelectedPriestFilter(isSelected ? 'ALL' : p.id)}
+                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-2xs font-bold transition-all cursor-pointer ${
+                            isSelected
+                              ? 'ring-2 ring-[#8C2D19] bg-amber-50 text-[#1A1A1A] shadow-xs'
+                              : 'bg-white border border-gray-200 hover:bg-gray-50 text-gray-800'
+                          }`}
+                          title={`クリックして「${p.name}」の予定のみ表示（現在: ${isSelected ? '選択中' : '非選択'}）`}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full border border-black/20 shrink-0"
+                            style={{ backgroundColor: pColor }}
+                          />
+                          <span>{p.name}</span>
+                          {p.isMainChief && <span className="text-[9px] text-[#8C6D1F]">住職</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Day of Week Headers */}
@@ -3058,15 +3180,29 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       <div className="space-y-0.5 overflow-hidden">
                         {dayServices.slice(0, 2).map((s) => {
                           const chipStyle = getServiceChipStyle(s);
+                          const priestColor = chipStyle.priestColor;
+                          const priestName = chipStyle.priestName;
 
                           return (
                             <div
                               key={s.id}
                               className={`text-[10px] px-1 py-0.2 truncate font-sans font-bold flex items-center gap-0.5 ${chipStyle.chipClass}`}
-                              title={`${s.scheduledTime} ${chipStyle.isAffiliated ? `[${chipStyle.templeName}] ` : ''}${s.memorialType} - ${s.chiefMourner || s.dharmaName || ''}`}
+                              style={priestColor ? { borderLeftColor: priestColor, borderLeftWidth: '3px' } : undefined}
+                              title={`${s.scheduledTime} ${chipStyle.isAffiliated ? `[${chipStyle.templeName}] ` : ''}${priestName ? `【担当:${priestName}】 ` : ''}${s.memorialType} - ${s.chiefMourner || s.dharmaName || ''}`}
                             >
+                              {priestColor && (
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: priestColor }}
+                                  title={`担当僧侶: ${priestName || '未指定'}`}
+                                />
+                              )}
                               <span className="text-[8px] opacity-75">{s.scheduledTime === '終日' || s.isAllDay ? '終日' : s.scheduledTime?.slice(0, 5)}</span>
-                              <span className="truncate">{chipStyle.isAffiliated ? `[${chipStyle.templeName}] ` : ''}{s.chiefMourner || s.dharmaName || s.memorialType}</span>
+                              <span className="truncate">
+                                {chipStyle.isAffiliated ? `[${chipStyle.templeName}] ` : ''}
+                                {priestName ? `[${priestName}] ` : ''}
+                                {s.chiefMourner || s.dharmaName || s.memorialType}
+                              </span>
                             </div>
                           );
                         })}
@@ -3211,12 +3347,17 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       const mainDharma = s.dharmaName || (s.deceasedName ? `俗名: ${s.deceasedName}` : (s.notes || ''));
                       const mainMemType = s.memorialType || '';
 
+                      const priestObj = s.priestId ? priests.find((p) => p.id === s.priestId) : (s.priestName ? priests.find((p) => p.name === s.priestName?.trim()) : null);
+                      const priestColor = priestObj?.color || (s.priestId || s.priestName ? getPriestColor(s.priestId || s.priestName, priests) : null);
+                      const priestName = priestObj?.name || s.priestName || '';
+
                       return (
                         <div
                           key={s.id}
                           className="border p-3.5 space-y-2 hover:border-[#D4AF37] transition-all rounded-xs bg-[#FAFAF8] border-[#D1CEC7]"
+                          style={priestColor ? { borderLeftColor: priestColor, borderLeftWidth: '4px' } : undefined}
                         >
-                          {/* 1行目: 時間（シンプル黒文字）、寺院表記、編集、削除 */}
+                          {/* 1行目: 時間（シンプル黒文字）、寺院表記、担当僧侶、編集、削除 */}
                           <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-[#EBE5DA]">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-bold text-gray-900 text-sm sm:text-base font-sans">
@@ -3232,6 +3373,28 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                               {!isAffiliated && temples.length > 1 && (
                                 <span className="text-xs font-bold px-2 py-0.5 font-sans bg-amber-100 text-amber-900 border border-amber-300 rounded-2xs">
                                   本寺: {templeMeta.name}
+                                </span>
+                              )}
+                              {/* 担当僧侶バッジ */}
+                              {priestName && (
+                                <span
+                                  className="text-xs font-bold px-2 py-0.5 font-sans flex items-center gap-1 border rounded-2xs"
+                                  style={{
+                                    backgroundColor: priestColor ? `${priestColor}15` : '#F3F4F6',
+                                    borderColor: priestColor ? `${priestColor}50` : '#D1D5DB',
+                                    color: '#1A1A1A',
+                                  }}
+                                >
+                                  {priestColor && (
+                                    <span
+                                      className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ backgroundColor: priestColor }}
+                                    />
+                                  )}
+                                  <span>担当: {priestName}</span>
+                                  {priestObj?.role && (
+                                    <span className="text-[10px] text-gray-500 font-normal">({priestObj.role})</span>
+                                  )}
                                 </span>
                               )}
                             </div>
@@ -3605,6 +3768,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   <th className="p-2.5 whitespace-nowrap">法要種別</th>
                   <th className="p-2.5 whitespace-nowrap">施主（世帯主）</th>
                   <th className="p-2.5 whitespace-nowrap">故人・戒名</th>
+                  <th className="p-2.5 whitespace-nowrap">担当僧侶</th>
                   <th className="p-2.5 whitespace-nowrap text-center">塔婆本数</th>
                   <th className="p-2.5 whitespace-nowrap text-center">会計管理連動</th>
                   <th className="p-2.5 whitespace-nowrap text-center">操作</th>
@@ -3613,7 +3777,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
               <tbody className="divide-y divide-[#E5E0D8]">
                 {filteredServices.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-gray-500 text-sm">
+                    <td colSpan={8} className="p-8 text-center text-gray-500 text-sm">
                       該当する予約・法要は見つかりませんでした。
                     </td>
                   </tr>
@@ -3693,6 +3857,37 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                 </div>
                                 {mainDec.deceasedName && <div className="text-[11px] text-[#666666]">俗名: {mainDec.deceasedName}</div>}
                               </div>
+                            );
+                          })()}
+                        </td>
+                        <td className="p-2.5 whitespace-nowrap">
+                          {(() => {
+                            const pObj = s.priestId ? priests.find((p) => p.id === s.priestId) : (s.priestName ? priests.find((p) => p.name === s.priestName?.trim()) : null);
+                            const pColor = pObj?.color || (s.priestId || s.priestName ? getPriestColor(s.priestId || s.priestName, priests) : null);
+                            const pName = pObj?.name || s.priestName;
+
+                            if (!pName) {
+                              return <span className="text-gray-400 text-[11px]">—</span>;
+                            }
+
+                            return (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-2xs font-bold text-xs border"
+                                style={{
+                                  backgroundColor: pColor ? `${pColor}15` : '#F3F4F6',
+                                  borderColor: pColor ? `${pColor}50` : '#D1D5DB',
+                                  color: '#1A1A1A',
+                                }}
+                              >
+                                {pColor && (
+                                  <span
+                                    className="w-2 h-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: pColor }}
+                                  />
+                                )}
+                                <span>{pName}</span>
+                                {pObj?.role && <span className="text-[10px] text-gray-500 font-normal">({pObj.role})</span>}
+                              </span>
                             );
                           })()}
                         </td>
@@ -5296,6 +5491,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
         pastRecords={pastRecords}
         temples={temples}
         activeTempleId={activeTempleId}
+        priests={priests}
         onSave={handleSaveServiceFromModal}
         onSaveTodo={onAddTodo}
         onDelete={handleDeleteServiceFromModal}

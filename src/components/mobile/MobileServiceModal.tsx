@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MemorialService, Household, PastRecord, TempleProfile, ServiceDeceasedTarget, ServiceTobaItem, TempleTodo } from '../../types';
+import { MemorialService, Household, PastRecord, TempleProfile, ServiceDeceasedTarget, ServiceTobaItem, TempleTodo, Priest } from '../../types';
 import {
   X,
   Save,
@@ -22,7 +22,9 @@ import {
   RotateCcw,
   Plus,
   Minus,
-  AlertTriangle
+  AlertTriangle,
+  UserCheck,
+  Users
 } from 'lucide-react';
 import { DateInputWithEra, TimeSelectorInput } from '../DateTimeInputs';
 import { getTodayDateString, calculateEndTime } from '../../utils/calendarUtils';
@@ -39,6 +41,7 @@ import {
   normalizeMemorialType
 } from '../../utils/memorialCalculator';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
+import { sortPriestsForTemple, filterDanmuPriests, getPriestColor, getPriestColorStyle } from '../../utils/priestColorUtils';
 
 interface MobileServiceModalProps {
   isOpen: boolean;
@@ -48,6 +51,7 @@ interface MobileServiceModalProps {
   pastRecords: PastRecord[];
   temples?: TempleProfile[];
   activeTempleId?: string;
+  priests?: Priest[];
   onSave: (service: MemorialService) => void;
   onSaveTodo?: (todo: TempleTodo) => void;
   onDelete?: (id: string) => void;
@@ -58,7 +62,7 @@ interface MobileServiceModalProps {
 }
 
 // Wizard steps for mobile service creation
-type WizardStep = 'step_temple' | 'step_category' | 'step_select_mode' | 'step_household_search' | 'step_spirit_candidates' | 'step_details';
+type WizardStep = 'step_temple' | 'step_priest' | 'step_category' | 'step_select_mode' | 'step_household_search' | 'step_spirit_candidates' | 'step_details';
 
 export const MEMORIAL_TYPE_OPTIONS = [
   '四十九日',
@@ -107,6 +111,7 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
   pastRecords = [],
   temples = [],
   activeTempleId = 'temple-main',
+  priests = [],
   onSave,
   onSaveTodo,
   onDelete,
@@ -142,6 +147,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
     tobaType: '大塔婆',
     notes: '',
     templeId: activeTempleId !== 'ALL' ? activeTempleId : (temples.find(t => t.isMain)?.id || 'temple-main'),
+    priestId: '',
+    priestName: '',
     additionalDeceased: [],
     tobaItems: [],
     tobaSponsors: [],
@@ -170,6 +177,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
       // Editing existing service -> Go directly to details
       setFormData({
         ...service,
+        priestId: service.priestId || '',
+        priestName: service.priestName || '',
         additionalDeceased: service.additionalDeceased || [],
         tobaItems: service.tobaItems || [],
         tobaSponsors: service.tobaSponsors || [],
@@ -266,23 +275,54 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
         tobaType: '大塔婆',
         notes: '',
         templeId: defTempleId,
+        priestId: '',
+        priestName: '',
         additionalDeceased: [],
         tobaItems: [],
         tobaSponsors: [],
       });
 
+      // Calculate Danmu priests for default temple
+      const curDanmuPriests = filterDanmuPriests(priests || [], false);
+      const curSortedPriests = sortPriestsForTemple(curDanmuPriests, defTempleId, targetTemple?.chiefPriest);
+
       // If initial household or past record was provided, go to details directly
       if (initialHouseholdId || initialPastRecordId) {
+        if (curSortedPriests.length === 1) {
+          setFormData((prev) => ({
+            ...prev,
+            priestId: curSortedPriests[0].id,
+            priestName: curSortedPriests[0].name,
+          }));
+        }
         setCurrentStep('step_details');
       } else if (temples.length <= 1) {
-        // If only 1 temple exists, skip temple step and start with category selection
-        setCurrentStep('step_category');
+        // If only 1 temple exists:
+        // If multiple Danmu priests exist, show priest selection dialog (step_priest)
+        // If exactly 1 Danmu priest exists, auto-select and skip to category
+        if (curSortedPriests.length > 1) {
+          setFormData((prev) => ({
+            ...prev,
+            priestId: curSortedPriests[0].id,
+            priestName: curSortedPriests[0].name,
+          }));
+          setCurrentStep('step_priest');
+        } else {
+          if (curSortedPriests.length === 1) {
+            setFormData((prev) => ({
+              ...prev,
+              priestId: curSortedPriests[0].id,
+              priestName: curSortedPriests[0].name,
+            }));
+          }
+          setCurrentStep('step_category');
+        }
       } else {
         // Multiple temples exist: start at step 1 (choose temple)
         setCurrentStep('step_temple');
       }
     }
-  }, [isOpen, service, initialDate, initialHouseholdId, initialPastRecordId, initialMilestoneType, activeTempleId, temples]);
+  }, [isOpen, service, initialDate, initialHouseholdId, initialPastRecordId, initialMilestoneType, activeTempleId, temples, priests]);
 
   // Selected temple profile
   const selectedTemple = useMemo(() => {
@@ -402,18 +442,87 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
     return templePastRecords.filter((p) => p.householdId === formData.householdId && !!p.deathDate && p.deathDate.trim() !== '');
   }, [templePastRecords, formData.householdId]);
 
+  // Danmu priests for wizard selection (檀務担当僧侶・選択中寺院住職が最上位)
+  const danmuPriestsForStep = useMemo(() => {
+    const tId = formData.templeId || activeTempleId;
+    const targetTemple = temples.find((t) => t.id === tId) || temples.find((t) => t.isMain) || temples[0];
+    const list = filterDanmuPriests(priests || [], false);
+    return sortPriestsForTemple(list, tId, targetTemple?.chiefPriest);
+  }, [priests, formData.templeId, activeTempleId, temples]);
+
+  // Is current service a Tanagyo (棚経)
+  const isTanagyoService = useMemo(() => {
+    const memType = formData.memorialType || '';
+    const notes = formData.notes || '';
+    return memType.includes('棚経') || notes.includes('棚経');
+  }, [formData.memorialType, formData.notes]);
+
+  // Available priests for details step (棚経なら全登録僧侶、それ以外は檀務担当僧侶)
+  const availablePriestsForDetails = useMemo(() => {
+    const tId = formData.templeId || activeTempleId;
+    const targetTemple = temples.find((t) => t.id === tId) || temples.find((t) => t.isMain) || temples[0];
+    const list = filterDanmuPriests(priests || [], isTanagyoService);
+    if (!isTanagyoService && formData.priestId && !list.some((p) => p.id === formData.priestId)) {
+      const currentSelected = (priests || []).find((p) => p.id === formData.priestId);
+      if (currentSelected) list.push(currentSelected);
+    }
+    return sortPriestsForTemple(list, tId, targetTemple?.chiefPriest);
+  }, [priests, formData.templeId, activeTempleId, temples, isTanagyoService, formData.priestId]);
+
   if (!isOpen) return null;
 
   // Step 1: Select Temple
   const handleSelectTemple = (templeId: string) => {
+    const targetTemple = temples.find((t) => t.id === templeId) || temples.find((t) => t.isMain) || temples[0];
+    const danmuPriests = filterDanmuPriests(priests || [], false);
+    const sortedDanmuPriests = sortPriestsForTemple(danmuPriests, templeId, targetTemple?.chiefPriest);
+
+    if (sortedDanmuPriests.length > 1) {
+      // 複数人いる場合は担当僧侶選択ダイアログへ（選択中寺院の住職を最上位・初期選択）
+      setFormData((prev) => ({
+        ...prev,
+        templeId,
+        priestId: sortedDanmuPriests[0].id,
+        priestName: sortedDanmuPriests[0].name,
+        householdId: '',
+        deceasedId: '',
+        dharmaName: '',
+        deceasedName: '',
+        chiefMourner: '',
+      }));
+      setCurrentStep('step_priest');
+    } else {
+      // 1人（または0人）の場合はダイアログをスキップ
+      setFormData((prev) => ({
+        ...prev,
+        templeId,
+        priestId: sortedDanmuPriests.length === 1 ? sortedDanmuPriests[0].id : '',
+        priestName: sortedDanmuPriests.length === 1 ? sortedDanmuPriests[0].name : '',
+        householdId: '',
+        deceasedId: '',
+        dharmaName: '',
+        deceasedName: '',
+        chiefMourner: '',
+      }));
+      setCurrentStep('step_category');
+    }
+  };
+
+  // Step 1.5: Select Priest
+  const handleSelectPriest = (selectedPriest: Priest) => {
     setFormData((prev) => ({
       ...prev,
-      templeId,
-      householdId: '',
-      deceasedId: '',
-      dharmaName: '',
-      deceasedName: '',
-      chiefMourner: '',
+      priestId: selectedPriest.id,
+      priestName: selectedPriest.name,
+    }));
+    setCurrentStep('step_category');
+  };
+
+  const handleSkipPriest = () => {
+    setFormData((prev) => ({
+      ...prev,
+      priestId: '',
+      priestName: '',
     }));
     setCurrentStep('step_category');
   };
@@ -594,8 +703,17 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
 
   // Go back one step in wizard
   const handleGoBack = () => {
-    if (currentStep === 'step_category') {
+    if (currentStep === 'step_priest') {
       if (temples.length > 1) {
+        setCurrentStep('step_temple');
+      } else {
+        onClose();
+      }
+    } else if (currentStep === 'step_category') {
+      const curDanmuPriests = filterDanmuPriests(priests || [], false);
+      if (curDanmuPriests.length > 1) {
+        setCurrentStep('step_priest');
+      } else if (temples.length > 1) {
         setCurrentStep('step_temple');
       } else {
         onClose();
@@ -701,6 +819,8 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
     const savedService: MemorialService = {
       id: service?.id || `MS-${Date.now()}`,
       templeId: formData.templeId || 'temple-main',
+      priestId: formData.priestId || '',
+      priestName: formData.priestName || (priests.find(p => p.id === formData.priestId)?.name || ''),
       householdId: formData.householdId || '',
       deceasedId: formData.deceasedId || '',
       dharmaName: formData.dharmaName?.trim() || '',
@@ -831,6 +951,86 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                 className="text-xs text-gray-500 hover:text-gray-800 underline py-2 cursor-pointer"
               >
                 手順をスキップして直接入力する
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 1.5: 担当僧侶の選択 (檀務担当僧侶が複数人いる場合に表示) */}
+        {currentStep === 'step_priest' && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="text-center py-2">
+              <div className="w-12 h-12 rounded-full bg-[#8C2D19]/10 text-[#8C2D19] flex items-center justify-center mx-auto mb-2">
+                <UserCheck className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-bold font-serif text-[#1A1A1A]">
+                担当僧侶を選択してください
+              </h3>
+              <p className="text-xs text-gray-600 mt-1">
+                【{selectedTemple.name}】の檀務（法事・葬儀等）を担当する僧侶を選択してください
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              {danmuPriestsForStep.map((priest, idx) => {
+                const isChief = idx === 0 || priest.isMainChief || (selectedTemple.chiefPriest && priest.name === selectedTemple.chiefPriest.trim());
+                const isSelected = formData.priestId === priest.id;
+                const pColor = priest.color || getPriestColor(priest.id, priests);
+
+                return (
+                  <button
+                    key={priest.id}
+                    type="button"
+                    onClick={() => handleSelectPriest(priest)}
+                    className={`w-full p-3.5 rounded-xs border-2 text-left transition-all active:scale-[0.99] flex items-center justify-between gap-3 shadow-xs cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-50/80 border-[#8C2D19] ring-2 ring-[#8C2D19]/20'
+                        : 'bg-white border-[#D1CEC7] hover:border-[#8C2D19]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span
+                        className="w-5 h-5 rounded-full border border-black/20 shrink-0 shadow-2xs"
+                        style={{ backgroundColor: pColor }}
+                        title="カレンダー表示色"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-2 py-0.5 text-[11px] font-bold rounded-2xs ${
+                            isChief
+                              ? 'bg-[#D4AF37]/20 text-[#8C6D1F] border border-[#D4AF37]/40'
+                              : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                          }`}>
+                            {isChief ? '★ 住職' : (priest.role || '僧侶')}
+                          </span>
+                          <span className="text-[10px] text-gray-500 truncate">
+                            {priest.templeName || selectedTemple.name}
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-[#1A1A1A] truncate mt-0.5 font-serif">
+                          {priest.name}
+                        </h4>
+                        {priest.furigana && (
+                          <div className="text-[10px] text-gray-400 truncate -mt-0.5">{priest.furigana}</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1.5 text-xs text-[#8C2D19] font-bold">
+                      <span>選択</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleSkipPriest}
+                className="w-full py-2.5 bg-[#FAF8F5] hover:bg-gray-100 border border-[#D1CEC7] text-xs font-bold text-gray-600 rounded-xs transition-colors cursor-pointer text-center"
+              >
+                担当僧侶を未定のまま進む（後で指定）
               </button>
             </div>
           </div>
@@ -1388,6 +1588,61 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
                 </select>
               </div>
             )}
+
+            {/* Assigned Priest Selector */}
+            <div className="p-3 bg-white border border-[#D1CEC7] rounded-xs shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="block font-bold text-sm text-[#1A1A1A] flex items-center gap-1.5">
+                  <UserCheck className="w-4 h-4 text-[#8C2D19]" />
+                  <span>担当僧侶</span>
+                </label>
+                {isTanagyoService ? (
+                  <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 rounded-2xs font-bold">
+                    ※棚経：全登録僧侶から選択可
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-500 font-medium">
+                    檀務担当僧侶
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {formData.priestId && (
+                  <span
+                    className="w-4 h-4 rounded-full border border-black/20 shrink-0 shadow-2xs"
+                    style={{
+                      backgroundColor:
+                        priests.find((p) => p.id === formData.priestId)?.color ||
+                        getPriestColor(formData.priestId, priests),
+                    }}
+                    title="担当僧侶カラー"
+                  />
+                )}
+                <select
+                  value={formData.priestId || ''}
+                  onChange={(e) => {
+                    const pId = e.target.value;
+                    const targetP = priests.find((p) => p.id === pId);
+                    setFormData({
+                      ...formData,
+                      priestId: pId,
+                      priestName: targetP ? targetP.name : '',
+                    });
+                  }}
+                  className="w-full p-2.5 bg-white border-2 border-[#D1CEC7] text-sm font-bold rounded-xs focus:border-[#8C2D19] focus:outline-hidden"
+                >
+                  <option value="">（担当未定 / 指定なし）</option>
+                  {availablePriestsForDetails.map((p, pIdx) => {
+                    const isChief = pIdx === 0 || p.isMainChief || (selectedTemple.chiefPriest && p.name === selectedTemple.chiefPriest.trim());
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {isChief ? '【住職】' : `【${p.role || '僧侶'}】`} {p.name} {p.templeName ? `(${p.templeName})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            </div>
 
             {/* Date & Time */}
             <div className="p-3.5 bg-white border border-[#D1CEC7] rounded-xs shadow-2xs space-y-3">

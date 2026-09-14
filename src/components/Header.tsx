@@ -108,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
   const currentTemple = isCalendarTab
     ? {
         id: 'ALL',
-        name: '全寺院合算表示',
+        name: '合算表示',
         sect: templeInfo.sect || '',
         mountainName: '',
         isMain: true,
@@ -119,7 +119,7 @@ export const Header: React.FC<HeaderProps> = ({
     : isAllTemples
     ? {
         id: 'ALL',
-        name: '全寺院合算表示',
+        name: '合算表示',
         sect: templeInfo.sect || '',
         mountainName: '',
         isMain: true,
@@ -161,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
               ) : null}
               {isCalendarTab ? (
                 <span className="text-[10px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 font-sans font-bold border border-amber-500/40">
-                  全寺院合算（固定）
+                  合算表示
                 </span>
               ) : isAccountingTabCombined ? (
                 <span className="text-[10px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 font-sans font-bold border border-amber-500/40">
@@ -169,7 +169,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               ) : isAllTemples ? (
                 <span className="text-[10px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 font-sans font-bold border border-amber-500/40">
-                  全寺院合算
+                  合算表示
                 </span>
               ) : currentTemple.isMain === false ? (
                 <span className="text-[10px] px-1.5 py-0.2 bg-emerald-700 text-white font-sans font-bold">
@@ -186,10 +186,10 @@ export const Header: React.FC<HeaderProps> = ({
               /* Calendar / Reservations tab: Fixed merge display without pulldown */
               <div 
                 className="flex items-center space-x-2 text-left mt-0.5 select-none"
-                title="法事・予約・カレンダーは全寺院の情報を合算して表示しています（固定）"
+                title="法事・予約・カレンダーは全寺院の情報を合算して表示しています"
               >
                 <h1 className="text-xl sm:text-2xl font-bold text-[#F9F7F2] tracking-wider flex items-baseline gap-1.5">
-                  <span>全寺院合算表示</span>
+                  <span>合算表示</span>
                 </h1>
                 <span className="text-[11px] font-sans tracking-widest text-[#D4AF37]/70 font-normal hidden md:inline">
                   法事・予約カレンダー
@@ -247,7 +247,7 @@ export const Header: React.FC<HeaderProps> = ({
                         </div>
                         <div>
                           <div className="font-serif font-bold text-sm text-[#F9F7F2] flex items-center gap-1.5">
-                            全寺院合算表示
+                            合算表示
                             <span className="px-1 py-0.2 bg-amber-500/20 text-amber-300 text-[10px] font-bold">合算</span>
                           </div>
                           <div className="text-[10px] text-[#888888]">

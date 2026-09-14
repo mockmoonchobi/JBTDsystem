@@ -2280,6 +2280,7 @@ export default function App() {
         return;
       }
 
+
       isSyncInProgressRef.current = true;
       try {
         let sheet: { id: string; url: string };

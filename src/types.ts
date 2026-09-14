@@ -213,6 +213,8 @@ export interface MemorialService {
   address?: string; // 訪問先住所 (棚経・自宅法要用)
   status: MemorialStatus;
   chiefMourner: string; // 施主名
+  priestId?: string; // 担当登録僧侶ID
+  priestName?: string; // 担当僧侶名
   attendeeCount: number;
   offeringAmount: number; // 布施金額
   tobaCount?: number; // 塔婆本数
@@ -372,6 +374,9 @@ export interface Priest {
   notes?: string; // 備考・特記事項（得意分野、助法謝礼目安、連絡先など）
   isAutoChief?: boolean; // 住職から自動同期されるフラグ
   isMainChief?: boolean; // 本寺住職フラグ
+  isDanmu?: boolean; // 檀務担当僧侶チェック（法事・葬儀等の檀務を担当。未指定またはtrueで担当、falseで棚経のみ・檀務対象外）
+  isDanmuAssigned?: boolean; // 互換プロパティ
+  color?: string; // カレンダー等での表示色
 }
 
 export interface MasterOptions {
