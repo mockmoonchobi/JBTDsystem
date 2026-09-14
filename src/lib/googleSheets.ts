@@ -1,3 +1,4 @@
+import { isDanmuPriest, parseDanmuFlag } from '../utils/priestColorUtils';
 import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
 import { SheetsExportCache } from '../utils/sheetsExportCache';
 
@@ -61,7 +62,7 @@ import {
   getFamilyMemberTobaApplication
 } from '../utils/tobaUtils';
 import { TobaApplicationItem } from '../types';
-import { partitionTransactionsByFiscalRetention } from '../utils/fiscalYearUtils';
+import { partitionTransactionsByTempleFiscalRetention } from '../utils/fiscalYearUtils';
 
 export const SPREADSHEET_NAME = '寺院管理・檀家過去帳データ';
 
@@ -1007,9 +1008,16 @@ export async function exportToSheets(
     ? new Set(exportOptions.targetTablesOnly.map((t) => t.trim()))
     : null;
 
+  if (targetTablesFilter && [...targetTablesFilter].some(name =>
+    ['出納・会計', '出納アーカイブ'].includes(resolveExportSheetName(name, ['出納・会計', '出納アーカイブ'])))) {
+    targetTablesFilter.add('出納・会計');
+    targetTablesFilter.add('出納アーカイブ');
+  }
+
   const shouldIncludeSheet = (sheetName: string): boolean => {
     if (!targetTablesFilter) return true;
     if (targetTablesFilter.has(sheetName)) return true;
+    if (Array.from(targetTablesFilter).some(name => resolveExportSheetName(name, [sheetName]) === sheetName)) return true;
     // Also match master sheets if 'マスタ設定' or 'マスタ' is specified
     if (sheetName.startsWith('マスタ_') && (targetTablesFilter.has('マスタ') || targetTablesFilter.has('マスタ設定'))) {
       return true;
@@ -1595,7 +1603,7 @@ export async function exportToSheets(
 
   // 8. Transactions Sheet Rows (出納・会計 & 出納アーカイブ) - Unified with Excel
   // 本会計年度＋前会計年度を「出納・会計」に、前々年度以前を「出納アーカイブ」に分離
-  const { activeTransactions, archiveTransactions } = partitionTransactionsByFiscalRetention(filteredTransactions);
+  const { activeTransactions, archiveTransactions } = partitionTransactionsByTempleFiscalRetention(filteredTransactions, templeInfo, allTemples);
 
   const transactionHeaders = [
     '伝票ID',
@@ -1798,7 +1806,7 @@ export async function exportToSheets(
     p.name || '',
     p.furigana || '',
     p.role || '僧侶',
-    p.isDanmuAssigned !== false ? '担当' : '対象外',
+    isDanmuPriest(p) ? '担当' : '対象外',
     p.color || '',
     p.templeName || getTempleLabel(p.templeId),
     p.phone || '',
@@ -1993,6 +2001,7 @@ export async function exportSpecificTablesToSheets(
 }
 
 export interface SheetsImportResult {
+  needsFiscalRetentionSync?: boolean;
   templeInfo?: TempleInfo;
   temples?: TempleProfile[];
   households: Household[];
@@ -2048,6 +2057,7 @@ export async function importFromSheets(
   // For larger sheets, chunk by row ranges (2,000 rows per request).
   const sheetDataMap = new Map<string, { headers: string[]; rows: string[][] }>();
   const CHUNK_ROW_SIZE = 2000;
+  const failedReadSheets = new Set<string>();
 
   const normalSheets = rawSheets.filter((s: any) => {
     const title = s.properties?.title;
@@ -2114,8 +2124,10 @@ export async function importFromSheets(
           }
         }
       } catch (err) {
+        failedReadSheets.add(title);
         console.warn(`Failed to fetch sheet "${title}":`, err);
       }
+      if (!sheetDataMap.has(title)) failedReadSheets.add(title);
       continue;
     }
 
@@ -2166,10 +2178,12 @@ export async function importFromSheets(
 
           startRow += CHUNK_ROW_SIZE;
         } else {
+          failedReadSheets.add(title);
           console.warn(`Failed to fetch chunk ${rangeStr} for sheet "${title}" (HTTP ${chunkRes.status})`);
           keepFetching = false;
         }
       } catch (chunkErr) {
+        failedReadSheets.add(title);
         console.warn(`Exception fetching chunk ${rangeStr} for sheet "${title}":`, chunkErr);
         keepFetching = false;
       }
@@ -3219,8 +3233,12 @@ export async function importFromSheets(
     ['勘定科目', '金額', '収支区分', '日付', '取引日']
   );
 
+  if ([txSheetName, archiveTxSheetName].some(name => name && (failedReadSheets.has(name) || !sheetDataMap.has(name)))) {
+    throw new Error('出納帳または出納アーカイブを完全に読み取れませんでした。データ保護のため同期を中止しました。');
+  }
   const transactions: Transaction[] = [];
   const seenTxIds = new Set<string>();
+  const actualArchiveIds = new Set<string>();
 
   const parseTxSheetRows = (sheetName: string) => {
     if (!sheetName) return;
@@ -3249,6 +3267,7 @@ export async function importFromSheets(
       if (!row || row.length === 0 || !row[0]) continue;
 
       const id = String((idIdx !== -1 ? row[idIdx] : row[0]) || `TX-${Date.now()}-${i + 1}`);
+      if (sheetName === archiveTxSheetName && archiveTxSheetName !== txSheetName) actualArchiveIds.add(id);
       if (seenTxIds.has(id)) continue;
       seenTxIds.add(id);
 
@@ -3471,7 +3490,7 @@ export async function importFromSheets(
     const nameIdx = findColIdx(priestHeaders, ['僧侶名', '氏名', '名前', '僧名', 'name']);
     const furiIdx = findColIdx(priestHeaders, ['フリガナ', 'ふりがな', 'カナ', 'furigana']);
     const roleIdx = findColIdx(priestHeaders, ['役職・区分', '役職', '区分', '立場', 'role']);
-    const danmuIdx = findColIdx(priestHeaders, ['檀務担当', '檀務担当僧侶', '檀務', 'isDanmuAssigned']);
+    const danmuIdx = findColIdx(priestHeaders, ['檀務担当', '檀務担当僧侶', '檀務', 'isDanmu', 'isDanmuAssigned']);
     const colorIdx = findColIdx(priestHeaders, ['表示色', 'カラー', '色', 'color']);
     const templeNameIdx = findColIdx(priestHeaders, ['所属寺院名', '寺院名', '所属']);
     const phoneIdx = findColIdx(priestHeaders, ['電話番号', '電話', '連絡先', 'phone', 'tel']);
@@ -3488,7 +3507,7 @@ export async function importFromSheets(
       const furigana = furiIdx !== -1 ? normalizeFurigana(String(row[furiIdx] || '')) : '';
       const role = roleIdx !== -1 && row[roleIdx] ? String(row[roleIdx]).trim() : '僧侶';
       const danmuStr = danmuIdx !== -1 ? String(row[danmuIdx] || '').trim() : '';
-      const isDanmuAssigned = danmuStr ? (danmuStr.includes('担当') || danmuStr.includes('true') || danmuStr === '1' || danmuStr === '○' || danmuStr === '可') : true;
+      const isDanmuAssigned = parseDanmuFlag(danmuStr);
       const color = colorIdx !== -1 && row[colorIdx] ? String(row[colorIdx]).trim() : undefined;
       const templeName = templeNameIdx !== -1 ? String(row[templeNameIdx] || '').trim() : '';
       const phone = phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '';
@@ -3502,6 +3521,7 @@ export async function importFromSheets(
         name,
         furigana,
         role,
+        isDanmu: isDanmuAssigned,
         isDanmuAssigned,
         color,
         templeId: rawTempleId || (temples && temples[0]?.id ? temples[0].id : 'temple-main'),
@@ -3704,6 +3724,10 @@ export async function importFromSheets(
     memorialServices: finalMemorialServices,
     templeTodos: finalTempleTodos,
     transactions: finalTransactions,
+    needsFiscalRetentionSync: (() => {
+      const expected = new Set(partitionTransactionsByTempleFiscalRetention(finalTransactions, templeInfo, temples).archiveTransactions.map(tx => tx.id));
+      return finalTransactions.some(tx => expected.has(tx.id) !== actualArchiveIds.has(tx.id));
+    })(),
     masterOptions: mergedMasterOptions,
     templeMasterOptionsMap: Object.keys(templeMasterOptionsMap).length > 0 ? templeMasterOptionsMap : undefined,
     noticeTemplates,

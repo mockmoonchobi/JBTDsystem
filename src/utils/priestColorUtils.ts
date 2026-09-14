@@ -218,5 +218,18 @@ export function filterDanmuPriests(priests: Priest[], isTanagyo: boolean = false
   if (isTanagyo) {
     return priests;
   }
-  return priests.filter((p) => p.isDanmu !== false);
+  return priests.filter(isDanmuPriest);
+}
+
+
+/** Canonical UI flag wins; accept the older persisted flag on import. */
+export function isDanmuPriest(priest?: Pick<Priest, 'isDanmu' | 'isDanmuAssigned'>): boolean {
+  return priest?.isDanmu ?? priest?.isDanmuAssigned ?? true;
+}
+
+export function parseDanmuFlag(value: unknown): boolean {
+  const text = String(value ?? '').trim().toLowerCase();
+  if (!text) return true;
+  if (/対象外|非担当|担当外|未担当/.test(text) || ['false', '0', '×', '不可'].includes(text)) return false;
+  return text.includes('担当') || ['true', '1', '○', '可'].includes(text);
 }

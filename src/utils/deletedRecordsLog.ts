@@ -277,7 +277,7 @@ export function buildDeletedTimestampMap(entries: DeletedRecordEntry[]): Map<str
       : (e.deletedAt ? new Date(e.deletedAt).getTime() : 0);
     if (ts <= 0) return;
 
-    if (e.actionType === 'create' || e.actionType === 'update' || e.actionType === 'undo' || e.actionType === 'batch_create') {
+    if (e.actionType === 'create' || e.actionType === 'update' || e.actionType === 'undo' || e.actionType === 'batch_create' || e.actionType === 'restore') {
       map.delete(cleanId);
     } else {
       map.set(cleanId, ts);

@@ -81,9 +81,10 @@ test('auto export skips identical tables, writes deletions atomically, retries f
   const batchAccountingData = { entries: { H1: { check1: true, amount1: 1000 } } };
   const run = (options = { onlyChangedTables: true }) => exportToSheets('token', 'incremental-test', EMPTY_TEMPLE_INFO, households, past, [], transactions, EMPTY_MASTER_OPTIONS, undefined, [], [], { batchAccountingData, ...options });
   try {
+    global.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : ['2026-09-14T04:05:06Z'])); } };
     await run({});
     mock.calls.length = 0;
-    global.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : ['2030-02-03T04:05:06Z'])); } };
+    global.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : ['2026-09-15T04:05:06Z'])); } };
     await run();
     assert.equal(mock.calls.length, 0, 'export-time audit/template timestamps must not dirty unchanged data: ' + mock.writtenNames().join(', '));
     transactions[0].amount = 2000;

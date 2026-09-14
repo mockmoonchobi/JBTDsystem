@@ -92,7 +92,7 @@ import {
   getUpcomingMailingPeriodId,
   calculateHouseholdMilestoneTargetsMap,
 } from './utils/memorialCalculator';
-import { stripAutoCarryoverTransactions } from './utils/fiscalYearUtils';
+import { stripAutoCarryoverTransactions, getJapanDateString, getFiscalRetentionKey } from './utils/fiscalYearUtils';
 import { withCreationAudit, withUpdateAudit, getCurrentAuditFields } from './utils/auditUtils';
 import { computeEntityDiff } from './utils/diffUtils';
 import { migrateAllDankaIds } from './utils/dankaIdUtils';
@@ -129,7 +129,7 @@ import {
 function computePayloadSignature(payload: any): string {
   if (!payload) return '';
   try {
-    const str = JSON.stringify(payload);
+    const str = JSON.stringify({ payload, fiscalRetention: getFiscalRetentionKey(payload.templeInfo, payload.temples) });
     let hash = 5381;
     for (let i = 0; i < str.length; i++) {
       hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
@@ -1739,10 +1739,21 @@ export default function App() {
         const remoteCount = remoteData.totalRecordsCount;
 
         // ★ 明示的な初期化読込指定（共有スプレッドシートへの強制リセット切替・起動時連携など）の場合のみ:
-        // 端末上のデータを初期化してからデータを読込（Googleシート側への書き込みは一切行わない）
+        // 端末上のデータを初期化して読込。年度配置の修正が必要な場合のみ、読み取った出納データを再配置する。
         if (isCleanImport) {
           isImportingRef.current = true;
           applyRemoteSheetsDataRef.current(remoteData, true /* isClean */);
+          // Repartition only the freshly imported accounting data. This does
+          // not push pre-import terminal records into a clean import.
+          if (remoteData.needsFiscalRetentionSync) {
+            const imported = syncStateRef.current;
+            await safeExportWithAutoRecovery(token, sheet.id, targetId => exportSpecificTablesToSheets(
+              token, targetId, ['出納・会計', '出納アーカイブ'],
+              imported.templeInfo, imported.households, imported.pastRecords, imported.memorialServices,
+              imported.transactions, imported.masterOptions, imported.noticeTemplates, imported.templeTodos,
+              imported.temples, { targetTempleId: 'ALL', priests: imported.priests }
+            ));
+          }
           const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
           setLastSyncTime(nowTime);
           safeStorage.setItem('temple_google_sheet_last_sync', nowTime);
@@ -1782,7 +1793,7 @@ export default function App() {
           const mergeResult = applyRemoteSheetsDataRef.current(remoteData);
 
           // 端末側にGoogleシートへ反映すべき新規・更新データや操作履歴がある場合のみ書き出し（不要な上書き・タイムスタンプ更新を回避）
-          if (mergeResult.hasLocalChanges) {
+          if (mergeResult.hasLocalChanges || remoteData.needsFiscalRetentionSync) {
             await safeExportWithAutoRecovery(token, sheet.id, async (targetId) => {
               await exportToSheets(
                 token,
@@ -2232,6 +2243,20 @@ export default function App() {
   // Continuous Auto-Sync on User Data Changes (Debounced 2.5s)
   // A successful sync wakes edits made in flight. An error does not trigger an
   // endless retry loop; the next edit or an explicit sync can retry it.
+  const [fiscalSyncTick, setFiscalSyncTick] = useState(0);
+  useEffect(() => {
+    let date = getJapanDateString();
+    const wake = () => setFiscalSyncTick(value => value + 1);
+    const checkDate = () => {
+      const current = getJapanDateString();
+      if (current !== date) { date = current; wake(); }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') { checkDate(); wake(); } };
+    const timer = setInterval(checkDate, 60000);
+    window.addEventListener('online', wake);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(timer); window.removeEventListener('online', wake); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
   const isSyncSettled = syncStatus === 'synced';
   useEffect(() => {
     if (!isInitialLoaded) return;
@@ -2347,7 +2372,7 @@ export default function App() {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, disasterEvents, isInitialLoaded, isSyncSettled]);
+  }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, disasterEvents, isInitialLoaded, isSyncSettled, fiscalSyncTick]);
 
   // ★ バックグラウンド操作履歴監視（約10秒間隔で「操作・削除履歴」シートのみを軽量監視）
   // 画面に「データ連携処理中」を出さず、他スタッフ・別端末からのデータ更新が検出されたらサイレントに自動同期
@@ -2473,7 +2498,8 @@ export default function App() {
         remoteData = res.data;
         sheet = res.sheet;
       } catch (e) {
-        console.warn('Manual sync import preview error (will write local state):', e);
+        console.warn('Manual sync import failed; refusing to overwrite unread remote data:', e);
+        throw e;
       }
 
       let exportPayload = {
@@ -2512,7 +2538,7 @@ export default function App() {
           deletedRecords: loadDeletedRecordsLog(),
           disasterEvents: merged.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
         };
-        exportNeeded = merged.hasLocalChanges;
+        exportNeeded = merged.hasLocalChanges || remoteData.needsFiscalRetentionSync === true;
         recordHistory(`Googleシートと日時照会同期完了: ${merged.summaryMessage}`);
       }
 
@@ -3421,29 +3447,11 @@ export default function App() {
     setActiveTab('reservations');
   };
 
-  const handleUpdateService = (service: MemorialService) => {
-    recordHistory(`法要「${service.notes || service.id}」を更新`);
-    const existing = memorialServices.find((s) => s.id === service.id);
-    const auditedService = withUpdateAudit(service, existing);
-    const diffs = existing ? computeEntityDiff('memorialService', existing, auditedService) : undefined;
+  const updateServiceTodos = (service: MemorialService, existing?: MemorialService) => {
     const { operator, deviceInfo } = getCurrentOperatorInfo();
-    recordOperationLog(
-      auditedService.id,
-      'memorialService',
-      'update',
-      formatServiceLogDesc(auditedService, 'update'),
-      auditedService.templeId,
-      operator,
-      deviceInfo,
-      diffs,
-      existing,
-      auditedService
-    );
-    setMemorialServices((prev) => prev.map((s) => (s.id === service.id ? auditedService : s)));
-
     // 塔婆ToDoの自動更新/同期
-    const currentTodos = (templeTodos && templeTodos.length > 0) ? templeTodos : (syncStateRef.current.templeTodos || []);
-    const newTodos = syncTobaTodosList(auditedService, currentTodos, {
+    const currentTodos = syncStateRef.current.templeTodos;
+    const newTodos = syncTobaTodosList(service, currentTodos, {
       pastRecords,
       temples,
       activeTempleId,
@@ -3466,6 +3474,29 @@ export default function App() {
     setTempleTodos(newTodos);
     saveJsonState('temple_todos', newTodos);
     syncStateRef.current.templeTodos = newTodos;
+  };
+
+  const handleUpdateService = (service: MemorialService) => {
+    recordHistory(`法要「${service.notes || service.id}」を更新`);
+    const existing = memorialServices.find((s) => s.id === service.id);
+    const auditedService = withUpdateAudit(service, existing);
+    const diffs = existing ? computeEntityDiff('memorialService', existing, auditedService) : undefined;
+    const { operator, deviceInfo } = getCurrentOperatorInfo();
+    recordOperationLog(
+      auditedService.id,
+      'memorialService',
+      'update',
+      formatServiceLogDesc(auditedService, 'update'),
+      auditedService.templeId,
+      operator,
+      deviceInfo,
+      diffs,
+      existing,
+      auditedService
+    );
+    setMemorialServices((prev) => prev.map((s) => (s.id === service.id ? auditedService : s)));
+
+    updateServiceTodos(auditedService, existing);
   };
 
   const handleDeleteService = (id: string) => {
@@ -3897,6 +3928,15 @@ export default function App() {
   // Handler: 監査ログからの差分復旧・レコード復元
   const handleRestoreFromLog = (entry: DeletedRecordEntry, fieldKey?: string): { success: boolean; message: string } => {
     const { entityType, id, actionType, beforeData, diffs } = entry;
+    // Publish the exact restored snapshot before the immediate async export.
+    const publish = (key: 'households' | 'pastRecords' | 'transactions' | 'memorialServices' | 'templeTodos', update: (items: any[]) => any[]) => {
+      const next = update(syncStateRef.current[key]);
+      syncStateRef.current = { ...syncStateRef.current, [key]: next };
+      const setters = { households: setHouseholds, pastRecords: setPastRecords, transactions: setTransactions, memorialServices: setMemorialServices, templeTodos: setTempleTodos };
+      setters[key](next);
+      const keys = { households: 'temple_households', pastRecords: 'temple_past_records', transactions: 'temple_transactions', memorialServices: 'temple_memorial_services', templeTodos: 'temple_todos' };
+      saveJsonState(keys[key], next);
+    };
     const { operator, deviceInfo } = getCurrentOperatorInfo();
 
     // 1. 削除されたレコードの復旧
@@ -3909,7 +3949,7 @@ export default function App() {
       switch (entityType) {
         case 'household': {
           const audited = withUpdateAudit(cleanBefore);
-          setHouseholds((prev) => {
+          publish('households', (prev) => {
             if (prev.some((h) => h.id === audited.id)) {
               return prev.map((h) => (h.id === audited.id ? audited : h));
             }
@@ -3924,12 +3964,12 @@ export default function App() {
             operator,
             deviceInfo
           );
-          cleanWriteSpecificTablesToGoogleSheets(['檀家・世帯', '操作・削除履歴']).catch(() => {});
+          cleanWriteSpecificTablesToGoogleSheets(['檀家名簿', '家族構成', '操作・削除履歴']).catch(() => {});
           return { success: true, message: `世帯「${audited.familyHead || audited.id}」を復元しました。` };
         }
         case 'pastRecord': {
           const audited = withUpdateAudit(cleanBefore);
-          setPastRecords((prev) => {
+          publish('pastRecords', (prev) => {
             if (prev.some((r) => r.id === audited.id)) {
               return prev.map((r) => (r.id === audited.id ? audited : r));
             }
@@ -3949,7 +3989,7 @@ export default function App() {
         }
         case 'transaction': {
           const audited = withUpdateAudit(cleanBefore);
-          setTransactions((prev) => {
+          publish('transactions', (prev) => {
             if (prev.some((t) => t.id === audited.id)) {
               return prev.map((t) => (t.id === audited.id ? audited : t));
             }
@@ -3968,8 +4008,10 @@ export default function App() {
           return { success: true, message: `出納記録を復元しました。` };
         }
         case 'memorialService': {
+          const previous = syncStateRef.current.memorialServices.find(service => service.id === id);
           const audited = withUpdateAudit(cleanBefore);
-          setMemorialServices((prev) => {
+          updateServiceTodos(audited, previous);
+          publish('memorialServices', (prev) => {
             if (prev.some((s) => s.id === audited.id)) {
               return prev.map((s) => (s.id === audited.id ? audited : s));
             }
@@ -3984,12 +4026,12 @@ export default function App() {
             operator,
             deviceInfo
           );
-          cleanWriteSpecificTablesToGoogleSheets(['法要予約', '操作・削除履歴']).catch(() => {});
+          cleanWriteSpecificTablesToGoogleSheets(['法事予約', '寺院ToDo', '操作・削除履歴']).catch(() => {});
           return { success: true, message: `法要予約を復元しました。` };
         }
         case 'templeTodo': {
           const audited = withUpdateAudit(cleanBefore);
-          setTempleTodos((prev) => {
+          publish('templeTodos', (prev) => {
             if (prev.some((t) => t.id === audited.id)) {
               return prev.map((t) => (t.id === audited.id ? audited : t));
             }
@@ -4020,7 +4062,7 @@ export default function App() {
           if (!current) {
             return { success: false, message: 'このレコードは既に削除されているため取り消せません。' };
           }
-          setHouseholds((prev) => prev.filter((h) => h.id !== id));
+          publish('households', (prev) => prev.filter((h) => h.id !== id));
           recordOperationLog(
             id,
             'household',
@@ -4032,7 +4074,7 @@ export default function App() {
             undefined,
             current
           );
-          cleanWriteSpecificTablesToGoogleSheets(['檀家・世帯', '操作・削除履歴']).catch(() => {});
+          cleanWriteSpecificTablesToGoogleSheets(['檀家名簿', '家族構成', '操作・削除履歴']).catch(() => {});
           return { success: true, message: `世帯「${current.familyHead || id}」の新規作成を取り消しました。` };
         }
         case 'pastRecord': {
@@ -4040,7 +4082,7 @@ export default function App() {
           if (!current) {
             return { success: false, message: 'このレコードは既に削除されているため取り消せません。' };
           }
-          setPastRecords((prev) => prev.filter((r) => r.id !== id));
+          publish('pastRecords', (prev) => prev.filter((r) => r.id !== id));
           recordOperationLog(
             id,
             'pastRecord',
@@ -4060,7 +4102,7 @@ export default function App() {
           if (!current) {
             return { success: false, message: 'このレコードは既に削除されているため取り消せません。' };
           }
-          setTransactions((prev) => prev.filter((t) => t.id !== id));
+          publish('transactions', (prev) => prev.filter((t) => t.id !== id));
           recordOperationLog(
             id,
             'transaction',
@@ -4080,7 +4122,8 @@ export default function App() {
           if (!current) {
             return { success: false, message: 'このレコードは既に削除されているため取り消せません。' };
           }
-          setMemorialServices((prev) => prev.filter((s) => s.id !== id));
+          updateServiceTodos({ ...current, tobaCount: 0, tobaItems: [] }, current);
+          publish('memorialServices', (prev) => prev.filter((s) => s.id !== id));
           recordOperationLog(
             id,
             'memorialService',
@@ -4092,7 +4135,7 @@ export default function App() {
             undefined,
             current
           );
-          cleanWriteSpecificTablesToGoogleSheets(['法要予約', '操作・削除履歴']).catch(() => {});
+          cleanWriteSpecificTablesToGoogleSheets(['法事予約', '寺院ToDo', '操作・削除履歴']).catch(() => {});
           return { success: true, message: `新規作成された法要予約の登録を取り消しました。` };
         }
         case 'templeTodo': {
@@ -4100,7 +4143,7 @@ export default function App() {
           if (!current) {
             return { success: false, message: 'このレコードは既に削除されているため取り消せません。' };
           }
-          setTempleTodos((prev) => prev.filter((t) => t.id !== id));
+          publish('templeTodos', (prev) => prev.filter((t) => t.id !== id));
           recordOperationLog(
             id,
             'templeTodo',
@@ -4158,7 +4201,7 @@ export default function App() {
         }
 
         const audited = withUpdateAudit(updated, current);
-        setHouseholds((prev) => prev.map((h) => (h.id === id ? audited : h)));
+        publish('households', (prev) => prev.map((h) => (h.id === id ? audited : h)));
 
         recordOperationLog(
           id,
@@ -4169,7 +4212,7 @@ export default function App() {
           operator,
           deviceInfo
         );
-        cleanWriteSpecificTablesToGoogleSheets(['檀家・世帯', '操作・削除履歴']).catch(() => {});
+        cleanWriteSpecificTablesToGoogleSheets(['檀家名簿', '家族構成', '操作・削除履歴']).catch(() => {});
         return { success: true, message: `世帯「${audited.familyHead || id}」の［${restoredLabels.join(', ')}］を復元しました。` };
       }
 
@@ -4209,7 +4252,7 @@ export default function App() {
         }
 
         const audited = withUpdateAudit(updated, current);
-        setPastRecords((prev) => prev.map((r) => (r.id === id ? audited : r)));
+        publish('pastRecords', (prev) => prev.map((r) => (r.id === id ? audited : r)));
 
         recordOperationLog(
           id,
@@ -4260,7 +4303,7 @@ export default function App() {
         }
 
         const audited = withUpdateAudit(updated, current);
-        setTransactions((prev) => prev.map((t) => (t.id === id ? audited : t)));
+        publish('transactions', (prev) => prev.map((t) => (t.id === id ? audited : t)));
 
         recordOperationLog(
           id,
@@ -4311,7 +4354,8 @@ export default function App() {
         }
 
         const audited = withUpdateAudit(updated, current);
-        setMemorialServices((prev) => prev.map((s) => (s.id === id ? audited : s)));
+        updateServiceTodos(audited, current);
+        publish('memorialServices', (prev) => prev.map((s) => (s.id === id ? audited : s)));
 
         recordOperationLog(
           id,
@@ -4322,7 +4366,7 @@ export default function App() {
           operator,
           deviceInfo
         );
-        cleanWriteSpecificTablesToGoogleSheets(['法要予約', '操作・削除履歴']).catch(() => {});
+        cleanWriteSpecificTablesToGoogleSheets(['法事予約', '寺院ToDo', '操作・削除履歴']).catch(() => {});
         return { success: true, message: `法要予約の［${restoredLabels.join(', ')}］を復元しました。` };
       }
 
@@ -4362,7 +4406,7 @@ export default function App() {
         }
 
         const audited = withUpdateAudit(updated, current);
-        setTempleTodos((prev) => prev.map((t) => (t.id === id ? audited : t)));
+        publish('templeTodos', (prev) => prev.map((t) => (t.id === id ? audited : t)));
 
         recordOperationLog(
           id,

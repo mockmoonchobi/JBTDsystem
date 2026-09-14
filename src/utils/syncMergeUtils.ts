@@ -681,7 +681,7 @@ export function mergeDatasetsWithAuditPriority(
   const deletedServiceIds = new Set<string>();
   mergedDeletedRecords.forEach((entry) => {
     if (entry.entityType === 'memorialService' && (entry.actionType === 'delete' || entry.actionType === 'batch_delete')) {
-      if (entry.id) deletedServiceIds.add(entry.id.trim());
+      if (entry.id && deletedMap.has(entry.id.trim()) && !msMerge.merged.some(service => service.id === entry.id.trim())) deletedServiceIds.add(entry.id.trim());
     }
   });
 
@@ -691,7 +691,7 @@ export function mergeDatasetsWithAuditPriority(
 
   tdMerge.merged.forEach((t) => {
     const relId = (t.relatedServiceId || (t as any).serviceId || '').trim();
-    const isServiceDeleted = relId && (deletedServiceIds.has(relId) || deletedMap.has(relId));
+    const isServiceDeleted = relId && deletedServiceIds.has(relId);
     if (isServiceDeleted) {
       orphanedTodosRemovedCount++;
       tdMerge.suppressedCount++;
