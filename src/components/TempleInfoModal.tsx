@@ -1,3 +1,4 @@
+import { isDanmuPriest } from '../utils/priestColorUtils';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
@@ -104,7 +105,7 @@ const reconcilePriestsWithTemples = (
         notes: prevAuto?.notes || (isMain ? '本寺代表役員・住職' : '兼務寺住職'),
         isAutoChief: true,
         isMainChief: isMain,
-        isDanmu: prevAuto?.isDanmu !== undefined ? prevAuto.isDanmu : true,
+        isDanmu: isDanmuPriest(prevAuto),
         color: prevAuto?.color || getPriestColor(prevAuto?.id || `priest-chief-${templeId}`, existingPriests),
       };
     });
@@ -609,7 +610,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
       notes: editingPriest.notes?.trim() || '',
       isAutoChief: Boolean(editingPriest.isAutoChief),
       isMainChief: Boolean(editingPriest.isMainChief),
-      isDanmu: editingPriest.isDanmu !== undefined ? editingPriest.isDanmu : true,
+      isDanmu: isDanmuPriest(editingPriest),
       color: editingPriest.color || getPriestColor(editingPriest.id, priestList),
     };
 
@@ -1846,7 +1847,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                                       自動連動
                                     </span>
                                   )}
-                                  {priest.isDanmu !== false ? (
+                                  {isDanmuPriest(priest) ? (
                                     <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-2xs bg-emerald-50 text-emerald-800 border border-emerald-300">
                                       檀務担当
                                     </span>
@@ -2165,14 +2166,14 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                 <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
-                    checked={editingPriest.isDanmu !== false}
+                    checked={isDanmuPriest(editingPriest)}
                     onChange={(e) => setEditingPriest({ ...editingPriest, isDanmu: e.target.checked })}
                     className="mt-0.5 w-4 h-4 text-[#8C2D19] border-[#D1CEC7] rounded-2xs focus:ring-[#8C2D19] cursor-pointer"
                   />
                   <div>
                     <span className="font-bold text-[#1A1A1A] text-xs flex items-center gap-1.5">
                       <span>檀務担当僧侶（法事・葬儀等の檀務を担当）</span>
-                      {editingPriest.isDanmu !== false ? (
+                      {isDanmuPriest(editingPriest) ? (
                         <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-2xs font-bold">
                           担当対象
                         </span>

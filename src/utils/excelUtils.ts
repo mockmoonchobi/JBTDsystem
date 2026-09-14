@@ -1,3 +1,4 @@
+import { isDanmuPriest, parseDanmuFlag } from './priestColorUtils';
 import * as XLSX from 'xlsx';
 import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData, DeletedRecordEntry, DisasterMemorialEvent } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, INITIAL_TEMPLE_INFO } from '../data/initialData';
@@ -684,7 +685,7 @@ export function exportToExcel(
     p.name || '',
     p.furigana || '',
     p.role || '僧侶',
-    p.isDanmuAssigned !== false ? '担当' : '対象外',
+    isDanmuPriest(p) ? '担当' : '対象外',
     p.color || '',
     p.templeName || getTempleLabel(p.templeId),
     p.phone || '',
@@ -2165,7 +2166,7 @@ export async function importFromExcel(
     const nameIdx = findColIdx(priestHeaders, ['僧侶名', '氏名', '名前', '僧名', 'name']);
     const furiIdx = findColIdx(priestHeaders, ['フリガナ', 'ふりがな', 'カナ', 'furigana']);
     const roleIdx = findColIdx(priestHeaders, ['役職・区分', '役職', '区分', '立場', 'role']);
-    const danmuIdx = findColIdx(priestHeaders, ['檀務担当', '檀務担当僧侶', '檀務', 'isDanmuAssigned']);
+    const danmuIdx = findColIdx(priestHeaders, ['檀務担当', '檀務担当僧侶', '檀務', 'isDanmu', 'isDanmuAssigned']);
     const colorIdx = findColIdx(priestHeaders, ['表示色', 'カラー', '色', 'color']);
     const templeNameIdx = findColIdx(priestHeaders, ['所属寺院名', '寺院名', '所属']);
     const phoneIdx = findColIdx(priestHeaders, ['電話番号', '電話', '連絡先', 'phone', 'tel']);
@@ -2182,7 +2183,7 @@ export async function importFromExcel(
       const furigana = furiIdx !== -1 ? normalizeFurigana(String(row[furiIdx] || '')) : '';
       const role = roleIdx !== -1 && row[roleIdx] ? String(row[roleIdx]).trim() : '僧侶';
       const danmuStr = danmuIdx !== -1 ? String(row[danmuIdx] || '').trim() : '';
-      const isDanmuAssigned = danmuStr ? (danmuStr.includes('担当') || danmuStr.includes('true') || danmuStr === '1' || danmuStr === '○' || danmuStr === '可') : true;
+      const isDanmuAssigned = parseDanmuFlag(danmuStr);
       const color = colorIdx !== -1 && row[colorIdx] ? String(row[colorIdx]).trim() : undefined;
       const templeName = templeNameIdx !== -1 ? String(row[templeNameIdx] || '').trim() : '';
       const phone = phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '';
@@ -2196,6 +2197,7 @@ export async function importFromExcel(
         name,
         furigana,
         role,
+        isDanmu: isDanmuAssigned,
         isDanmuAssigned,
         color,
         templeId: rawTempleId || (temples[0]?.id || 'temple-main'),

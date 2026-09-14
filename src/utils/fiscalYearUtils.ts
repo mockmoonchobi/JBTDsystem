@@ -1,4 +1,4 @@
-import { TempleInfo, Transaction } from '../types';
+import { TempleInfo, TempleProfile, Transaction } from '../types';
 import { normalizeDateInput, getJapaneseEra } from './memorialCalculator';
 
 export { getJapaneseEra };
@@ -74,7 +74,7 @@ export function getFiscalYearInfo(fyYear: number, templeInfo?: TempleInfo): Fisc
   const startDateStr = `${fyYear}/${startMonthPadded}/${startDayPadded}`;
   const endDateStr = `${endDate.getFullYear()}/${endMonthPadded}/${endDayPadded}`;
 
-  const currentFY = getFiscalYearOfDate(new Date().toISOString().slice(0, 10), templeInfo);
+  const currentFY = getFiscalYearOfDate(getJapanDateString(), templeInfo);
   const isCurrentFY = fyYear === currentFY;
 
   const eraStr = getJapaneseEra(fyYear);
@@ -98,7 +98,7 @@ export function getFiscalYearInfo(fyYear: number, templeInfo?: TempleInfo): Fisc
  */
 export function getAvailableFiscalYears(transactions: Transaction[], templeInfo?: TempleInfo): FiscalYearInfo[] {
   const fySet = new Set<number>();
-  const currentFY = getFiscalYearOfDate(new Date().toISOString().slice(0, 10), templeInfo);
+  const currentFY = getFiscalYearOfDate(getJapanDateString(), templeInfo);
   fySet.add(currentFY);
 
   transactions.forEach((tx) => {
@@ -232,7 +232,7 @@ export function partitionTransactionsByFiscalRetention(
   currentFY: number;
   priorFY: number;
 } {
-  const currentFY = getFiscalYearOfDate(refDate.toISOString().slice(0, 10), templeInfo);
+  const currentFY = getFiscalYearOfDate(getJapanDateString(refDate), templeInfo);
   const priorFY = currentFY - 1;
 
   const activeTransactions: Transaction[] = [];
@@ -261,4 +261,33 @@ export function partitionTransactionsByFiscalRetention(
     currentFY,
     priorFY,
   };
+}
+
+
+/** Accounting uses Japan's calendar, independently of the device time zone. */
+export function getJapanDateString(date: Date = new Date()): string {
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+export function getFiscalRetentionKey(templeInfo?: TempleInfo, temples: TempleProfile[] = [], date = new Date()): string {
+  const profiles = temples.length ? temples : [{ ...templeInfo, id: templeInfo?.id || 'temple-main' }];
+  return JSON.stringify(profiles.map(temple => [temple.id, temple.fiscalYearStartMonth ?? 4,
+    temple.fiscalYearStartDay ?? 1, getFiscalYearOfDate(getJapanDateString(date), temple as TempleInfo)]).sort((a,b) => String(a[0]).localeCompare(String(b[0]))));
+}
+
+/** Mixed-temple workbooks retain two fiscal years for each owning temple. */
+export function partitionTransactionsByTempleFiscalRetention(
+  transactions: Transaction[], templeInfo?: TempleInfo, temples: TempleProfile[] = [], date = new Date()
+): { activeTransactions: Transaction[]; archiveTransactions: Transaction[] } {
+  const profiles = new Map(temples.map(temple => [temple.id, temple]));
+  const fallback = temples.find(temple => temple.isMain) || templeInfo;
+  const activeTransactions: Transaction[] = [], archiveTransactions: Transaction[] = [];
+  const today = getJapanDateString(date);
+  for (const tx of transactions) {
+    const config = profiles.get(tx.templeId) || fallback;
+    const priorFY = getFiscalYearOfDate(today, config) - 1;
+    if (!tx.date || getFiscalYearOfDate(tx.date, config) >= priorFY) activeTransactions.push(tx);
+    else archiveTransactions.push(tx);
+  }
+  return { activeTransactions, archiveTransactions };
 }

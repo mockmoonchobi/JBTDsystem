@@ -329,11 +329,13 @@ export function parseGoogleSheetDiffCell(rawStr?: string | null): {
   const trimmed = String(rawStr).trim();
   if (!trimmed) return {};
 
-  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
+  // The final JSON block starts on its own line. Summary text may itself
+  // contain braces and newlines, so never parse from its first opening brace.
+  const starts = [...trimmed.matchAll(/(?:^|\n)\s*(?=\{)/g)].map(match => match.index! + match[0].length);
+  for (const start of starts.reverse()) {
     try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed && typeof parsed === 'object') {
+      const parsed = JSON.parse(trimmed.slice(start));
+      if (parsed && typeof parsed === 'object' && ('diffs' in parsed || 'beforeData' in parsed || 'afterData' in parsed)) {
         return {
           diffs: Array.isArray(parsed.diffs) ? parsed.diffs : undefined,
           beforeData: parsed.beforeData || undefined,
