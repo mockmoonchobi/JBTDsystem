@@ -30,6 +30,7 @@ interface MobileAppProps {
   onSelectTemple?: (templeId: string) => void;
   households: Household[];
   allHouseholds?: Household[];
+  transactions?: Transaction[];
   pastRecords: PastRecord[];
   allPastRecords?: PastRecord[];
   memorialServices: MemorialService[];
@@ -61,6 +62,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   onSelectTemple,
   households = [],
   allHouseholds,
+  transactions = [],
   pastRecords = [],
   allPastRecords,
   memorialServices = [],
@@ -173,6 +175,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       <main className="flex-1 w-full max-w-lg mx-auto overflow-x-hidden">
         {activeTab === 'households' && (
           <MobileHouseholdView
+            transactions={transactions}
             households={households}
             pastRecords={effectiveAllPastRecords}
             memorialServices={memorialServices}
