@@ -928,9 +928,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                       <div className="flex items-center justify-between text-[16.5px] print:text-[14.25px] font-bold text-[#666666] font-serif pr-1">
                         <span>施主氏名 / 為書き</span>
                         <div className="flex items-center space-x-2.5 print:space-x-2 text-right">
-                          <span className="w-12 print:w-11 text-center break-words">{col1Label}</span>
-                          <span className="w-12 print:w-11 text-center break-words">{col2Label}</span>
-                          <span className="w-12 print:w-11 text-center break-words">{col3Label}</span>
+                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col1Label}</span>
+                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col2Label}</span>
+                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col3Label}</span>
                           <span className="w-5 print:w-5 text-center">受付</span>
                         </div>
                       </div>
@@ -939,9 +939,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                       <div className="hidden md:flex print:flex items-center justify-between text-[16.5px] print:text-[14.25px] font-bold text-[#666666] font-serif pr-1">
                         <span>施主氏名 / 為書き</span>
                         <div className="flex items-center space-x-2.5 print:space-x-2 text-right">
-                          <span className="w-12 print:w-11 text-center break-words">{col1Label}</span>
-                          <span className="w-12 print:w-11 text-center break-words">{col2Label}</span>
-                          <span className="w-12 print:w-11 text-center break-words">{col3Label}</span>
+                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col1Label}</span>
+                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col2Label}</span>
+                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col3Label}</span>
                           <span className="w-5 print:w-5 text-center">受付</span>
                         </div>
                       </div>
@@ -1099,9 +1099,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                     <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[11%] font-bold print:text-[15px]">地区 / 世帯</th>
                     <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] font-bold w-[18%] print:text-[15px]">為書き</th>
                     <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[10%] font-bold print:text-[15px]">新盆 / 棚経</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold print:text-[15px] break-words">{col1Label}</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold print:text-[15px] break-words">{col2Label}</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold print:text-[15px] break-words">{col3Label}</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold text-[10px] print:text-[10px] whitespace-nowrap">{col1Label}</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold text-[10px] print:text-[10px] whitespace-nowrap">{col2Label}</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold text-[10px] print:text-[10px] whitespace-nowrap">{col3Label}</th>
                     <th className="p-2 print:py-1 print:px-1 border-[#D1CEC7] text-center w-[4%] font-bold print:text-[15px]">受付</th>
                   </tr>
                 </thead>
