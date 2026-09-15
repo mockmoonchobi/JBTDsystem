@@ -1683,8 +1683,10 @@ export default function App() {
   // Clean write local terminal data into Google Sheets (deleting existing file, creating brand new spreadsheet, and writing local data)
   const cleanWriteToGoogleSheets = useCallback(async (token: string, explicitSheetId?: string) => {
     if (isSyncInProgressRef.current || isCleanWritingRef.current || isImportingRef.current) throw new Error('別の同期処理が実行中です。');
-    const connectedId = explicitSheetId || loadJsonState<{ id: string }>('temple_google_sheet_info', null)?.id;
-    writeSafetyRef.current.assertCanWrite(connectedId || '');
+    // This handler is reached only through the explicit initialization confirmation.
+    // Recovery from Excel must work even when the old sheet cannot be read.
+    // Keep ordinary saves blocked until this separate operation fully succeeds.
+    writeSafetyRef.current.block();
     isCleanWritingRef.current = true;
     isImportingRef.current = true; // prevent auto-sync debounce trigger
     setSyncStatus('syncing');
