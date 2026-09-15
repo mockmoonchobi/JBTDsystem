@@ -1,3 +1,4 @@
+import { readAllSheetData } from '../utils/sheetsReadSafety';
 import { isDanmuPriest, parseDanmuFlag } from '../utils/priestColorUtils';
 import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
 import { SheetsExportCache } from '../utils/sheetsExportCache';
@@ -2029,6 +2030,7 @@ export async function importFromSheets(
     targetTempleId?: string | 'ALL';
     defaultTempleId?: string;
     priests?: Priest[];
+    requireCompleteSchema?: boolean;
   }
 ): Promise<SheetsImportResult> {
   // The remote workbook may have changed on another device or directly in Sheets.
@@ -2052,145 +2054,20 @@ export async function importFromSheets(
     throw new Error('スプレッドシート内にシートが見つかりませんでした。');
   }
 
-  // 2. Fetch all sheet data safely:
-  // Use batchGet for normal-sized sheets (< 2,000 rows) in one round trip.
-  // For larger sheets, chunk by row ranges (2,000 rows per request).
-  const sheetDataMap = new Map<string, { headers: string[]; rows: string[][] }>();
-  const CHUNK_ROW_SIZE = 2000;
-  const failedReadSheets = new Set<string>();
-
-  const normalSheets = rawSheets.filter((s: any) => {
-    const title = s.properties?.title;
-    const rCount = s.properties?.gridProperties?.rowCount || 1000;
-    return Boolean(title) && rCount <= CHUNK_ROW_SIZE;
+  if (rawSheets.some(sheet => !sheet.properties?.title || !Number.isInteger(sheet.properties?.gridProperties?.rowCount) || sheet.properties.gridProperties.rowCount < 1)) {
+    throw new Error('Googleシートの構成情報が不完全です。読み込みを中止しました。');
+  }
+  const sheetDataMap = await readAllSheetData(rawSheets, async ranges => {
+    const query = ranges.map(range => 'ranges=' + encodeURIComponent(range)).join('&');
+    const url = 'https://sheets.googleapis.com/v4/spreadsheets/' + spreadsheetId + '/values:batchGet?' + query + '&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING';
+    const response = await fetchWithRetry(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if (!response.ok) {
+      throw new Error('Googleシートを完全に読み取れませんでした（HTTP ' + response.status + '）。書き込みを停止しました。');
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.valueRanges)) throw new Error('Googleシートの読込応答が不完全です。');
+    return data.valueRanges;
   });
-
-  if (normalSheets.length > 0) {
-    try {
-      const rangesParam = normalSheets
-        .map((s: any) => `ranges=${encodeURIComponent(`'${s.properties.title.replace(/'/g, "''")}'`)}`)
-        .join('&');
-      const batchGetUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?${rangesParam}&valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
-      const batchRes = await fetchWithRetry(batchGetUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }, 3, 600, 35000);
-
-      if (batchRes.ok) {
-        const batchData = await batchRes.json();
-        const valueRanges: any[] = batchData.valueRanges || [];
-        for (let i = 0; i < normalSheets.length; i++) {
-          const sheetTitle = normalSheets[i]?.properties?.title;
-          const vr = valueRanges[i];
-          if (!sheetTitle) continue;
-          const values: string[][] = vr?.values || [];
-          if (values.length > 0) {
-            const headers = (values[0] || []).map((h) => String(h || '').trim());
-            const rows = values.slice(1);
-            sheetDataMap.set(sheetTitle, { headers, rows });
-          } else {
-            sheetDataMap.set(sheetTitle, { headers: [], rows: [] });
-          }
-        }
-      }
-    } catch (batchErr) {
-      console.warn('Fast batchGet failed, falling back to per-sheet fetching:', batchErr);
-    }
-  }
-
-  for (const sheetObj of rawSheets) {
-    const title = sheetObj.properties?.title;
-    if (!title) continue;
-    if (sheetDataMap.has(title)) continue;
-
-    const rowCount = sheetObj.properties?.gridProperties?.rowCount || 1000;
-    const escapedTitle = title.replace(/'/g, "''");
-
-    // If sheet has 2,000 rows or fewer and wasn't populated by batchGet, fetch whole sheet in one request
-    if (rowCount <= CHUNK_ROW_SIZE) {
-      try {
-        const singleUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${escapedTitle}'`)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
-        const singleRes = await fetchWithRetry(singleUrl, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        }, 3, 600, 35000);
-        if (singleRes.ok) {
-          const data = await singleRes.json();
-          const values: string[][] = data.values || [];
-          if (values.length > 0) {
-            const headers = (values[0] || []).map((h) => String(h || '').trim());
-            const rows = values.slice(1);
-            sheetDataMap.set(title, { headers, rows });
-          } else {
-            sheetDataMap.set(title, { headers: [], rows: [] });
-          }
-        }
-      } catch (err) {
-        failedReadSheets.add(title);
-        console.warn(`Failed to fetch sheet "${title}":`, err);
-      }
-      if (!sheetDataMap.has(title)) failedReadSheets.add(title);
-      continue;
-    }
-
-    // Large sheet with > 2,000 rows: fetch in 2,000-row chunks until empty or rowCount reached
-    let allSheetHeaders: string[] = [];
-    const allSheetRows: string[][] = [];
-    let startRow = 1;
-    let keepFetching = true;
-
-    while (keepFetching && startRow <= rowCount + 1000) {
-      const endRow = startRow + CHUNK_ROW_SIZE - 1;
-      const rangeStr = `'${escapedTitle}'!A${startRow}:ZZ${endRow}`;
-      const chunkUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(rangeStr)}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
-
-      try {
-        const chunkRes = await fetchWithRetry(chunkUrl, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-
-        if (chunkRes.ok) {
-          const chunkData = await chunkRes.json();
-          const chunkValues: string[][] = chunkData.values || [];
-
-          if (chunkValues.length === 0) {
-            // No more data in subsequent chunks
-            keepFetching = false;
-            break;
-          }
-
-          if (startRow === 1) {
-            // First chunk contains headers
-            allSheetHeaders = (chunkValues[0] || []).map((h) => String(h || '').trim());
-            const dataRows = chunkValues.slice(1);
-            if (dataRows.length > 0) {
-              allSheetRows.push(...dataRows);
-            }
-            // If fewer rows returned than requested range, reached end of data
-            if (chunkValues.length < CHUNK_ROW_SIZE) {
-              keepFetching = false;
-            }
-          } else {
-            // Subsequent chunks contain only data rows
-            allSheetRows.push(...chunkValues);
-            if (chunkValues.length < CHUNK_ROW_SIZE) {
-              keepFetching = false;
-            }
-          }
-
-          startRow += CHUNK_ROW_SIZE;
-        } else {
-          failedReadSheets.add(title);
-          console.warn(`Failed to fetch chunk ${rangeStr} for sheet "${title}" (HTTP ${chunkRes.status})`);
-          keepFetching = false;
-        }
-      } catch (chunkErr) {
-        failedReadSheets.add(title);
-        console.warn(`Exception fetching chunk ${rangeStr} for sheet "${title}":`, chunkErr);
-        keepFetching = false;
-      }
-    }
-
-    sheetDataMap.set(title, { headers: allSheetHeaders, rows: allSheetRows });
-  }
 
   const getSheetDataByName = (sheetName?: string): { headers: string[]; rows: string[][] } => {
     if (!sheetName) return { headers: [], rows: [] };
@@ -3233,8 +3110,11 @@ export async function importFromSheets(
     ['勘定科目', '金額', '収支区分', '日付', '取引日']
   );
 
-  if ([txSheetName, archiveTxSheetName].some(name => name && (failedReadSheets.has(name) || !sheetDataMap.has(name)))) {
-    throw new Error('出納帳または出納アーカイブを完全に読み取れませんでした。データ保護のため同期を中止しました。');
+
+  if (options?.requireCompleteSchema) {
+    const required = [[templeSheetName || templeInfoSheetName, '寺院情報'], [householdSheetName, '檀家名簿'], [pastSheetName, '過去帳'], [txSheetName, '出納・会計']];
+    const missing = required.filter(([name]) => !name || getSheetDataByName(name).headers.length === 0).map(([, label]) => label);
+    if (missing.length || !templeInfo?.name) throw new Error('必須シートまたは寺院情報がありません。読み込みを中止しました：' + missing.join('、'));
   }
   const transactions: Transaction[] = [];
   const seenTxIds = new Set<string>();

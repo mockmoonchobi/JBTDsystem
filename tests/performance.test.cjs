@@ -12,6 +12,7 @@ const { sortHouseholds, getHouseholdNiibonStatus, compareHouseholdsGojuon } = re
 const { SheetsExportCache } = require('../src/utils/sheetsExportCache.ts');
 const { exportToSheets, importFromSheets } = require('../src/lib/googleSheets.ts');
 const { EMPTY_TEMPLE_INFO, EMPTY_MASTER_OPTIONS } = require('../src/data/initialData.ts');
+const { SheetsWriteSafety } = require('../src/utils/sheetsReadSafety.ts');
 
 test('niibon sort retains the prior ordering for both seasons and directions without full-table comparator scans', () => {
   const year = new Date().getFullYear();
@@ -181,9 +182,12 @@ test('auto sync exports the current snapshot, preserves empty deletions, and wak
   assert(dependencies.includes('isSyncSettled'));
   const state = { templeInfo: {}, temples: [], households: [{ id: 'H1' }], pastRecords: [], memorialServices: [], templeTodos: [], transactions: [], masterOptions: {}, noticeTemplates: {}, templeMasterOptionsMap: {}, priests: [], deletedRecords: [], disasterEvents: [] };
   const timers = [], exports = [], statuses = [];
+  const safety = new SheetsWriteSafety();
+  safety.accept('sheet', 'verified test fixture');
   let finish;
   const context = {
     ...state, isInitialLoaded: true,
+    writeSafetyRef: { current: safety }, getSheetsPayload: value => value,
     syncStateRef: { current: state }, isImportingRef: { current: false }, isCleanWritingRef: { current: false }, isSyncInProgressRef: { current: false }, lastSyncedSignatureRef: { current: '' },
     getAccessToken: async () => 'token', safeStorage: { getItem: () => '{"id":"sheet"}', setItem() {} },
     getSavedBatchAccountingData: () => undefined, getSavedDisasterMemorialEvents: () => [], loadDeletedRecordsLog: () => [], computePayloadSignature: JSON.stringify,
