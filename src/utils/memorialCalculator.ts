@@ -1,3 +1,4 @@
+import { normalizeNoticeTemplates } from './noticeTemplateUtils';
 import { MemorialMilestone, MemorialMilestoneType, Household, MasterOptions, PastRecord, Transaction } from '../types';
 import { safeStorage, saveJsonState, loadJsonState } from './storageUtils';
 import { isHouseholdAppliedForToba, isHouseholdSponsorAppliedForToba, toggleHouseholdSponsorTobaApplication, getHouseholdSponsorTobaApplication } from './tobaUtils';
@@ -1337,18 +1338,12 @@ export const TEMPLATES_LIST_STORAGE_KEY = 'temple_notice_templates_list_v2';
 
 export function getAllSavedNoticeTemplates(): NoticeTemplateItem[] {
   const loadedList = loadJsonState<NoticeTemplateItem[] | null>(TEMPLATES_LIST_STORAGE_KEY, null);
-  if (loadedList && Array.isArray(loadedList) && loadedList.length > 0) {
-    // If user has saved templates but none for kaku2_memo, append the default kaku2_memo templates
-    const hasKaku2 = loadedList.some((t) => t.type === 'kaku2_memo');
-    if (!hasKaku2) {
-      const defaultKaku2 = INITIAL_NOTICE_TEMPLATES.filter((t) => t.type === 'kaku2_memo');
-      if (defaultKaku2.length > 0) {
-        const merged = [...loadedList, ...defaultKaku2];
-        saveJsonState(TEMPLATES_LIST_STORAGE_KEY, merged);
-        return merged;
-      }
+  if (Array.isArray(loadedList)) {
+    const normalized = normalizeNoticeTemplates(loadedList);
+    if (JSON.stringify(normalized) !== JSON.stringify(loadedList)) {
+      saveJsonState(TEMPLATES_LIST_STORAGE_KEY, normalized);
     }
-    return loadedList;
+    return normalized;
   }
 
   // Fallback / migrate from v1 if exists
@@ -1363,13 +1358,14 @@ export function getAllSavedNoticeTemplates(): NoticeTemplateItem[] {
       }
       return t;
     });
-    return migrated;
+    return normalizeNoticeTemplates(migrated);
   }
 
-  return INITIAL_NOTICE_TEMPLATES;
+  return normalizeNoticeTemplates(INITIAL_NOTICE_TEMPLATES);
 }
 
 export function saveAllNoticeTemplates(templates: NoticeTemplateItem[]): void {
+  templates = normalizeNoticeTemplates(templates);
   saveJsonState(TEMPLATES_LIST_STORAGE_KEY, templates);
   // Also sync legacy v1 keys for compatibility
   const higanTpl = templates.find((t) => t.category === 'higan' || t.id === 'tpl-higan');

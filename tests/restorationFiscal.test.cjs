@@ -99,6 +99,59 @@ function workbookMock() {
 }
 const exportState=(data,options={})=>exportToSheets('test-token','test-sheet',data.templeInfo,data.households,data.pastRecords,data.memorialServices,data.transactions,data.masterOptions,data.noticeTemplates,data.templeTodos,data.temples,{priests:data.priests,deletedRecords:data.deletedRecords,...options});
 
+test('memo template migration repairs classification and duplicates without losing edited text',()=>{
+  const {normalizeNoticeTemplates,parseNoticeTemplatePaperType}=load('src/utils/noticeTemplateUtils.ts');
+  const legacy={id:'tpl-kaku2-memo-default',name:'【角２宛名メモ】標準',type:'postcard',content:'原文',isDefault:true};
+  const repaired=normalizeNoticeTemplates([legacy,{...legacy},{...legacy,content:'編集済みの文章'},
+    {id:'custom-first',name:'通常のはがき',type:'postcard',content:'本文',isDefault:true}]);
+  assert.equal(repaired.length,3);
+  assert.deepEqual(repaired.map(t=>t.content),['原文','編集済みの文章','本文']);
+  assert.equal(new Set(repaired.map(t=>t.id)).size,3);
+  assert(repaired.every(t=>!t.isDefault));
+  assert.deepEqual(normalizeNoticeTemplates(repaired),repaired);
+  for(const type of ['角２宛名面メモ','角2宛名メモ','kaku2_memo']) assert.equal(parseNoticeTemplatePaperType(type),'kaku2_memo');
+  assert.equal(parseNoticeTemplatePaperType('A4用紙'),'a4');
+});
+
+test('deleted memo templates stay deleted across reloads, including an empty list',()=>{
+  const {saveAllNoticeTemplates,getAllSavedNoticeTemplates}=load('src/utils/memorialCalculator.ts');
+  const before=getAllSavedNoticeTemplates();
+  try {
+    const postcards=[{id:'custom-card',name:'はがき',type:'postcard',content:'本文'}];
+    saveAllNoticeTemplates(postcards);
+    for(let i=0;i<5;i++) assert.equal(getAllSavedNoticeTemplates().length,1);
+    saveAllNoticeTemplates([]);
+    assert.deepEqual(getAllSavedNoticeTemplates(),[]);
+  }finally{saveAllNoticeTemplates(before);}
+});
+
+test('all three paper types survive repeated Sheets and Excel round trips without multiplying',async()=>{
+  const {saveAllNoticeTemplates,getAllSavedNoticeTemplates}=load('src/utils/memorialCalculator.ts');
+  const originalFetch=global.fetch, originalTemplates=getAllSavedNoticeTemplates();
+  const mock=workbookMock();global.fetch=mock.fetch;
+  const XLSX=require('xlsx'),{exportToExcel,importFromExcel}=load('src/utils/excelUtils.ts');
+  const originalWrite=XLSX.writeFile;
+  const templates=[
+    {id:'tpl-kaku2-memo-default',name:'【角２宛名面メモ】標準',type:'kaku2_memo',category:'custom',content:'{施主名}様\n重要書類在中'},
+    {id:'test-card',name:'はがき文',type:'postcard',category:'custom',content:'はがきの文章'},
+    {id:'test-a4',name:'A4文',type:'a4',category:'custom',content:'A4の文章'}];
+  try {
+    saveAllNoticeTemplates(templates);
+    for(let i=0;i<3;i++) {
+      await exportState(state());
+      assert.equal(mock.sheets.get('案内文テンプレート').rows[1][2],'角２宛名面メモ');
+      await importFromSheets('test-token','test-sheet');
+      assert.deepEqual(getAllSavedNoticeTemplates().map(t=>[t.id,t.type,t.content,t.isDefault]),templates.map(t=>[t.id,t.type,t.content,false]));
+      let workbook;XLSX.writeFile=wb=>{workbook=wb;};
+      exportToExcel(temple,[],[],[],[],EMPTY_MASTER_OPTIONS);
+      const rows=XLSX.utils.sheet_to_json(workbook.Sheets['案内文テンプレート'],{header:1});
+      assert.equal(rows[1][2],'角２宛名面メモ');
+      await importFromExcel({arrayBuffer:async()=>XLSX.write(workbook,{type:'buffer',bookType:'xlsx'})});
+      assert.deepEqual(getAllSavedNoticeTemplates().map(t=>[t.id,t.type,t.content,t.isDefault]),templates.map(t=>[t.id,t.type,t.content,false]));
+    }
+  }finally{global.fetch=originalFetch;XLSX.writeFile=originalWrite;saveAllNoticeTemplates(originalTemplates);}
+});
+
 test('priest target flags survive Sheets and Excel round trips, including legacy flags', async()=>{
   const originalFetch=global.fetch;const mock=workbookMock();global.fetch=mock.fetch;
   const XLSX=require('xlsx'),{exportToExcel,importFromExcel}=load('src/utils/excelUtils.ts');const originalWrite=XLSX.writeFile;

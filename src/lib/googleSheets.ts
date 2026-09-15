@@ -1,3 +1,4 @@
+import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from '../utils/noticeTemplateUtils';
 import { readAllSheetData } from '../utils/sheetsReadSafety';
 import { isDanmuPriest, parseDanmuFlag } from '../utils/priestColorUtils';
 import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
@@ -1699,7 +1700,7 @@ export async function exportToSheets(
   const templateRows = allTemplatesList.map((t) => [
     t.id,
     t.name,
-    t.type === 'a4' ? 'A4用紙' : '官製はがき',
+    formatNoticeTemplatePaperType(t.type),
     t.category === 'higan' ? '彼岸法要' : t.category === 'niibon' ? '新盆法要' : t.category === 'memorial' ? '年回忌法要' : t.category === 'general' ? '年中行事' : '自由文書',
     t.content || '',
     new Date().toLocaleString('ja-JP'),
@@ -3307,7 +3308,7 @@ export async function importFromSheets(
         const rawType = String((typeIdx !== -1 ? row[typeIdx] : row[2]) || '').trim();
         const rawCat = String((catIdx !== -1 ? row[catIdx] : row[3]) || '').trim();
 
-        const docType: 'postcard' | 'a4' = rawType.includes('A4') || rawType.toLowerCase().includes('a4') ? 'a4' : 'postcard';
+        const docType = parseNoticeTemplatePaperType(rawType, rawId, rawName);
         let category: string = 'custom';
         if (rawCat.includes('彼岸')) category = 'higan';
         else if (rawCat.includes('新盆') || rawCat.includes('初盆')) category = 'niibon';
@@ -3320,7 +3321,7 @@ export async function importFromSheets(
           type: docType,
           category,
           content: rawContent,
-          isDefault: i < 4,
+          isDefault: false,
         });
       });
 
@@ -3716,3 +3717,4 @@ export async function fetchLatestOperationLogs(
     return null;
   }
 }
+

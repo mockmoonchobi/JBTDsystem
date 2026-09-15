@@ -1,3 +1,4 @@
+import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from './noticeTemplateUtils';
 import { isDanmuPriest, parseDanmuFlag } from './priestColorUtils';
 import * as XLSX from 'xlsx';
 import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData, DeletedRecordEntry, DisasterMemorialEvent } from '../types';
@@ -638,7 +639,7 @@ export function exportToExcel(
   const noticeTemplateRows = allTemplatesList.map((t) => [
     t.id,
     t.name,
-    t.type === 'a4' ? 'A4用紙' : '官製はがき',
+    formatNoticeTemplatePaperType(t.type),
     t.category === 'higan' ? '彼岸法要' : t.category === 'niibon' ? '新盆法要' : t.category === 'memorial' ? '年回忌法要' : t.category === 'general' ? '年中行事' : '自由文書',
     t.content || '',
     new Date().toLocaleString('ja-JP'),
@@ -2102,7 +2103,7 @@ export async function importFromExcel(
         const rawType = String((typeIdx !== -1 ? row[typeIdx] : row[2]) || '').trim();
         const rawCat = String((catIdx !== -1 ? row[catIdx] : row[3]) || '').trim();
 
-        const docType: 'postcard' | 'a4' = rawType.includes('A4') || rawType.toLowerCase().includes('a4') ? 'a4' : 'postcard';
+        const docType = parseNoticeTemplatePaperType(rawType, rawId, rawName);
         let category: string = 'custom';
         if (rawCat.includes('彼岸')) category = 'higan';
         else if (rawCat.includes('新盆') || rawCat.includes('初盆')) category = 'niibon';
@@ -2115,7 +2116,7 @@ export async function importFromExcel(
           type: docType,
           category,
           content: rawContent,
-          isDefault: i < 4,
+          isDefault: false,
         });
       });
 
@@ -2414,3 +2415,4 @@ export async function importFromExcel(
     disasterEvents: parsedDisasterEvents,
   };
 }
+
