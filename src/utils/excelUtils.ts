@@ -1,5 +1,5 @@
 import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from './noticeTemplateUtils';
-import { isDanmuPriest, parseDanmuFlag } from './priestColorUtils';
+import { isDanmuPriest, parseDanmuFlag, shouldRegisterChiefPriest } from './priestColorUtils';
 import * as XLSX from 'xlsx';
 import { Household, PastRecord, MemorialService, Transaction, TempleInfo, TempleProfile, MasterOptions, FamilyMember, TempleTodo, TodoCategory, TempleAnnualEvent, Priest, BatchAccountingData, DeletedRecordEntry, DisasterMemorialEvent } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, INITIAL_TEMPLE_INFO } from '../data/initialData';
@@ -664,9 +664,9 @@ export function exportToExcel(
     '所属寺院ID'
   ];
 
-  const priestsToExport: Priest[] = exportOptions?.priests && exportOptions.priests.length > 0
+  const priestsToExport: Priest[] = exportOptions?.priests !== undefined
     ? exportOptions.priests
-    : allTemples.map((t) => ({
+    : allTemples.filter((t) => shouldRegisterChiefPriest(t.chiefPriest)).map((t) => ({
         id: `priest-chief-${t.id || 'temple-main'}`,
         name: t.chiefPriest || '',
         furigana: '',

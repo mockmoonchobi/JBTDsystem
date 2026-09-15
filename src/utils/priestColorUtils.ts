@@ -233,3 +233,8 @@ export function parseDanmuFlag(value: unknown): boolean {
   if (/対象外|非担当|担当外|未担当/.test(text) || ['false', '0', '×', '不可'].includes(text)) return false;
   return text.includes('担当') || ['true', '1', '○', '可'].includes(text);
 }
+
+/** 寺院名義のみの兼務住職は自動登録しない（全角・半角括弧に対応）。 */
+export function shouldRegisterChiefPriest(name?: string): boolean {
+  return Boolean(name?.trim()) && !/[（(]\s*兼務\s*[）)]\s*$/.test(name || '');
+}

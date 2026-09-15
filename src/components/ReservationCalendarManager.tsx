@@ -1171,6 +1171,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
   // カレンダー・予定の担当僧侶フィルター（ALL: 全僧侶合算表示、または特定の僧侶ID）
   const [selectedPriestFilter, setSelectedPriestFilter] = useState<string>('ALL');
+  const calendarPriests = useMemo(() => filterDanmuPriests(priests), [priests]);
+  useEffect(() => {
+    if (selectedPriestFilter !== 'ALL' && !calendarPriests.some((p) => p.id === selectedPriestFilter)) {
+      setSelectedPriestFilter('ALL');
+    }
+  }, [calendarPriests, selectedPriestFilter]);
 
   // --- お盆棚経・巡回計画ステート ---
   const [tanagyoSearchTerm, setTanagyoSearchTerm] = useState('');
@@ -2907,7 +2913,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                 title="カレンダーおよび予定一覧の表示を担当僧侶ごとに切り替えます"
               >
                 <option value="ALL">合算表示（全僧侶）</option>
-                {priests.map((p) => {
+                {calendarPriests.map((p) => {
                   const pColor = p.color || getPriestColor(p.id, priests);
                   return (
                     <option key={p.id} value={p.id}>
@@ -3075,7 +3081,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                 </div>
 
                 {/* 担当僧侶カラー凡例（クリックで即座に担当僧侶別絞り込み表示） */}
-                {priests.length > 0 && (
+                {calendarPriests.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 pt-1 sm:pt-0 border-t sm:border-t-0 border-[#F0ECE1] w-full sm:w-auto">
                     <span className="font-bold text-[#1A1A1A] flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-[#8C2D19]" />
@@ -3092,7 +3098,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                     >
                       合算表示
                     </button>
-                    {priests.map((p) => {
+                    {calendarPriests.map((p) => {
                       const pColor = p.color || getPriestColor(p.id, priests);
                       const isSelected = selectedPriestFilter === p.id;
                       return (

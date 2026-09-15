@@ -1,4 +1,4 @@
-import { isDanmuPriest } from '../utils/priestColorUtils';
+import { isDanmuPriest, shouldRegisterChiefPriest } from '../utils/priestColorUtils';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
@@ -86,7 +86,7 @@ const reconcilePriestsWithTemples = (
   const manualPriests = (existingPriests || []).filter((p) => !p.isAutoChief);
 
   const autoPriests: Priest[] = (temples || [])
-    .filter((t) => t.chiefPriest && t.chiefPriest.trim() !== '')
+    .filter((t) => shouldRegisterChiefPriest(t.chiefPriest))
     .map((t) => {
       const isMain = Boolean(t.isMain);
       const templeId = t.id || 'temple-main';
@@ -1787,7 +1787,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                       </span>
                     </div>
                     <p className="text-[11px] text-gray-500 font-sans">
-                      本寺・兼務寺の住職名は寺院基本情報と自動連動します。副住職や法要・棚経をお手伝いいただく助法僧侶も個別に追加・管理できます。
+                      本寺・兼務寺の住職名は寺院基本情報と自動連動します。末尾に「（兼務）」を付けた住職名は自動登録しません。副住職や法要・棚経をお手伝いいただく助法僧侶も個別に追加・管理できます。
                     </p>
                   </div>
                   <button
