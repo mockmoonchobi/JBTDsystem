@@ -197,6 +197,15 @@ test('readback mismatch does not accept the baseline or replace the local datase
   assert.equal(h.context.syncStateRef.current.transactions.length, 1);
 });
 
+test('a first connection with only local settings still requires review', async () => {
+  const h = mergeHarness();
+  for (const key of ['households', 'pastRecords', 'transactions', 'memorialServices', 'templeTodos', 'deletedRecords']) h.context.syncStateRef.current[key] = [];
+  h.env.readMergeBaseline = async () => null;
+  let prompted = false; h.env.askMerge = async () => { prompted = true; return null; };
+  await assert.rejects(h.run(), /保留/); assert(prompted); assert.equal(h.writes, 0);
+  assert.equal(h.context.syncStateRef.current.templeInfo.name, '試験寺院');
+});
+
 test('a successful read followed by the real auto-save effect never echoes the downloaded data', async () => {
   const { context } = harness();
   await context.read('token', 'sheet');

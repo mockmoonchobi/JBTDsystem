@@ -1697,7 +1697,8 @@ export default function App() {
       const savedDraft = await idbGet<MergeDraft>(draftKey(sheetId));
       if (savedDraft?.version === 1 && savedDraft.sheetId === sheetId && savedDraft.phase !== 'verified') await backupMergeAttempt(savedDraft);
       const remotePayload = () => getSheetsPayload(remoteData);
-      const hasLocalData = ['households', 'pastRecords', 'transactions', 'memorialServices', 'templeTodos', 'deletedRecords'].some(key => local[key]?.length);
+      const hasLocalData = ['households', 'pastRecords', 'transactions', 'memorialServices', 'templeTodos', 'deletedRecords', 'temples', 'priests', 'allNoticeTemplates', 'disasterEvents'].some(key => local[key]?.length)
+        || ['templeInfo', 'masterOptions', 'templeMasterOptionsMap', 'batchAccountingData', 'batchAccountingConfig'].some(key => Object.keys(local[key] || {}).length > 0);
       const pending = baseline ? stableMergeValue(baseline.local) !== stableMergeValue(local) : hasLocalData;
       if (!isCleanImport && pending) {
         let draft: MergeDraft = {
