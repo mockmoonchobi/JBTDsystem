@@ -880,19 +880,19 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
           {/* Printable Header */}
           <div className="mb-3 pb-2 border-b-2 border-[#1A1A1A] flex items-end justify-between reception-row-header">
             <div>
-              <div className="text-[16.5px] print:text-[15px] text-[#666666] font-serif mb-0.5 tracking-wider">
+              <div className="text-[11px] print:text-[10px] text-[#666666] font-serif mb-0.5 tracking-wider">
                 {templeName} 施餓鬼会・盂蘭盆会 受付帳票
               </div>
-              <h1 className="text-[30px] sm:text-[36px] print:text-[30px] font-bold font-serif text-[#1A1A1A] tracking-wider leading-tight">
+              <h1 className="text-xl sm:text-2xl print:text-xl font-bold font-serif text-[#1A1A1A] tracking-wider leading-tight">
                 {customTitle || defaultTitle}
               </h1>
-              <p className="text-[16.5px] print:text-[14.25px] text-[#666666] font-serif mt-0.5">
+              <p className="text-[11px] print:text-[9.5px] text-[#666666] font-serif mt-0.5">
                 {customSubtitle}
               </p>
             </div>
-            <div className="text-right text-[18px] print:text-[15px] text-[#444444] font-serif space-y-0.5">
+            <div className="text-right text-xs print:text-[10px] text-[#444444] font-serif space-y-0.5">
               <div>出力日: {new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
-              <div>対象檀家総数: <strong className="font-mono text-[21px] print:text-[18px] text-[#1A1A1A]">{filteredItems.length}</strong> 軒</div>
+              <div>対象檀家総数: <strong className="font-mono text-sm print:text-xs text-[#1A1A1A]">{filteredItems.length}</strong> 軒</div>
               {districtFilter !== 'ALL' && <div className="text-amber-900 font-bold">地区指定: {districtFilter}</div>}
             </div>
           </div>
@@ -913,10 +913,10 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                     {/* Row Section Header with Row Badge */}
                     <div className="flex items-center justify-between border-b-2 border-[#1A1A1A] pb-1 mb-1.5 reception-row-header">
                       <div className="flex items-center space-x-2">
-                        <span className="font-serif font-bold text-[18px] sm:text-[21px] print:text-[18px] bg-[#1A1A1A] text-[#D4AF37] print:bg-black print:text-white px-2 py-0.5 tracking-wider inline-block">
+                        <span className="font-serif font-bold text-xs sm:text-sm print:text-xs bg-[#1A1A1A] text-[#D4AF37] print:bg-black print:text-white px-2 py-0.5 tracking-wider inline-block">
                           {row}
                         </span>
-                        <span className="text-[18px] print:text-[15px] text-[#666666] font-serif">
+                        <span className="text-xs print:text-[10px] text-[#666666] font-serif">
                           （{rowItems.length}軒）
                         </span>
                       </div>
@@ -925,23 +925,23 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                     {/* Column Headers for BOTH Column 1 (Left) and Column 2 (Right) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 pb-1 mb-1 border-b border-[#D1CEC7] print:grid-cols-2 print:gap-x-4 print:pb-0.5 print:mb-0.5 reception-row-header">
                       {/* Left Column Header */}
-                      <div className="flex items-center justify-between text-[16.5px] print:text-[14.25px] font-bold text-[#666666] font-serif pr-1">
+                      <div className="flex items-center justify-between text-[11px] print:text-[9.5px] font-bold text-[#666666] font-serif pr-1">
                         <span>施主氏名 / 為書き</span>
                         <div className="flex items-center space-x-2.5 print:space-x-2 text-right">
-                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col1Label}</span>
-                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col2Label}</span>
-                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col3Label}</span>
+                          <span className="w-12 print:w-11 text-center truncate">{col1Label}</span>
+                          <span className="w-12 print:w-11 text-center truncate">{col2Label}</span>
+                          <span className="w-12 print:w-11 text-center truncate">{col3Label}</span>
                           <span className="w-5 print:w-5 text-center">受付</span>
                         </div>
                       </div>
 
                       {/* Right Column Header (Hidden on small screens, visible on md and print) */}
-                      <div className="hidden md:flex print:flex items-center justify-between text-[16.5px] print:text-[14.25px] font-bold text-[#666666] font-serif pr-1">
+                      <div className="hidden md:flex print:flex items-center justify-between text-[11px] print:text-[9.5px] font-bold text-[#666666] font-serif pr-1">
                         <span>施主氏名 / 為書き</span>
                         <div className="flex items-center space-x-2.5 print:space-x-2 text-right">
-                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col1Label}</span>
-                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col2Label}</span>
-                          <span className="w-12 print:w-11 shrink-0 text-center text-[9px] print:text-[9px] whitespace-nowrap leading-tight">{col3Label}</span>
+                          <span className="w-12 print:w-11 text-center truncate">{col1Label}</span>
+                          <span className="w-12 print:w-11 text-center truncate">{col2Label}</span>
+                          <span className="w-12 print:w-11 text-center truncate">{col3Label}</span>
                           <span className="w-5 print:w-5 text-center">受付</span>
                         </div>
                       </div>
@@ -959,61 +959,61 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                             {/* Name + Furigana Left Aligned (前揃え) */}
                             <div className="inline-flex flex-col items-start leading-tight shrink-0">
                               {showFuriganaRuby && item.furigana ? (
-                                <span className="text-[13.5px] print:text-[12px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
+                                <span className="text-[9px] print:text-[8px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
                                   {item.furigana}
                                 </span>
                               ) : null}
                               <div className="flex items-baseline space-x-0.5">
-                                <span className="font-serif font-bold text-[21px] sm:text-[21px] print:text-[18.75px] text-[#1A1A1A] tracking-wide">
+                                <span className="font-serif font-bold text-sm sm:text-[14px] print:text-[12.5px] text-[#1A1A1A] tracking-wide">
                                   {item.sponsorName}
                                 </span>
-                                <span className="text-[18px] print:text-[15px] text-[#444444] font-serif">様</span>
+                                <span className="text-xs print:text-[10px] text-[#444444] font-serif">様</span>
                               </div>
                             </div>
 
                             {/* Household head notation when different */}
                             {!item.isFamilyHead && item.householdHead && (
-                              <span className="text-[15px] print:text-[12.75px] text-[#777777] font-sans whitespace-normal">
+                              <span className="text-[10px] print:text-[8.5px] text-[#777777] font-sans whitespace-nowrap">
                                 （世帯主: {item.householdHead} 方）
                               </span>
                             )}
 
                             {/* Hatsubon Badge */}
                             {showHatsubonBadge && item.isHatsubon && (
-                              <span className="inline-block text-[13.5px] print:text-[12px] font-bold text-red-600 border border-red-600 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
+                              <span className="inline-block text-[9px] print:text-[8px] font-bold text-red-600 border border-red-600 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
                                 新盆
                               </span>
                             )}
 
                             {/* Tanagyo Badge */}
                             {showTanagyoBadge && item.isTanagyo && (
-                              <span className="inline-block text-[13.5px] print:text-[12px] font-bold text-blue-700 border border-blue-700 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
+                              <span className="inline-block text-[9px] print:text-[8px] font-bold text-blue-700 border border-blue-700 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
                                 棚経
                               </span>
                             )}
 
                             {/* 為書き (Tamegaki) */}
                             {showTamegaki && item.tamegakiList.length > 0 ? (
-                              <span className="font-serif font-bold text-[16.5px] print:text-[14.25px] text-amber-950 print:text-black bg-amber-50 print:bg-transparent border border-amber-300 print:border-black/40 px-1 py-0.2 print:px-1 print:py-0 whitespace-normal shadow-2xs">
+                              <span className="font-serif font-bold text-[11px] print:text-[9.5px] text-amber-950 print:text-black bg-amber-50 print:bg-transparent border border-amber-300 print:border-black/40 px-1 py-0.2 print:px-1 print:py-0 whitespace-nowrap shadow-2xs">
                                 為 {item.tamegakiList.join(' / ')}
                               </span>
                             ) : null}
 
                             {/* Toba Applied Badge when no Tamegaki */}
                             {selectedTobaSlot !== 'none' && item.tobaApplied && (!showTamegaki || item.tamegakiList.length === 0) && (
-                              <span className="text-[13.5px] print:text-[12px] font-bold text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0 leading-tight rounded-[1px] shrink-0 font-sans">
+                              <span className="text-[9px] print:text-[8px] font-bold text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0 leading-tight rounded-[1px] shrink-0 font-sans">
                                 申込済
                               </span>
                             )}
 
                             {/* Status Tag: 領収済 or 住所不明 */}
                             {item.isPaid && (
-                              <span className="text-[13.5px] print:text-[12px] font-bold text-red-600 font-sans shrink-0">
+                              <span className="text-[9px] print:text-[8px] font-bold text-red-600 font-sans shrink-0">
                                 領収済
                               </span>
                             )}
                             {item.isUnknown && (
-                              <span className="text-[13.5px] print:text-[12px] font-bold text-red-700 font-sans shrink-0">
+                              <span className="text-[9px] print:text-[8px] font-bold text-red-700 font-sans shrink-0">
                                 住所不明
                               </span>
                             )}
@@ -1030,7 +1030,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 1 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f1Display ? (
-                                    <span className="text-[15px] print:text-[12.75px] font-mono font-bold text-stone-900 leading-none mb-0.5 break-words max-w-full text-center">
+                                    <span className="text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
                                       {f1Display}
                                     </span>
                                   ) : (
@@ -1044,7 +1044,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 2 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f2Display ? (
-                                    <span className="text-[15px] print:text-[12.75px] font-mono font-bold text-stone-900 leading-none mb-0.5 break-words max-w-full text-center">
+                                    <span className="text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
                                       {f2Display}
                                     </span>
                                   ) : (
@@ -1058,7 +1058,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 3 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f3Display ? (
-                                    <span className="text-[15px] print:text-[12.75px] font-mono font-bold text-stone-900 leading-none mb-0.5 break-words max-w-full text-center">
+                                    <span className="text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
                                       {f3Display}
                                     </span>
                                   ) : (
@@ -1072,7 +1072,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Check-in box Slot */}
                                 <div className="w-5 print:w-5 flex items-center justify-center">
                                   <div
-                                    className="w-3.5 h-3.5 border border-[#888888] text-[12px] text-[#999999] flex items-center justify-center font-serif mb-0.5"
+                                    className="w-3.5 h-3.5 border border-[#888888] text-[8px] text-[#999999] flex items-center justify-center font-serif mb-0.5"
                                     title="受付済チェック"
                                   >
                                     □
@@ -1091,18 +1091,18 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
           ) : (
             /* Table View (詳細一覧表: 施主氏名・続柄・地区・為書き・新盆棚経・記入欄) */
             <div className="border border-[#D1CEC7] overflow-hidden">
-              <table className="reception-print-table w-full text-left border-collapse text-[18px] table-fixed">
+              <table className="reception-print-table w-full text-left border-collapse text-xs table-fixed">
                 <thead>
                   <tr className="bg-[#F9F7F2] border-b border-[#D1CEC7] text-[#1A1A1A] font-serif">
-                    <th className="p-2 print:py-1 print:px-1 border-r border-[#D1CEC7] text-center w-[4%] font-bold print:text-[15px]">No</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] font-bold w-[17%] print:text-[15px]">施主氏名</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[11%] font-bold print:text-[15px]">地区 / 世帯</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] font-bold w-[18%] print:text-[15px]">為書き</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[10%] font-bold print:text-[15px]">新盆 / 棚経</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold text-[10px] print:text-[10px] whitespace-nowrap">{col1Label}</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold text-[10px] print:text-[10px] whitespace-nowrap">{col2Label}</th>
-                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold text-[10px] print:text-[10px] whitespace-nowrap">{col3Label}</th>
-                    <th className="p-2 print:py-1 print:px-1 border-[#D1CEC7] text-center w-[4%] font-bold print:text-[15px]">受付</th>
+                    <th className="p-2 print:py-1 print:px-1 border-r border-[#D1CEC7] text-center w-[4%] font-bold print:text-[10px]">No</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] font-bold w-[17%] print:text-[10px]">施主氏名</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[11%] font-bold print:text-[10px]">地区 / 世帯</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] font-bold w-[18%] print:text-[10px]">為書き</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[10%] font-bold print:text-[10px]">新盆 / 棚経</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold print:text-[10px] truncate">{col1Label}</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold print:text-[10px] truncate">{col2Label}</th>
+                    <th className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] text-center w-[12%] font-bold print:text-[10px] truncate">{col3Label}</th>
+                    <th className="p-2 print:py-1 print:px-1 border-[#D1CEC7] text-center w-[4%] font-bold print:text-[10px]">受付</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EBE7DF]">
@@ -1114,42 +1114,42 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                     return (
                       <tr key={item.key} className="hover:bg-[#FAF9F5] print:hover:bg-transparent transition-colors">
                         {/* No */}
-                        <td className="p-2 print:py-1 print:px-1 border-r border-[#EBE7DF] text-center font-mono text-[#666666] print:text-[14.25px]">
+                        <td className="p-2 print:py-1 print:px-1 border-r border-[#EBE7DF] text-center font-mono text-[#666666] print:text-[9.5px]">
                           {idx + 1}
                         </td>
 
                         {/* 施主氏名 */}
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] break-words">
                           {item.furigana && (
-                            <div className="text-[13.5px] print:text-[12px] text-[#777777] font-sans leading-tight">
+                            <div className="text-[9px] print:text-[8px] text-[#777777] font-sans leading-tight">
                               {item.furigana}
                             </div>
                           )}
-                          <div className="font-bold text-[#1A1A1A] font-serif text-[18px] print:text-[16.5px] leading-tight">
-                            {item.sponsorName} <span className="text-[15px] print:text-[13.5px] font-normal text-[#555555]">様</span>
+                          <div className="font-bold text-[#1A1A1A] font-serif text-xs print:text-[11px] leading-tight">
+                            {item.sponsorName} <span className="text-[10px] print:text-[9px] font-normal text-[#555555]">様</span>
                           </div>
                         </td>
 
                         {/* 地区 / 世帯 */}
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center break-words">
-                          <div className="text-[18px] print:text-[14.25px] leading-tight font-serif">
+                          <div className="text-xs print:text-[9.5px] leading-tight font-serif">
                             <span className="font-bold text-[#2D2D2D]">{item.district}</span>
                             {!item.isFamilyHead && item.householdHead && (
-                              <div className="text-[13.5px] print:text-[12px] text-[#777777]">({item.householdHead} 方)</div>
+                              <div className="text-[9px] print:text-[8px] text-[#777777]">({item.householdHead} 方)</div>
                             )}
                           </div>
                         </td>
 
                         {/* 為書き */}
-                        <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] font-serif text-[18px] print:text-[15px] break-words">
+                        <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] font-serif text-xs print:text-[10px] break-words">
                           {showTamegaki && item.tamegakiList.length > 0 ? (
                             <span className="font-bold text-amber-950 print:text-black bg-amber-50 print:bg-transparent px-1 py-0.5 print:p-0 border border-amber-200 print:border-none inline-block">
                               為 {item.tamegakiList.join(' / ')}
                             </span>
                           ) : selectedTobaSlot !== 'none' && item.tobaApplied ? (
-                            <span className="text-amber-800 text-[15px]">申込有</span>
+                            <span className="text-amber-800 text-[10px]">申込有</span>
                           ) : (
-                            <span className="text-[#AAAAAA] text-[15px]">ー</span>
+                            <span className="text-[#AAAAAA] text-[10px]">ー</span>
                           )}
                         </td>
 
@@ -1157,17 +1157,17 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center break-words">
                           <div className="flex items-center justify-center gap-1 flex-wrap">
                             {showHatsubonBadge && item.isHatsubon && (
-                              <span className="bg-red-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[13.5px] print:text-[12px] font-bold tracking-wide font-sans">
+                              <span className="bg-red-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[9px] print:text-[8px] font-bold tracking-wide font-sans">
                                 新盆
                               </span>
                             )}
                             {showTanagyoBadge && item.isTanagyo && (
-                              <span className="bg-blue-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[13.5px] print:text-[12px] font-bold tracking-wide font-sans">
+                              <span className="bg-blue-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[9px] print:text-[8px] font-bold tracking-wide font-sans">
                                 棚経
                               </span>
                             )}
                             {!item.isHatsubon && !item.isTanagyo && (
-                              <span className="text-[#AAAAAA] text-[15px]">ー</span>
+                              <span className="text-[#AAAAAA] text-[10px]">ー</span>
                             )}
                           </div>
                         </td>
@@ -1176,7 +1176,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f1Display ? (
-                              <span className="text-[18px] print:text-[14.25px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f1Display}
                               </span>
                             ) : (
@@ -1192,7 +1192,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f2Display ? (
-                              <span className="text-[18px] print:text-[14.25px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f2Display}
                               </span>
                             ) : (
@@ -1208,7 +1208,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f3Display ? (
-                              <span className="text-[18px] print:text-[14.25px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f3Display}
                               </span>
                             ) : (
@@ -1221,7 +1221,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         </td>
 
                         {/* 受付チェック */}
-                        <td className="p-2 print:py-1 print:px-1 text-center font-serif text-[#999999] text-[18px]">
+                        <td className="p-2 print:py-1 print:px-1 text-center font-serif text-[#999999] text-xs">
                           □
                         </td>
                       </tr>
@@ -1233,14 +1233,14 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
           )}
 
           {/* Print Footer note */}
-          <div className="mt-4 pt-1.5 border-t border-[#D1CEC7] flex justify-between items-center text-[13.5px] text-[#888888] font-serif">
+          <div className="mt-4 pt-1.5 border-t border-[#D1CEC7] flex justify-between items-center text-[9px] text-[#888888] font-serif">
             <div>※本一覧は檀家名簿より五十音行順に自動抽出されたものです。新盆・棚経・塔婆志納等の受付にご利用ください。</div>
             <div>頁印字 / 施餓鬼会・盂蘭盆会 檀家受付票</div>
           </div>
         </div>
 
         {/* Footer - Screen only */}
-        <div className="bg-[#F9F7F2] px-4 sm:px-6 py-3 border-t border-[#D1CEC7] flex flex-wrap items-center justify-between gap-2 text-[18px] font-sans shrink-0 print:hidden">
+        <div className="bg-[#F9F7F2] px-4 sm:px-6 py-3 border-t border-[#D1CEC7] flex flex-wrap items-center justify-between gap-2 text-xs font-sans shrink-0 print:hidden">
           <span className="text-[#666666]">
             ※「印刷する」ボタンを押すと、{paperSize}用紙（縦または横）に最適化されて出力されます。
           </span>
