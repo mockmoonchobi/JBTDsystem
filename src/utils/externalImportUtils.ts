@@ -770,7 +770,19 @@ export function convertTableToData(
       let targetHousehold: Household | undefined = undefined;
       const userDecision = options.linkingDecisions?.[rowIdx];
 
-      if (userDecision) {
+      // An explicitly mapped household ID column is authoritative, including blanks.
+      if (mapping.householdId || mapping.id) {
+        if (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId)) {
+          // Preserve exact IDs before considering numeric IDs without a prefix.
+          targetHousehold = outHouseholds.find(h => h.id === rawHouseholdId);
+          if (!targetHousehold && /^\d+$/.test(rawHouseholdId)) {
+            targetHousehold = outHouseholds.find(h => h.id === normalizeToTempleId(rawHouseholdId));
+          }
+        }
+        if (!targetHousehold && (!rawHouseholdId || !isUnlinkedHouseholdId(rawHouseholdId))) {
+          warnings.push(`行 ${rowIdx + 2}: 檀家ID「${rawHouseholdId || '空欄'}」に該当する世帯がないため、世帯未設定として取り込みます。氏名による照合は行いません。`);
+        }
+      } else if (userDecision) {
         if (userDecision.action === 'link_existing' && userDecision.targetHouseholdId) {
           targetHousehold = outHouseholds.find(h => h.id === userDecision.targetHouseholdId);
           if (!targetHousehold) {

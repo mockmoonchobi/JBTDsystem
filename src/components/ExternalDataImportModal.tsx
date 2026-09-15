@@ -104,6 +104,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
 
   // Column Mapping: fieldKey -> sourceColumnName
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const useImportedHouseholdIds = targetType === 'past_record' && Boolean(columnMapping.householdId || columnMapping.id);
   const [activePreset, setActivePreset] = useState<string>('auto');
 
   // Preview Search & Filter State
@@ -382,7 +383,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     }
 
     // For past_record imports, if user has not yet reviewed decisions, open Lineage Confirmation Modal first
-    if (targetType === 'past_record') {
+    if (targetType === 'past_record' && !useImportedHouseholdIds) {
       const items = extractKakochoItems(rawTable.headers, rawTable.rawRows, columnMapping);
       setKakochoItems(items);
 
@@ -1084,7 +1085,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                   </table>
                 </div>
 
-                {targetType === 'past_record' && (
+                {targetType === 'past_record' && !useImportedHouseholdIds && (
                   <div className="p-3 bg-amber-50/70 border-t border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
                     <div className="flex items-center space-x-2 text-amber-950">
                       <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
@@ -1154,8 +1155,13 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                 </div>
               </div>
 
+              {useImportedHouseholdIds && (
+                <p className="p-3 border border-stone-300 bg-stone-50 text-xs">
+                  檀家IDによる紐づけを使用しています。氏名の照合は行いません。IDが空欄・該当なしの行は世帯未設定となります。下の警告と取込内容をご確認ください。
+                </p>
+              )}
               {/* Lineage Matching Status Card for Past Record Imports */}
-              {targetType === 'past_record' && (
+              {targetType === 'past_record' && !useImportedHouseholdIds && (
                 <div className="bg-amber-50/80 border border-[#D4AF37] p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 rounded bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center text-amber-900">
@@ -1493,7 +1499,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                         {targetType === 'household' && (
                           <>現在の登録檀家データ（<strong>{existingHouseholds.length}件</strong>）を【すべて削除】し、本ファイルの内容（<strong>{conversionResult.stats.householdsCreated}件</strong>）で新しく置き換えます。</>
                         )}
-                        {targetType === 'past_record' && (
+                        {targetType === 'past_record' && !useImportedHouseholdIds && (
                           <>現在の登録過去帳データ（<strong>{existingPastRecords.length}柱</strong>）を【すべて削除】し、本ファイルの内容（<strong>{conversionResult.stats.pastRecordsCreated}柱</strong>）で新しく置き換えます。</>
                         )}
                         {targetType === 'combined' && (
@@ -1523,7 +1529,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     </div>
                   )}
 
-                  {targetType === 'past_record' && (
+                  {targetType === 'past_record' && !useImportedHouseholdIds && (
                     <div className="pt-2 border-t border-[#EAE7E0] flex items-center justify-between">
                       <div>
                         <label className="text-xs font-bold text-[#1A1A1A]">
@@ -2076,7 +2082,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     既存の檀家名簿（<strong>{existingHouseholds.length}件</strong>）を全削除 → 新規 <strong>{conversionResult.stats.householdsCreated}件</strong> を登録
                   </li>
                 )}
-                {targetType === 'past_record' && (
+                {targetType === 'past_record' && !useImportedHouseholdIds && (
                   <li>
                     既存の過去帳・霊位（<strong>{existingPastRecords.length}柱</strong>）を全削除 → 新規 <strong>{conversionResult.stats.pastRecordsCreated}柱</strong> を登録
                   </li>
@@ -2141,3 +2147,4 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     </div>
   );
 };
+
