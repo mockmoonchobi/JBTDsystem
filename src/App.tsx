@@ -514,6 +514,17 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
     return safeStorage.getItem('temple_google_sheet_last_sync');
   });
+  const [syncCompletion, setSyncCompletion] = useState<{ count: number; at: number } | null>(null);
+  useEffect(() => {
+    if (!syncCompletion) return;
+    const timer = window.setTimeout(() => setSyncCompletion(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [syncCompletion]);
+  const syncCompletionNotice = syncCompletion && syncStatus === 'synced' ? (
+    <div role="status" aria-live="polite" className="fixed top-3 left-1/2 -translate-x-1/2 z-[100001] rounded-lg bg-emerald-800 text-white px-4 py-3 shadow-lg text-sm font-bold whitespace-nowrap pointer-events-none">
+      {syncCompletion.count.toLocaleString('ja-JP')}件同期しました
+    </div>
+  ) : null;
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [isInitialLoaded, setIsInitialLoaded] = useState<boolean>(false);
 
@@ -1775,6 +1786,7 @@ export default function App() {
       setSyncStatus('synced');
       setSyncErrorMessage(null);
       setIsInitialLoaded(true);
+      setSyncCompletion({ count: remoteData.totalRecordsCount, at: Date.now() });
       return { success: true, count: remoteData.totalRecordsCount };
     } catch (error: any) {
       writeSafetyRef.current.block();
@@ -4525,7 +4537,8 @@ export default function App() {
       <>
         {/* Startup Launcher Modal (Available on mobile launch / manual trigger) */}
         {mergeRequest && <SheetsMergeWizard key={mergeRequest.id} request={mergeRequest} onSaveChoices={persistMergeChoices} onConfirm={finishMergeReview} onCancel={() => finishMergeReview(null)} />}
-        {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
+        {syncCompletionNotice}
+      {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
         <StartupLauncher
           isOpen={isStartupLauncherOpen}
           onStartWithEmpty={handleStartWithEmpty}
@@ -4655,6 +4668,7 @@ export default function App() {
     }`}>
       {/* Startup Launcher Modal (Available on desktop launch / manual trigger) */}
       {mergeRequest && <SheetsMergeWizard key={mergeRequest.id} request={mergeRequest} onSaveChoices={persistMergeChoices} onConfirm={finishMergeReview} onCancel={() => finishMergeReview(null)} />}
+      {syncCompletionNotice}
       {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
       <StartupLauncher
         isOpen={isStartupLauncherOpen}
