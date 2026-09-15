@@ -172,7 +172,7 @@ test('history restoration immediately publishes service and linked toba deadline
 
 test('unchanged payload signatures still change at the owning temple fiscal boundary',()=>{
   const OriginalDate=global.Date, payload=state();
-  const signature=()=>vm.runInNewContext(compile(appFunction('computePayloadSignature')+'; computePayloadSignature(payload);'),{payload,getFiscalRetentionKey,Date:global.Date});
+  const signature=()=>vm.runInNewContext(compile(appFunction('getSheetsPayload')+'; '+appFunction('computePayloadSignature')+'; computePayloadSignature(payload);'),{payload,getFiscalRetentionKey,Date:global.Date});
   try {
     global.Date=class extends OriginalDate {constructor(...args){super(...(args.length?args:['2027-03-31T14:59:59Z']));}};
     const before=signature();
