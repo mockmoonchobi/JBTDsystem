@@ -198,24 +198,33 @@ test('the 10-second monitor reads only recent history and pulls only on incoming
     ts.forEachChild(n, visit);
   };
   visit(ast);
-  for (const incoming of [false, true]) {
+  for (const incoming of [false, true, 'replaced', 'initializing', 'stale-error']) {
     const timers = [], calls = [], gate = new SheetsWriteSafety(); gate.accept('sheet', 'ok');
+    let destination = 'sheet';
     const context = {
       isInitialLoaded: true, syncStatus: 'synced', document: { visibilityState: 'visible' },
       isStartupLauncherOpenRef: { current: false }, isCleanWritingRef: { current: false }, isSyncInProgressRef: { current: false }, isImportingRef: { current: false },
-      writeSafetyRef: { current: gate }, safeStorage: { getItem: () => '{"id":"sheet"}' }, getAccessToken: async () => 'token',
+      writeSafetyRef: { current: gate }, safeStorage: { getItem: () => JSON.stringify({ id: destination }) }, getAccessToken: async () => 'token',
       loadDeletedRecordsLog: () => [{ logId: 'known' }],
-      fetchLatestOperationLogs: async (...args) => { calls.push(['history', ...args]); return { logs: [{ logId: incoming ? 'new' : 'known' }] }; },
+      fetchLatestOperationLogs: async (...args) => {
+        calls.push(['history', ...args]);
+        if (incoming === 'replaced' || incoming === 'stale-error') { destination = 'new-sheet'; gate.accept(destination, 'ok'); }
+        if (incoming === 'initializing') context.isCleanWritingRef.current = true;
+        if (incoming === 'stale-error') throw Error('old destination no longer exists');
+        return { logs: [{ logId: incoming ? 'new' : 'known' }] };
+      },
       syncWithGoogleDriveRef: { current: async (...args) => calls.push(['pull', ...args]) },
       setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; }, clearTimeout() {},
-      setSyncStatus() {}, setSyncErrorMessage() {},
+      setSyncStatus: value => calls.push(['status', value]), setSyncErrorMessage: value => calls.push(['error', value]),
       exportToSheets() { throw Error('monitor attempted to write'); },
     };
     vm.runInNewContext(compile(`(${effect})();`), context);
     assert.equal(timers[0].delay, 5000); timers.shift().callback(); await new Promise(setImmediate);
     assert.equal(timers[0].delay, 10000);
     assert.equal(calls.filter(call => call[0] === 'history').length, 1);
-    assert.equal(calls.filter(call => call[0] === 'pull').length, incoming ? 1 : 0);
+    assert.equal(calls.filter(call => call[0] === 'pull').length, incoming === true ? 1 : 0);
+    assert.equal(calls.filter(call => call[0] === 'error').length, 0, 'stale polls cannot reintroduce an error after initialization');
+    assert(gate.canWrite(destination));
   }
 });
 
@@ -227,7 +236,7 @@ function initializationHarness() {
     loadJsonState: () => ({ id: 'old-sheet' }),
     deleteAllExistingSpreadsheetsByName: async (...args) => calls.push(['delete', ...args]),
     createNewSpreadsheet: async () => { calls.push(['create']); return { id: 'new-sheet', url: 'test' }; },
-    saveDeletedRecordsLog() {}, getSavedBatchAccountingData: () => null, getSavedDisasterMemorialEvents: () => [],
+    saveDeletedRecordsLog() {}, setDeletedRecords() {}, getSavedBatchAccountingData: () => null, getSavedDisasterMemorialEvents: () => [],
     setTimeout: callback => { timers.push(callback); }, isAuthError: () => false, console,
   });
   context.safeStorage.removeItem = () => {};
@@ -237,6 +246,9 @@ function initializationHarness() {
 
 test('explicit initialization works after a failed read and enables only the new destination after success', async () => {
   const { context, gate, calls, timers, run } = initializationHarness();
+  context.syncStateRef.current.deletedRecords = [{ id: 'P1', actionType: 'delete', deletedTimestamp: 1 }];
+  const errors = ['previous pending-change error'];
+  context.setSyncErrorMessage = message => errors.push(message);
   gate.accept('old-sheet', 'previous'); gate.block();
   let finish;
   const initialize = run(async (...args) => {
@@ -245,20 +257,26 @@ test('explicit initialization works after a failed read and enables only the new
     await new Promise(resolve => { finish = resolve; });
   });
   const pending = initialize('token'); await new Promise(setImmediate);
+  assert.equal(errors.at(-1), null, 'old errors are cleared when initialization starts');
+  assert.equal(context.syncStateRef.current.deletedRecords.length, 1, 'history remains until the write succeeds');
   assert(context.isCleanWritingRef.current); assert(context.isImportingRef.current);
   assert.equal(calls.at(-1)[2], 'new-sheet');
   assert.equal(calls.at(-1)[5][0].id, 'P1', 'exports the terminal backup past records');
   assert.equal(calls.at(-1)[7][0].amount, 1000, 'exports the terminal backup transactions');
   finish(); const result = await pending;
   assert(result.success); assert(gate.canWrite('new-sheet')); assert(!gate.canWrite('old-sheet'));
+  assert.equal(context.syncStateRef.current.deletedRecords.length, 0);
+  assert(!gate.hasPending(JSON.stringify(context.payload(context.syncStateRef.current))), 'successful reset matches the accepted baseline');
   timers.forEach(callback => callback());
   assert(!context.isCleanWritingRef.current);
 });
 
 test('explicit initialization can create the first destination, but failure and concurrent sync remain blocked', async () => {
   const { context, gate, calls, run } = initializationHarness();
+  context.syncStateRef.current.deletedRecords = [{ id: 'P1', actionType: 'update', deletedTimestamp: 1 }];
   const failed = run(async () => { throw Error('write failed'); });
   await assert.rejects(failed('token'), /write failed/);
+  assert.equal(context.syncStateRef.current.deletedRecords.length, 1, 'failed initialization does not clear local history');
   assert(!gate.canWrite('old-sheet')); assert(!gate.canWrite('new-sheet'));
   const count = calls.length;
   await assert.rejects(failed('token'), /別の同期処理/);

@@ -1689,6 +1689,7 @@ export default function App() {
     writeSafetyRef.current.block();
     isCleanWritingRef.current = true;
     isImportingRef.current = true; // prevent auto-sync debounce trigger
+    setSyncErrorMessage(null);
     setSyncStatus('syncing');
     try {
       // 1. Delete existing spreadsheet file(s) named 「寺院管理・檀家過去帳データ」 in Google Drive
@@ -1703,13 +1704,6 @@ export default function App() {
       // Snapshot the exact current local state
       const state = { ...syncStateRef.current };
       const localCount = state.households.length + state.pastRecords.length + state.memorialServices.length + state.templeTodos.length + state.transactions.length;
-
-      // 3. Clear any delete logs / tombstones so clean slate is preserved
-      saveDeletedRecordsLog([]);
-
-      // 4. Clear cached safety snapshots that might resurrect old data
-      safeStorage.removeItem('temple_safety_snapshot');
-      safeStorage.removeItem('temple_backup_before_sync');
 
       // 5. Write current terminal data from scratch into the newly created spreadsheet
       await exportToSheets(
@@ -1733,6 +1727,14 @@ export default function App() {
           disasterEvents: state.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
         }
       );
+
+      // Publish the reset only after a successful write, in storage, React and
+      // the synchronous snapshot used by pending-change detection.
+      saveDeletedRecordsLog([]);
+      setDeletedRecords([]);
+      syncStateRef.current.deletedRecords = [];
+      safeStorage.removeItem('temple_safety_snapshot');
+      safeStorage.removeItem('temple_backup_before_sync');
 
       const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
       setLastSyncTime(nowTime);
@@ -2082,6 +2084,10 @@ export default function App() {
       try {
         // 「操作・削除履歴」シートの直近最新行のみを軽量取得（約1KB・画面への影響なし）
         const result = await fetchLatestOperationLogs(token, sheet.id, 25);
+        // A poll may finish after initialization has replaced the destination.
+        // Never let its stale result start a pull or restore an old error banner.
+        if (isDisposed || isCleanWritingRef.current || isSyncInProgressRef.current ||
+            isImportingRef.current || safeStorage.getItem('temple_google_sheet_info') !== savedSheetInfo) return;
         if (!result) throw new Error('操作履歴を読み取れないため、書き込みを停止しました。');
         if (isDisposed || !result.logs || result.logs.length === 0) {
           isChecking = false;
@@ -2109,6 +2115,8 @@ export default function App() {
           }
         }
       } catch (err: any) {
+        if (isDisposed || isCleanWritingRef.current ||
+            safeStorage.getItem('temple_google_sheet_info') !== savedSheetInfo) return;
         writeSafetyRef.current.block();
         setSyncStatus('error');
         setSyncErrorMessage(err.message || '自動読込に失敗したため、書き込みを停止しました。');
