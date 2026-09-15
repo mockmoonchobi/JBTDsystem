@@ -74,7 +74,7 @@ function harness() {
     isSyncInProgressRef: { current: false }, isCleanWritingRef: { current: false }, isImportingRef: { current: false },
     lastSyncedSignatureRef: { current: '' }, loadDeletedRecordsLog: () => context.syncStateRef.current.deletedRecords,
     safeStorage: { getItem: () => '{"id":"sheet"}', setItem() {} }, saveJsonState() {},
-    setSyncStatus: value => statuses.push(value), setSyncErrorMessage() {}, setLastSyncTime() {}, setIsInitialLoaded() {},
+    setSyncStatus: value => statuses.push(value), setSyncErrorMessage() {}, setLastSyncTime() {}, setSyncCompletion() {}, setIsInitialLoaded() {},
     safeImportWithAutoRecovery: async () => ({ data: { ...structuredClone(data), totalRecordsCount: 3 }, sheet: { id: 'sheet' } }),
     applyRemoteSheetsDataRef: { current: remote => { context.syncStateRef.current = remote; } },
     exportToSheets() { throw Error('read-only sync attempted a write'); },
