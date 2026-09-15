@@ -959,12 +959,12 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                             {/* Name + Furigana Left Aligned (前揃え) */}
                             <div className="inline-flex flex-col items-start leading-tight shrink-0">
                               {showFuriganaRuby && item.furigana ? (
-                                <span className="text-[9px] print:text-[8px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
+                                <span className="text-[11.7px] print:text-[10.4px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
                                   {item.furigana}
                                 </span>
                               ) : null}
                               <div className="flex items-baseline space-x-0.5">
-                                <span className="font-serif font-bold text-sm sm:text-[14px] print:text-[12.5px] text-[#1A1A1A] tracking-wide">
+                                <span className="font-serif font-bold text-[21px] sm:text-[21px] print:text-[18.75px] text-[#1A1A1A] tracking-wide">
                                   {item.sponsorName}
                                 </span>
                                 <span className="text-xs print:text-[10px] text-[#444444] font-serif">様</span>
@@ -1121,11 +1121,11 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         {/* 施主氏名 */}
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] break-words">
                           {item.furigana && (
-                            <div className="text-[9px] print:text-[8px] text-[#777777] font-sans leading-tight">
+                            <div className="text-[11.7px] print:text-[10.4px] text-[#777777] font-sans leading-tight">
                               {item.furigana}
                             </div>
                           )}
-                          <div className="font-bold text-[#1A1A1A] font-serif text-xs print:text-[11px] leading-tight">
+                          <div className="font-bold text-[#1A1A1A] font-serif text-[18px] print:text-[16.5px] leading-tight">
                             {item.sponsorName} <span className="text-[10px] print:text-[9px] font-normal text-[#555555]">様</span>
                           </div>
                         </td>
