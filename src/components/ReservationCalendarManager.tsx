@@ -1989,7 +1989,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       targetTempleId = pr?.templeId;
     }
     
-    return Boolean(targetTempleId && targetTempleId !== mainTempleId && targetTempleId !== 'temple-main');
+    const targetTemple = targetTempleId ? temples.find((t) => t.id === targetTempleId) : mainTemple;
+    return Boolean(targetTemple && !targetTemple.isMain);
   };
 
   // Helper to get temple info for a service
@@ -2007,11 +2008,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       targetTempleId = pr?.templeId;
     }
 
-    if (targetTempleId && targetTempleId !== mainTempleId && targetTempleId !== 'temple-main') {
-      const t = temples.find((item) => item.id === targetTempleId);
-      return { id: targetTempleId, name: t?.name || '兼務寺', isAffiliated: true };
-    }
-    return { id: mainTempleId, name: templeInfo?.name || '本寺', isAffiliated: false };
+    const targetTemple = targetTempleId ? temples.find((t) => t.id === targetTempleId) : mainTemple;
+    return { id: targetTempleId || targetTemple?.id, name: targetTemple?.name || '所属寺院未確認', isAffiliated: targetTemple ? !targetTemple.isMain : false };
   };
 
   // Helper to get temple info for a todo
@@ -2029,11 +2027,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       if (hh?.templeId) targetTempleId = hh.templeId;
     }
 
-    if (targetTempleId && targetTempleId !== mainTempleId && targetTempleId !== 'temple-main') {
-      const foundTemple = temples.find((item) => item.id === targetTempleId);
-      return { id: targetTempleId, name: foundTemple?.name || '兼務寺', isAffiliated: true };
-    }
-    return { id: mainTempleId, name: mainTemple?.name || templeInfo?.name || '本寺', isAffiliated: false };
+    const targetTemple = targetTempleId ? temples.find((item) => item.id === targetTempleId) : mainTemple;
+    return { id: targetTempleId || targetTemple?.id, name: targetTemple?.name || '所属寺院未確認', isAffiliated: targetTemple ? !targetTemple.isMain : false };
   };
 
   // Helper for Google Maps query:
@@ -3378,7 +3373,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                               )}
                               {!isAffiliated && temples.length > 1 && (
                                 <span className="text-xs font-bold px-2 py-0.5 font-sans bg-amber-100 text-amber-900 border border-amber-300 rounded-2xs">
-                                  本寺: {templeMeta.name}
+                                  {templeMeta.name === '所属寺院未確認' ? '' : '本寺: '}{templeMeta.name}
                                 </span>
                               )}
                               {/* 担当僧侶バッジ */}
@@ -3639,7 +3634,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                       return (
                                         <div className="mb-1">
                                           <span className="inline-block px-1.5 py-0.2 bg-[#1A1A1A] text-[#D4AF37] text-[10px] font-bold rounded-xs">
-                                            本寺: {todoTemple.name}
+                                            {todoTemple.name === '所属寺院未確認' ? '' : '本寺: '}{todoTemple.name}
                                           </span>
                                         </div>
                                       );
@@ -4056,7 +4051,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                             return (
                               <div className="mb-1">
                                 <span className="inline-block px-2 py-0.5 bg-[#1A1A1A] text-[#D4AF37] text-xs font-bold rounded-xs">
-                                  本寺: {todoTemple.name}
+                                  {todoTemple.name === '所属寺院未確認' ? '' : '本寺: '}{todoTemple.name}
                                 </span>
                               </div>
                             );

@@ -562,9 +562,9 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
   showDate = false,
 }) => {
   const hh = households.find((h) => h.id === service.householdId);
-  const targetTempleId = service.templeId || hh?.templeId;
-  const matchedTemple = temples.find((t) => t.id === targetTempleId) || temples.find((t) => t.isMain) || temples[0];
-  const isAffiliated = matchedTemple?.isAffiliated || (targetTempleId && targetTempleId !== 'temple-main' && !matchedTemple?.isMain);
+  const targetTempleId = service.templeId || hh?.templeId || pastRecords.find((p) => p.id === service.deceasedId)?.templeId;
+  const matchedTemple = targetTempleId ? temples.find((t) => t.id === targetTempleId) : temples.find((t) => t.isMain);
+  const isAffiliated = Boolean(matchedTemple && !matchedTemple.isMain);
 
   const isFuneral = ['通夜', '葬儀', '枕経', '葬儀・枕経', '通夜・葬儀'].includes(service.memorialType || '');
   const isOther = service.memorialType === 'その他' || ['その他', '寺院行事', '会合', '来客', '法務その他'].includes(service.memorialType || '');
@@ -630,7 +630,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
           )}
           {!isAffiliated && temples.length > 1 && (
             <span className="text-xs font-bold px-2 py-0.5 font-sans bg-amber-100 text-amber-900 border border-amber-300 rounded-2xs">
-              【本寺: {matchedTemple?.name || '本寺'}】
+              【{matchedTemple ? `本寺: ${matchedTemple.name}` : '所属寺院未確認'}】
             </span>
           )}
         </div>
