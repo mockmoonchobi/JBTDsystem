@@ -2917,7 +2917,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   const pColor = p.color || getPriestColor(p.id, priests);
                   return (
                     <option key={p.id} value={p.id}>
-                      {p.name} {p.role ? `(${p.role})` : ''} {p.isMainChief ? '★住職' : ''}
+                      {p.name} {p.role && p.role !== '兼務寺住職' ? `(${p.role})` : ''} {p.isMainChief ? '★住職' : ''}
                     </option>
                   );
                 })}
@@ -3398,7 +3398,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                     />
                                   )}
                                   <span>担当: {priestName}</span>
-                                  {priestObj?.role && (
+                                  {priestObj?.role && priestObj.role !== '兼務寺住職' && (
                                     <span className="text-[10px] text-gray-500 font-normal">({priestObj.role})</span>
                                   )}
                                 </span>
@@ -3892,7 +3892,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                                   />
                                 )}
                                 <span>{pName}</span>
-                                {pObj?.role && <span className="text-[10px] text-gray-500 font-normal">({pObj.role})</span>}
+                                {pObj?.role && pObj.role !== '兼務寺住職' && <span className="text-[10px] text-gray-500 font-normal">({pObj.role})</span>}
                               </span>
                             );
                           })()}

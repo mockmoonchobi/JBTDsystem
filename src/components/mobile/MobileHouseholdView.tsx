@@ -398,13 +398,13 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                 const normA = normalizeDateInput(a.deathDate || '');
                 const normB = normalizeDateInput(b.deathDate || '');
                 if (normA && normB) {
-                  return normA.localeCompare(normB);
+                  return normB.localeCompare(normA);
                 }
                 if (normA && !normB) return -1;
                 if (!normA && normB) return 1;
                 return (a.dharmaName || a.secularName || '').localeCompare(b.dharmaName || b.secularName || '');
               });
-            const latestPast = [...relPast].reverse().find((p) => !!p.deathDate) || relPast[0];
+            const latestPast = relPast.find((p) => !!p.deathDate) || relPast[0];
             const relServices = memorialServices.filter((s) => s.householdId === h.id);
             const primaryPhone = h.phone || h.mobile;
 
