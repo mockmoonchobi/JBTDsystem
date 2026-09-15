@@ -101,6 +101,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
 
   // View & Print Controls
   const [viewMode, setViewMode] = useState<'twocolumn' | 'table'>('twocolumn');
+  const [paperSize, setPaperSize] = useState<'A3' | 'A4'>('A3');
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [showUnderline, setShowUnderline] = useState<boolean>(true);
   const [showFuriganaRuby, setShowFuriganaRuby] = useState<boolean>(true);
@@ -415,7 +416,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
       <style>{`
         @media print {
           @page {
-            size: A4 ${printOrientation};
+            size: ${paperSize} ${printOrientation};
             margin: 8mm 8mm 8mm 8mm;
           }
           html, body {
@@ -641,6 +642,14 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
               </select>
             </div>
 
+            {/* Paper Size Selector */}
+            <label className="flex items-center gap-1 border-l border-[#D1CEC7] pl-3 text-[#666666] font-bold">
+              用紙サイズ:
+              <select aria-label="用紙サイズ" value={paperSize} onChange={(e) => setPaperSize(e.target.value as 'A3' | 'A4')} className="bg-white border border-stone-300 px-2 py-0.5 text-xs text-stone-800 font-semibold cursor-pointer">
+                <option value="A3">A3</option>
+                <option value="A4">A4</option>
+              </select>
+            </label>
             {/* Print Orientation Selector */}
             <div className="flex items-center space-x-1 border-l border-[#D1CEC7] pl-3">
               <span className="text-[#666666] font-bold">印刷向き:</span>
@@ -653,9 +662,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                       ? 'bg-[#1A1A1A] text-[#D4AF37]'
                       : 'text-[#666666] hover:text-[#1A1A1A]'
                   }`}
-                  title="A4 縦向き印刷"
+                  title={`${paperSize} 縦向き印刷`}
                 >
-                  A4 縦
+                  {paperSize} 縦
                 </button>
                 <button
                   type="button"
@@ -665,9 +674,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                       ? 'bg-[#1A1A1A] text-[#D4AF37]'
                       : 'text-[#666666] hover:text-[#1A1A1A]'
                   }`}
-                  title="A4 横向き印刷"
+                  title={`${paperSize} 横向き印刷`}
                 >
-                  A4 横
+                  {paperSize} 横
                 </button>
               </div>
             </div>
@@ -1233,7 +1242,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
         {/* Footer - Screen only */}
         <div className="bg-[#F9F7F2] px-4 sm:px-6 py-3 border-t border-[#D1CEC7] flex flex-wrap items-center justify-between gap-2 text-xs font-sans shrink-0 print:hidden">
           <span className="text-[#666666]">
-            ※「印刷する」ボタンを押すと、A4用紙（縦または横）に最適化されて出力されます。
+            ※「印刷する」ボタンを押すと、{paperSize}用紙（縦または横）に最適化されて出力されます。
           </span>
           <button
             onClick={onClose}
