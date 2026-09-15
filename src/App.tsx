@@ -521,7 +521,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [syncCompletion]);
   const syncCompletionNotice = syncCompletion && syncStatus === 'synced' ? (
-    <div role="status" aria-live="polite" className="fixed top-3 left-1/2 -translate-x-1/2 z-[100001] h-9 box-border flex items-center border border-emerald-500/60 bg-emerald-950/80 text-emerald-300 px-3 py-0 shadow-xs text-xs font-sans font-bold leading-none whitespace-nowrap pointer-events-none">
+    <div role="status" aria-live="polite" className="h-full box-border flex items-center border border-emerald-500/60 bg-emerald-950/80 text-emerald-300 px-3 py-0 shadow-xs text-xs font-sans font-bold leading-none whitespace-nowrap pointer-events-none">
       {syncCompletion.count.toLocaleString('ja-JP')}件同期しました
     </div>
   ) : null;
@@ -4537,7 +4537,6 @@ export default function App() {
       <>
         {/* Startup Launcher Modal (Available on mobile launch / manual trigger) */}
         {mergeRequest && <SheetsMergeWizard key={mergeRequest.id} request={mergeRequest} onSaveChoices={persistMergeChoices} onConfirm={finishMergeReview} onCancel={() => finishMergeReview(null)} />}
-        {syncCompletionNotice}
       {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
         <StartupLauncher
           isOpen={isStartupLauncherOpen}
@@ -4552,6 +4551,7 @@ export default function App() {
         />
 
         <MobileApp
+          syncCompletionNotice={syncCompletionNotice}
           transactions={transactions}
           templeInfo={activeTempleInfo}
           temples={temples}
@@ -4668,7 +4668,6 @@ export default function App() {
     }`}>
       {/* Startup Launcher Modal (Available on desktop launch / manual trigger) */}
       {mergeRequest && <SheetsMergeWizard key={mergeRequest.id} request={mergeRequest} onSaveChoices={persistMergeChoices} onConfirm={finishMergeReview} onCancel={() => finishMergeReview(null)} />}
-      {syncCompletionNotice}
       {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
       <StartupLauncher
         isOpen={isStartupLauncherOpen}
@@ -4684,6 +4683,7 @@ export default function App() {
 
       {/* Header */}
       <Header
+        syncCompletionNotice={syncCompletionNotice}
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         templeInfo={activeTempleInfo}

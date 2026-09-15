@@ -38,6 +38,7 @@ interface HeaderProps {
   onOpenOperationHistory?: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disconnected';
   lastSyncTime?: string | null;
+  syncCompletionNotice?: React.ReactNode;
   unreadCount?: number;
   canUndo?: boolean;
   canRedo?: boolean;
@@ -62,6 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenOperationHistory,
   syncStatus = 'disconnected',
   lastSyncTime,
+  syncCompletionNotice,
   canUndo = false,
   canRedo = false,
   onUndo,
@@ -368,6 +370,8 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           {/* Data Link / Google Sheets Sync */}
+<div className="relative inline-flex shrink-0">
+              {syncCompletionNotice && <div className="absolute right-full mr-2 top-0 bottom-0 z-50 pointer-events-none">{syncCompletionNotice}</div>}
           <button
             onClick={onOpenGoogleSheetsModal}
             className={`h-9 flex items-center space-x-2 px-3 border transition-colors shadow-xs cursor-pointer ${
@@ -418,6 +422,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
           </button>
+            </div>
 
           {/* Operation History / Google Sheets Log */}
           {onOpenOperationHistory && (

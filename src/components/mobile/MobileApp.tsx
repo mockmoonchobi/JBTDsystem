@@ -52,6 +52,7 @@ interface MobileAppProps {
   onOpenGoogleSheetsModal?: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disconnected';
   lastSyncTime?: string | null;
+  syncCompletionNotice?: React.ReactNode;
   onTriggerManualSync?: () => void;
 }
 
@@ -84,6 +85,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   onOpenGoogleSheetsModal,
   syncStatus = 'disconnected',
   lastSyncTime,
+  syncCompletionNotice,
   onTriggerManualSync,
 }) => {
   const [activeTab, setActiveTab] = useState<MobileTab>('households');
@@ -158,6 +160,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     <div className="min-h-screen bg-[#FAF8F5] text-[#1A1A1A] flex flex-col font-sans select-none antialiased">
       {/* Mobile Top Header */}
       <MobileHeader
+        syncCompletionNotice={syncCompletionNotice}
         templeInfo={templeInfo}
         temples={temples}
         activeTempleId={activeTempleId}
