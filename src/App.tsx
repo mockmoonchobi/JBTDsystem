@@ -521,7 +521,7 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [syncCompletion]);
   const syncCompletionNotice = syncCompletion && syncStatus === 'synced' ? (
-    <div role="status" aria-live="polite" className="fixed top-3 left-1/2 -translate-x-1/2 z-[100001] rounded-lg bg-emerald-800 text-white px-4 py-3 shadow-lg text-sm font-bold whitespace-nowrap pointer-events-none">
+    <div role="status" aria-live="polite" className="fixed top-3 left-1/2 -translate-x-1/2 z-[100001] h-9 flex items-center border border-emerald-500/60 bg-emerald-950/80 text-emerald-300 px-3 shadow-xs text-xs font-serif font-bold leading-none whitespace-nowrap pointer-events-none">
       {syncCompletion.count.toLocaleString('ja-JP')}件同期しました
     </div>
   ) : null;
