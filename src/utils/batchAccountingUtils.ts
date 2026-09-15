@@ -168,6 +168,11 @@ export function saveBatchAccountingConfig(config: BatchAccountingConfig): void {
   }
 }
 
+/** Apply a confirmed sheet snapshot without restamping or retaining old config. */
+export function applyImportedBatchAccountingConfig(config: BatchAccountingConfig | null): void {
+  saveJsonState(STORAGE_KEY_BATCH_ACCOUNTING_CONFIG, config);
+}
+
 /**
  * 保存された一括会計データをローカルストレージから取得
  */
@@ -600,7 +605,8 @@ export function convertBatchAccountingToRows(
  */
 export function parseBatchAccountingFromRows(
   rows: any[][],
-  households: Household[] = []
+  households: Household[] = [],
+  readOnly = false
 ): BatchAccountingData | null {
   if (!rows || rows.length < 2) return null;
 
@@ -733,7 +739,7 @@ export function parseBatchAccountingFromRows(
   }
 
   // 保存済みの専用設定テーブルがある場合はそちらを優先適用
-  const savedConfig = getSavedBatchAccountingConfig(detectedTempleId);
+  const savedConfig = readOnly ? null : getSavedBatchAccountingConfig(detectedTempleId);
 
   return {
     id: savedConfig?.id || `config-${detectedTempleId}`,
@@ -761,16 +767,17 @@ export function reconstructBatchAccountingData(
   configRows?: any[][],
   receptionRows?: any[][],
   households: Household[] = [],
-  templeInfo?: TempleInfo
+  templeInfo?: TempleInfo,
+  readOnly = false
 ): BatchAccountingData | null {
   const parsedConfig = configRows && configRows.length >= 2 ? parseBatchAccountingConfigFromRows(configRows) : null;
-  const parsedReception = receptionRows && receptionRows.length >= 2 ? parseBatchAccountingFromRows(receptionRows, households) : null;
+  const parsedReception = receptionRows && receptionRows.length >= 2 ? parseBatchAccountingFromRows(receptionRows, households, readOnly) : null;
 
   if (!parsedConfig && !parsedReception) {
     return null;
   }
 
-  const baseConfig = parsedConfig || getSavedBatchAccountingConfig(templeInfo?.id) || getDefaultBatchAccountingConfig(templeInfo);
+  const baseConfig = parsedConfig || (readOnly ? parsedReception : getSavedBatchAccountingConfig(templeInfo?.id)) || getDefaultBatchAccountingConfig(templeInfo);
   const entries = parsedReception?.entries || {};
 
   return {

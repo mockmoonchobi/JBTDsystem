@@ -1,4 +1,7 @@
 import { SheetsWriteSafety } from './utils/sheetsReadSafety';
+import { SheetsMergeWizard, SheetsMergeRequest } from './components/SheetsMergeWizard';
+import { Dataset, MergeChoices, stableMergeValue, verifyMergedReadback } from './utils/threeWaySheetsMerge';
+import { acknowledgeSheets, readMergeBaseline, draftKey, MergeDraft, saveMergeDraft, backupMergeAttempt } from './utils/sheetsMergeJournal';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { HouseholdList } from './components/HouseholdList';
@@ -21,7 +24,7 @@ import { PostEmptyStartupPromptModal } from './components/PostEmptyStartupPrompt
 
 import { FamilyManager } from './components/FamilyManager';
 
-import { initAuth, getAccessToken, googleSignIn, isAuthError, getCurrentUser, getActiveGoogleAccountName } from './lib/googleAuth';
+import { initAuth, getAccessToken, googleSignIn, isAuthError, getCurrentUser, getActiveGoogleAccountName, clearCachedAccessToken } from './lib/googleAuth';
 import { 
   findOrCreateSpreadsheet, 
   exportToSheets, 
@@ -42,6 +45,7 @@ import { mergeMasterOptionsWithData, getTempleMasterOptions, mergeAllTempleMaste
 import { 
   getSavedBatchAccountingData, 
   getSavedBatchAccountingConfig,
+  applyImportedBatchAccountingConfig,
   saveBatchAccountingData, 
   saveBatchAccountingConfig,
   clearBatchAccountingData,
@@ -83,6 +87,8 @@ import {
 } from './utils/disasterMemorialUtils';
 import {
   getSavedNoticeTemplates,
+  getAllSavedNoticeTemplates,
+  saveAllNoticeTemplates,
   saveNoticeTemplates,
   calculateNiibonFromDeathDate,
   sortHouseholds,
@@ -104,7 +110,8 @@ import { syncTobaTodosList } from './utils/tobaTodoSync';
 import { 
   recordDeletedRecord, 
   recordDeletedRecordsBatch, 
-  loadDeletedRecordsLog, 
+  loadDeletedRecordsLog,
+  MAX_DELETED_LOG_LENGTH,
   saveDeletedRecordsLog,
   clearDeletedRecordsLog,
   unrecordDeletedRecord,
@@ -129,6 +136,8 @@ import {
 
 function getSheetsPayload(state: any) {
   return {
+    allNoticeTemplates: state.allNoticeTemplates ?? getAllSavedNoticeTemplates(),
+    batchAccountingConfig: state.batchAccountingConfig !== undefined ? state.batchAccountingConfig : getSavedBatchAccountingConfig(),
     templeInfo: state.templeInfo, temples: state.temples || [], households: state.households || [],
     pastRecords: state.pastRecords || [], memorialServices: state.memorialServices || [],
     transactions: state.transactions || [], masterOptions: state.masterOptions,
@@ -1422,7 +1431,11 @@ export default function App() {
           disasterEvents: syncStateRef.current.disasterEvents || disasterEvents || getSavedDisasterMemorialEvents(),
         };
 
-    const mergeResult = mergeDatasetsWithAuditPriority(currentLocalState, remoteData);
+    const mergeResult: MergedDatasetResult = isClean ? {
+      ...remoteData, templeInfo: remoteData.templeInfo || EMPTY_TEMPLE_INFO, templeTodos: remoteData.templeTodos || [],
+      familyMembers: remoteData.familyMembers || [],
+      stats: {} as MergedDatasetResult['stats'], summaryMessage: 'Googleシートのデータを反映しました。', hasLocalChanges: false,
+    } : mergeDatasetsWithAuditPriority(currentLocalState, remoteData);
     if (isClean) {
       Object.assign(mergeResult, {
         households: remoteData.households, familyMembers: remoteData.familyMembers || [],
@@ -1504,10 +1517,13 @@ export default function App() {
     }
 
     // 10. Notice Templates
+    if (isClean && remoteData.batchAccountingConfig !== undefined) applyImportedBatchAccountingConfig(remoteData.batchAccountingConfig);
     if (mergeResult.noticeTemplates) {
       setNoticeTemplates(mergeResult.noticeTemplates);
       saveNoticeTemplates(mergeResult.noticeTemplates);
     }
+    // Save the full list last: the legacy helper updates every higan/niibon item.
+    if (isClean && remoteData.allNoticeTemplates) saveAllNoticeTemplates(remoteData.allNoticeTemplates);
 
     // 11. Priests
     if (mergeResult.priests) {
@@ -1541,8 +1557,9 @@ export default function App() {
         ? remoteData.deletedRecords
         : mergeDeletedRecordsLogs(loadDeletedRecordsLog(), remoteData.deletedRecords);
       saveDeletedRecordsLog(mergedLogs);
-      setDeletedRecords(mergedLogs);
-      syncStateRef.current.deletedRecords = mergedLogs;
+      const persistedLogs = loadDeletedRecordsLog();
+      setDeletedRecords(persistedLogs);
+      syncStateRef.current.deletedRecords = persistedLogs;
     } else if (isClean) {
       clearDeletedRecordsLog();
       setDeletedRecords([]);
@@ -1578,6 +1595,30 @@ export default function App() {
   }, [households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, temples, templeInfo, masterOptions, templeMasterOptionsMap, noticeTemplates, priests, deletedRecords, disasterEvents]);
 
   const writeSafetyRef = useRef(new SheetsWriteSafety());
+  const [mergeRequest, setMergeRequest] = useState<SheetsMergeRequest | null>(null);
+  const [mergeSaving, setMergeSaving] = useState(false);
+  const mergeDraftRef = useRef<MergeDraft | null>(null);
+  const mergeAnswerRef = useRef<((data: Dataset | null) => void) | null>(null);
+  const dataLinkOpenRef = useRef(isGoogleSheetsModalOpen);
+  dataLinkOpenRef.current = isGoogleSheetsModalOpen;
+  const askMerge = (draft: MergeDraft, message?: string): Promise<Dataset | null> => {
+    mergeDraftRef.current = draft;
+    setMergeRequest({ ...draft, id: crypto.randomUUID(), message });
+    return new Promise(resolve => { mergeAnswerRef.current = resolve; });
+  };
+  const finishMergeReview = (data: Dataset | null) => {
+    const resolve = mergeAnswerRef.current;
+    mergeAnswerRef.current = null;
+    setMergeSaving(data !== null);
+    setMergeRequest(null);
+    resolve?.(data);
+  };
+  const persistMergeChoices = async (choices: MergeChoices) => {
+    const draft = mergeDraftRef.current;
+    if (!draft) throw new Error('統合の確認をやり直してください。');
+    await saveMergeDraft({ ...draft, choices });
+    draft.choices = choices;
+  };
   const isImportingRef = useRef(false);
   const syncStateRef = useRef({
     templeInfo,
@@ -1633,33 +1674,99 @@ export default function App() {
 
   const safeImportWithAutoRecovery = async (token: string, currentSheetId: string) => {
     writeSafetyRef.current.block();
-    const data = await importFromSheets(token, currentSheetId, { requireCompleteSchema: true });
+    const data = await importFromSheets(token, currentSheetId, { requireCompleteSchema: true, readOnly: true });
     return { data, sheet: { id: currentSheetId, url: 'https://docs.google.com/spreadsheets/d/' + currentSheetId } };
   };
 
-  // Read-only synchronization. No export, workbook creation or fiscal relocation here.
+  // Ordinary synchronization is a pull. Pending edits require explicit review
+  // before the sole merge write; no workbook creation is performed here.
   const syncWithGoogleDrive = useCallback(async (token: string, explicitSheetId?: string, isCleanImport?: boolean, isSilent?: boolean) => {
     if (isSyncInProgressRef.current || isCleanWritingRef.current) throw new Error('別の保存・読み込み処理が実行中です。');
     const before = JSON.stringify(getSheetsPayload({ ...syncStateRef.current, deletedRecords: loadDeletedRecordsLog() }));
-    if (!isCleanImport && writeSafetyRef.current.hasPending(before)) {
-      writeSafetyRef.current.block();
-      setSyncStatus('error');
-      setSyncErrorMessage('端末に未保存の変更があるため、自動読込と書き込みを停止しました。Excelへ退避してから、端末データを初期化して読込を実行してください。');
-      throw new Error('未保存の端末データを保護するため、読み込みを中止しました。');
-    }
     isSyncInProgressRef.current = true;
     isImportingRef.current = true;
     writeSafetyRef.current.block();
     setSyncStatus('syncing');
     try {
       const sheetId = explicitSheetId || JSON.parse(safeStorage.getItem('temple_google_sheet_info') || '{}').id;
+      setSyncErrorMessage(null);
       if (!sheetId) throw new Error('接続先のGoogleシートを指定してください。');
-      const { data: remoteData, sheet } = await safeImportWithAutoRecovery(token, sheetId);
+      let { data: remoteData, sheet } = await safeImportWithAutoRecovery(token, sheetId);
+      const local: Dataset = JSON.parse(before);
+      const baseline = await readMergeBaseline(sheetId);
+      const savedDraft = await idbGet<MergeDraft>(draftKey(sheetId));
+      if (savedDraft?.version === 1 && savedDraft.sheetId === sheetId && savedDraft.phase !== 'verified') await backupMergeAttempt(savedDraft);
+      const remotePayload = () => getSheetsPayload(remoteData);
+      const hasLocalData = ['households', 'pastRecords', 'transactions', 'memorialServices', 'templeTodos', 'deletedRecords', 'temples', 'priests', 'allNoticeTemplates', 'disasterEvents'].some(key => local[key]?.length)
+        || ['templeInfo', 'masterOptions', 'templeMasterOptionsMap', 'batchAccountingData', 'batchAccountingConfig'].some(key => Object.keys(local[key] || {}).length > 0);
+      const pending = baseline ? stableMergeValue(baseline.local) !== stableMergeValue(local) : hasLocalData;
+      if (!isCleanImport && pending) {
+        let draft: MergeDraft = {
+          version: 1, id: crypto.randomUUID(), sheetId, base: baseline,
+          local, remote: remotePayload(), choices: savedDraft?.sheetId === sheetId ? savedDraft.choices : {}, phase: 'review',
+        };
+        let message = '';
+        if (savedDraft?.phase === 'sending') {
+          message = '前回の保存結果を確認できていません。最新のシートと比較し直します。端末の編集は保持しています。';
+          // An acknowledged response may have been lost. Do not blindly replay
+          // that write; the fresh read is authoritative about its outcome.
+          if (savedDraft.intended && verifyMergedReadback(savedDraft.intended, remotePayload())) {
+            draft.base = { version: 1, sheetId, local: savedDraft.local, remote: remotePayload() };
+            message = '前回の保存内容がシートに反映されていることを確認しました。その後の端末の編集を比較します。';
+          }
+        }
+        for (;;) {
+          await saveMergeDraft(draft);
+          const selected = await askMerge(draft, message);
+          if (!selected) throw Object.assign(new Error('統合を保留しました。端末の編集と選択は保存されています。再度データ連携すると確認を再開できます。'), { code: 'merge/deferred' });
+          const current = JSON.stringify(getSheetsPayload({ ...syncStateRef.current, deletedRecords: loadDeletedRecordsLog() }));
+          if (current !== before) throw new Error('確認中に端末のデータが変わりました。編集を保持しているため、再度データ連携してください。');
+          if (JSON.parse(safeStorage.getItem('temple_google_sheet_info') || '{}').id !== sheetId) throw new Error('接続先が変わったため統合を中止しました。');
+          const fresh = await importFromSheets(token, sheetId, { requireCompleteSchema: true, readOnly: true });
+          if (stableMergeValue(getSheetsPayload(fresh)) !== stableMergeValue(draft.remote)) {
+            remoteData = fresh;
+            draft = { ...draft, remote: getSheetsPayload(fresh), choices: mergeDraftRef.current?.choices || {} };
+            message = '確認中にGoogleシートが更新されました。最新の内容で再比較しています。他端末のアプリを閉じてください。';
+            continue;
+          }
+          draft = { ...draft, choices: mergeDraftRef.current?.choices || {}, intended: selected, phase: 'sending' };
+          if (stableMergeValue(selected) === stableMergeValue(draft.remote)) {
+            remoteData = fresh;
+            await saveMergeDraft({ ...draft, phase: 'verified' });
+            break;
+          }
+          const mergedAt = Date.now();
+          selected.deletedRecords = [{
+            logId: `MERGE-${draft.id}`, id: `SYNC-${draft.id}`, entityType: 'temple', actionType: 'update',
+            label: '端末とGoogleシートのデータ統合・競合確認', deletedTimestamp: mergedAt,
+            deletedAt: new Date(mergedAt).toISOString(), operator: getActiveGoogleAccountName() || '操作者未取得',
+            deviceInfo: 'データ統合ウィザード',
+          }, ...(selected.deletedRecords || [])];
+          await backupMergeAttempt(draft);
+          selected.deletedRecords = selected.deletedRecords.slice(0, MAX_DELETED_LOG_LENGTH);
+          await saveMergeDraft(draft);
+          // The user has confirmed a one-terminal maintenance window. Ordinary
+          // writes stay blocked throughout; this is the only explicit merge write.
+          await exportToSheets(token, sheetId, selected.templeInfo, selected.households, selected.pastRecords,
+            selected.memorialServices, selected.transactions, selected.masterOptions, selected.noticeTemplates,
+            selected.templeTodos, selected.temples, { targetTempleId: 'ALL', templeMasterOptionsMap: selected.templeMasterOptionsMap,
+              priests: selected.priests, deletedRecords: selected.deletedRecords, batchAccountingData: selected.batchAccountingData,
+              disasterEvents: selected.disasterEvents, allNoticeTemplates: selected.allNoticeTemplates,
+              batchAccountingConfig: selected.batchAccountingConfig, singleAttemptWrite: true });
+          remoteData = await importFromSheets(token, sheetId, { requireCompleteSchema: true, readOnly: true });
+          if (!verifyMergedReadback(selected, getSheetsPayload(remoteData))) {
+            throw new Error('保存後のデータが統合案と一致しません。書き込みを停止しています。元データと統合案は端末に退避されています。再度データ連携で確認してください。');
+          }
+          await saveMergeDraft({ ...draft, phase: 'verified' });
+          break;
+        }
+      }
       const now = JSON.stringify(getSheetsPayload({ ...syncStateRef.current, deletedRecords: loadDeletedRecordsLog() }));
       if (now !== before) throw new Error('読み込み中に端末のデータが変更されました。変更を保護するため読み込みを中止しました。');
       applyRemoteSheetsDataRef.current(remoteData, true);
       saveJsonState('temple_google_sheet_info', sheet);
       const accepted = getSheetsPayload(syncStateRef.current);
+      await acknowledgeSheets(sheetId, accepted, getSheetsPayload(remoteData));
       lastSyncedSignatureRef.current = computePayloadSignature(accepted);
       writeSafetyRef.current.accept(sheetId, JSON.stringify(accepted));
       const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
@@ -1672,9 +1779,14 @@ export default function App() {
     } catch (error: any) {
       writeSafetyRef.current.block();
       setSyncStatus('error');
-      setSyncErrorMessage(error.message || '完全な読み込みができなかったため、書き込みを停止しています。');
+      if (isAuthError(error)) {
+        clearCachedAccessToken();
+        setSyncStatus('error');
+        setSyncErrorMessage('Googleとの接続の有効期限が切れました。データ連携から再ログインしてください。端末の編集は保持しています。');
+      } else setSyncErrorMessage(error.message || '完全な読み込みができなかったため、書き込みを停止しています。');
       throw error;
     } finally {
+      setMergeSaving(false);
       isSyncInProgressRef.current = false;
       isImportingRef.current = false;
     }
@@ -1753,7 +1865,11 @@ export default function App() {
         deletedRecords: [],
         disasterEvents: state.disasterEvents || disasterEvents,
       });
-      writeSafetyRef.current.accept(newSheet.id, JSON.stringify(getSheetsPayload({ ...state, deletedRecords: [] })));
+      const initialized = getSheetsPayload({ ...state, deletedRecords: [] });
+      await acknowledgeSheets(newSheet.id, initialized, initialized);
+      setDeletedRecords([]);
+      syncStateRef.current.deletedRecords = [];
+      writeSafetyRef.current.accept(newSheet.id, JSON.stringify(initialized));
       setSyncStatus('synced');
       setSyncErrorMessage(null);
       return { success: true, count: localCount, sheetInfo: newSheet };
@@ -1880,6 +1996,8 @@ export default function App() {
         }
       }
       if (user && token) {
+        // The data-link dialog owns login and destination selection.
+        if (dataLinkOpenRef.current) return;
         // Do not auto-import from Google Sheets if launcher is still open or clean write is underway
         if (isStartupLauncherOpenRef.current || isCleanWritingRef.current) {
           setSyncStatus('synced');
@@ -1888,6 +2006,7 @@ export default function App() {
           return;
         }
         try {
+          if (!loadJsonState<{ id: string }>('temple_google_sheet_info', null)?.id) return;
           await syncWithGoogleDriveRef.current(token);
         } catch (e) {
           // Handled inside syncWithGoogleDrive
@@ -1950,6 +2069,8 @@ export default function App() {
       const currentTransactions = curState.transactions;
 
       const exportPayload = {
+        allNoticeTemplates: getAllSavedNoticeTemplates(),
+        batchAccountingConfig: getSavedBatchAccountingConfig(),
         templeInfo: curState.templeInfo || templeInfo,
         households: currentHouseholds,
         pastRecords: currentPastRecords,
@@ -1999,6 +2120,8 @@ export default function App() {
             {
               targetTempleId: 'ALL',
               onlyChangedTables: true,
+              allNoticeTemplates: exportPayload.allNoticeTemplates,
+              batchAccountingConfig: exportPayload.batchAccountingConfig,
               templeMasterOptionsMap: exportPayload.templeMasterOptionsMap,
               priests: exportPayload.priests,
               deletedRecords: exportPayload.deletedRecords,
@@ -2009,6 +2132,7 @@ export default function App() {
         });
 
         lastSyncedSignatureRef.current = payloadSig;
+        await acknowledgeSheets(destination, getSheetsPayload(exportPayload), getSheetsPayload(exportPayload));
         writeSafetyRef.current.accept(destination, JSON.stringify(getSheetsPayload(exportPayload)));
         const nowTime = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
         setLastSyncTime(nowTime);
@@ -2082,7 +2206,8 @@ export default function App() {
       try {
         // 「操作・削除履歴」シートの直近最新行のみを軽量取得（約1KB・画面への影響なし）
         const result = await fetchLatestOperationLogs(token, sheet.id, 25);
-        if (!result) throw new Error('操作履歴を読み取れないため、書き込みを停止しました。');
+        if (isDisposed || isSyncInProgressRef.current || isCleanWritingRef.current || isImportingRef.current || safeStorage.getItem('temple_google_sheet_info') !== savedSheetInfo) return;
+        if (!result) throw new Error('他の端末の更新を確認できません。同期を一時停止しています。');
         if (isDisposed || !result.logs || result.logs.length === 0) {
           isChecking = false;
           return;
@@ -2109,9 +2234,16 @@ export default function App() {
           }
         }
       } catch (err: any) {
+        if (isDisposed || isSyncInProgressRef.current || isCleanWritingRef.current || safeStorage.getItem('temple_google_sheet_info') !== savedSheetInfo) return;
         writeSafetyRef.current.block();
         setSyncStatus('error');
-        setSyncErrorMessage(err.message || '自動読込に失敗したため、書き込みを停止しました。');
+        if (isAuthError(err)) {
+          clearCachedAccessToken();
+          setSyncStatus('error');
+          setSyncErrorMessage('Googleとの接続の有効期限が切れました。データ連携から再ログインしてください。端末の編集は保持しています。');
+        } else {
+          setSyncErrorMessage('他の端末の更新を確認できません。同期を一時停止しています。通信状態を確認して、データ連携をやり直してください。');
+        }
       } finally {
         isChecking = false;
       }
@@ -4392,6 +4524,8 @@ export default function App() {
     return (
       <>
         {/* Startup Launcher Modal (Available on mobile launch / manual trigger) */}
+        {mergeRequest && <SheetsMergeWizard key={mergeRequest.id} request={mergeRequest} onSaveChoices={persistMergeChoices} onConfirm={finishMergeReview} onCancel={() => finishMergeReview(null)} />}
+        {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
         <StartupLauncher
           isOpen={isStartupLauncherOpen}
           onStartWithEmpty={handleStartWithEmpty}
@@ -4520,6 +4654,8 @@ export default function App() {
       activeTab === 'households' ? 'h-screen overflow-hidden' : 'min-h-screen'
     }`}>
       {/* Startup Launcher Modal (Available on desktop launch / manual trigger) */}
+      {mergeRequest && <SheetsMergeWizard key={mergeRequest.id} request={mergeRequest} onSaveChoices={persistMergeChoices} onConfirm={finishMergeReview} onCancel={() => finishMergeReview(null)} />}
+      {mergeSaving && !mergeRequest && <div role="status" className="fixed inset-0 z-[100000] bg-white/95 flex items-center justify-center p-6 text-center">統合データの確認・保存中です。この画面を閉じずにお待ちください。</div>}
       <StartupLauncher
         isOpen={isStartupLauncherOpen}
         onStartWithEmpty={handleStartWithEmpty}

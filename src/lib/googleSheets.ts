@@ -20,6 +20,7 @@ import {
   Priest,
   DeletedRecordEntry,
   BatchAccountingData,
+  BatchAccountingConfig,
   DisasterMemorialEvent
 } from '../types';
 import { INITIAL_MASTER_OPTIONS, EMPTY_MASTER_OPTIONS, INITIAL_TEMPLE_INFO } from '../data/initialData';
@@ -1004,6 +1005,9 @@ export async function exportToSheets(
     disasterEvents?: DisasterMemorialEvent[];
     targetTablesOnly?: string[];
     onlyChangedTables?: boolean;
+    allNoticeTemplates?: NoticeTemplateItem[];
+    batchAccountingConfig?: BatchAccountingConfig | null;
+    singleAttemptWrite?: boolean;
   }
 ): Promise<void> {
   const targetTablesFilter = exportOptions?.targetTablesOnly && exportOptions.targetTablesOnly.length > 0
@@ -1695,8 +1699,8 @@ export async function exportToSheets(
   };
 
   // 10. Notice Template Rows (案内文テンプレート) - Unified with Excel
-  const allTemplatesList = getAllSavedNoticeTemplates();
-  const templateHeaders = ['テンプレートID', 'テンプレート名称', '用紙種別', '法要区分', '案内文本文', '最終更新日時'];
+  const allTemplatesList = exportOptions?.allNoticeTemplates ?? getAllSavedNoticeTemplates();
+  const templateHeaders = ['テンプレートID', 'テンプレート名称', '用紙種別', '法要区分', '案内文本文', '最終更新日時', '文書タイトル'];
   const templateRows = allTemplatesList.map((t) => [
     t.id,
     t.name,
@@ -1704,6 +1708,7 @@ export async function exportToSheets(
     t.category === 'higan' ? '彼岸法要' : t.category === 'niibon' ? '新盆法要' : t.category === 'memorial' ? '年回忌法要' : t.category === 'general' ? '年中行事' : '自由文書',
     t.content || '',
     new Date().toLocaleString('ja-JP'),
+    t.title || '',
   ]);
 
   // Prepare batchUpdate update data and clear ranges
@@ -1824,7 +1829,7 @@ export async function exportToSheets(
   const activeBatchData = exportOptions?.batchAccountingData !== undefined
     ? exportOptions.batchAccountingData
     : getSavedBatchAccountingData(targetTempleId);
-  const activeBatchConfig = getSavedBatchAccountingConfig(targetTempleId) || (activeBatchData ? {
+  const activeBatchConfig = exportOptions?.batchAccountingConfig !== undefined ? exportOptions.batchAccountingConfig : getSavedBatchAccountingConfig(targetTempleId) || (activeBatchData ? {
     id: `config-${targetTempleId}`,
     configDate: activeBatchData.configDate,
     cat1: activeBatchData.cat1,
@@ -1844,7 +1849,7 @@ export async function exportToSheets(
     activeBatchConfig,
     allTemples
   );
-  addChunkedUpdates('一括会計設定', [batchConfigHeaders, ...batchConfigRows]);
+  addChunkedUpdates('一括会計設定', [batchConfigHeaders, ...(exportOptions?.batchAccountingConfig === null ? [] : batchConfigRows)]);
 
   // 13. Batch Accounting Reception Entries (一括会計受付: 世帯入力明細テーブル)
   const { headers: batchHeaders, rows: batchRows } = convertBatchAccountingToRows(
@@ -1935,7 +1940,7 @@ export async function exportToSheets(
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ requests }),
-        }, 3, 600, 45000
+        }, exportOptions?.singleAttemptWrite ? 1 : 3, 600, 45000
       );
       if (!response.ok) {
         handleGoogleApiError(response, await response.json().catch(() => ({})), 'Google スプレッドシートへの書き込みに失敗しました');
@@ -2003,6 +2008,8 @@ export async function exportSpecificTablesToSheets(
 }
 
 export interface SheetsImportResult {
+  allNoticeTemplates?: NoticeTemplateItem[];
+  batchAccountingConfig?: BatchAccountingConfig | null;
   needsFiscalRetentionSync?: boolean;
   templeInfo?: TempleInfo;
   temples?: TempleProfile[];
@@ -2032,6 +2039,7 @@ export async function importFromSheets(
     defaultTempleId?: string;
     priests?: Priest[];
     requireCompleteSchema?: boolean;
+    readOnly?: boolean;
   }
 ): Promise<SheetsImportResult> {
   // The remote workbook may have changed on another device or directly in Sheets.
@@ -3208,7 +3216,7 @@ export async function importFromSheets(
 
   // 9. Parse Master Options (マスタ設定（総合） / マスタ設定 & Per-temple master sheets)
   const parseMasterFromRows = (headers: string[], rows: string[][]): MasterOptions | undefined => {
-    if (!rows || rows.length === 0) return undefined;
+    if (!headers.length || !rows || (!options?.readOnly && rows.length === 0)) return undefined;
     const householdTypes: string[] = [];
     const statuses: string[] = [];
     const districts: string[] = [];
@@ -3239,17 +3247,17 @@ export async function importFromSheets(
       if (pay && !paymentMethods.includes(pay)) paymentMethods.push(pay);
     });
 
-    const incList = incomeCategories.length > 0 ? incomeCategories : (INITIAL_MASTER_OPTIONS.incomeCategories || []);
-    const expList = expenseCategories.length > 0 ? expenseCategories : (INITIAL_MASTER_OPTIONS.expenseCategories || []);
+    const incList = incomeCategories.length > 0 || options?.readOnly ? incomeCategories : (INITIAL_MASTER_OPTIONS.incomeCategories || []);
+    const expList = expenseCategories.length > 0 || options?.readOnly ? expenseCategories : (INITIAL_MASTER_OPTIONS.expenseCategories || []);
 
     return {
-      householdTypes: householdTypes.length > 0 ? householdTypes : INITIAL_MASTER_OPTIONS.householdTypes,
+      householdTypes: householdTypes.length > 0 || options?.readOnly ? householdTypes : INITIAL_MASTER_OPTIONS.householdTypes,
       statuses: statuses, // Respect empty statuses if cleared by user
-      districts: districts.length > 0 ? districts : INITIAL_MASTER_OPTIONS.districts,
+      districts: districts.length > 0 || options?.readOnly ? districts : INITIAL_MASTER_OPTIONS.districts,
       incomeCategories: incList,
       expenseCategories: expList,
       accountingCategories: [...incList, ...expList.filter((c) => !incList.includes(c))],
-      paymentMethods: paymentMethods.length > 0 ? paymentMethods : INITIAL_MASTER_OPTIONS.paymentMethods,
+      paymentMethods: paymentMethods.length > 0 || options?.readOnly ? paymentMethods : INITIAL_MASTER_OPTIONS.paymentMethods,
     };
   };
 
@@ -3286,10 +3294,12 @@ export async function importFromSheets(
   const templateSheetName = findSheet(['案内文テンプレート', '案内文', 'テンプレート']);
   const { headers: templateHeaders, rows: templateRows } = getSheetDataByName(templateSheetName);
   let noticeTemplates: { higan: string; niibon: string } | undefined;
+  let allNoticeTemplates: NoticeTemplateItem[] = [];
 
   if (templateRows.length > 0) {
     const idIdx = findColIdx(templateHeaders, ['テンプレートID', 'ID', 'id']);
     const nameIdx = findColIdx(templateHeaders, ['テンプレート名称', 'テンプレート名', '名称', 'name']);
+    const titleIdx = findColIdx(templateHeaders, ['文書タイトル', 'title']);
     const typeIdx = findColIdx(templateHeaders, ['用紙種別', '用紙種類', '用紙', '種別', 'type']);
     const catIdx = findColIdx(templateHeaders, ['法要区分', 'テンプレート区分', '区分', 'category']);
     const contentIdx = findColIdx(templateHeaders, ['案内文本文', '本文', '案内文', '内容', 'content']);
@@ -3303,7 +3313,7 @@ export async function importFromSheets(
         const rawContent = String((contentIdx !== -1 ? row[contentIdx] : row[4]) || '').trim();
         if (!rawContent) return;
 
-        const rawId = String((idIdx !== -1 ? row[idIdx] : row[0]) || `tpl-imported-${Date.now()}-${i}`).trim();
+        const rawId = String((idIdx !== -1 ? row[idIdx] : row[0]) || `tpl-imported-${i}`).trim();
         const rawName = String((nameIdx !== -1 ? row[nameIdx] : row[1]) || `案内文 ${i + 1}`).trim();
         const rawType = String((typeIdx !== -1 ? row[typeIdx] : row[2]) || '').trim();
         const rawCat = String((catIdx !== -1 ? row[catIdx] : row[3]) || '').trim();
@@ -3318,6 +3328,7 @@ export async function importFromSheets(
         importedTemplates.push({
           id: rawId,
           name: rawName,
+          title: titleIdx !== -1 ? String(row[titleIdx] || '').trim() : undefined,
           type: docType,
           category,
           content: rawContent,
@@ -3326,7 +3337,8 @@ export async function importFromSheets(
       });
 
       if (importedTemplates.length > 0) {
-        saveAllNoticeTemplates(importedTemplates);
+        allNoticeTemplates = importedTemplates;
+        if (!options?.readOnly) saveAllNoticeTemplates(importedTemplates);
         const higanTpl = importedTemplates.find((t) => t.category === 'higan');
         const niibonTpl = importedTemplates.find((t) => t.category === 'niibon');
         noticeTemplates = {
@@ -3349,12 +3361,16 @@ export async function importFromSheets(
       });
 
       if (higan || niibon) {
-        const currentSaved = getSavedNoticeTemplates();
+        const currentSaved = options?.readOnly ? { higan: '', niibon: '' } : getSavedNoticeTemplates();
         noticeTemplates = {
           higan: higan || currentSaved.higan,
           niibon: niibon || currentSaved.niibon,
         };
-        saveNoticeTemplates(noticeTemplates);
+        allNoticeTemplates = [
+          ...(higan ? [{ id: 'legacy-higan', name: '彼岸案内', type: 'postcard' as const, category: 'higan', content: higan }] : []),
+          ...(niibon ? [{ id: 'legacy-niibon', name: '新盆案内', type: 'postcard' as const, category: 'niibon', content: niibon }] : []),
+        ];
+        if (!options?.readOnly) saveNoticeTemplates(noticeTemplates);
       }
     }
   }
@@ -3547,7 +3563,7 @@ export async function importFromSheets(
     ? parseBatchAccountingConfigFromRows([batchConfigHeaders, ...batchConfigRows])
     : null;
 
-  if (parsedBatchConfig) {
+  if (parsedBatchConfig && !options?.readOnly) {
     saveBatchAccountingConfig(parsedBatchConfig);
   }
 
@@ -3557,10 +3573,10 @@ export async function importFromSheets(
   if ((batchHeaders.length > 0 && batchRows.length > 0) || parsedBatchConfig) {
     const configRows = batchConfigHeaders.length > 0 ? [batchConfigHeaders, ...batchConfigRows] : undefined;
     const receptionRows = batchHeaders.length > 0 ? [batchHeaders, ...batchRows] : undefined;
-    const reconstructed = reconstructBatchAccountingData(configRows, receptionRows, finalHouseholds, templeInfo);
+    const reconstructed = reconstructBatchAccountingData(configRows, receptionRows, finalHouseholds, templeInfo, options?.readOnly);
     if (reconstructed) {
       parsedBatchAccountingData = reconstructed;
-      saveBatchAccountingData(reconstructed);
+      if (!options?.readOnly) saveBatchAccountingData(reconstructed);
     }
   }
 
@@ -3572,7 +3588,7 @@ export async function importFromSheets(
     const events = parseDisasterEventsFromRows([disasterHeaders, ...disasterRows]);
     if (events.length > 0) {
       parsedDisasterEvents = events;
-      saveDisasterMemorialEvents(events, false);
+      if (!options?.readOnly) saveDisasterMemorialEvents(events, false);
     }
   }
 
@@ -3609,6 +3625,8 @@ export async function importFromSheets(
       const expected = new Set(partitionTransactionsByTempleFiscalRetention(finalTransactions, templeInfo, temples).archiveTransactions.map(tx => tx.id));
       return finalTransactions.some(tx => expected.has(tx.id) !== actualArchiveIds.has(tx.id));
     })(),
+    allNoticeTemplates,
+    batchAccountingConfig: parsedBatchConfig,
     masterOptions: mergedMasterOptions,
     templeMasterOptionsMap: Object.keys(templeMasterOptionsMap).length > 0 ? templeMasterOptionsMap : undefined,
     noticeTemplates,
@@ -3644,7 +3662,7 @@ export async function fetchLatestOperationLogs(
     );
 
     if (!res.ok) {
-      return null;
+      throw Object.assign(new Error(`操作履歴を取得できませんでした（HTTP ${res.status}）。`), { status: res.status, isAuthError: res.status === 401 });
     }
 
     const data = await res.json();
@@ -3713,8 +3731,7 @@ export async function fetchLatestOperationLogs(
 
     return { logs: parsed, latestTimestamp: maxTimestamp };
   } catch (err) {
-    // Fail silently on background check so it doesn't disturb user experience
-    return null;
+    // Preserve auth/network distinctions for the reconnect UI.
+    throw err;
   }
 }
-

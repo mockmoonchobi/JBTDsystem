@@ -392,11 +392,11 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
             return;
           }
         } catch (retryErr: any) {
-          setStatusMessage({ type: 'error', text: `認証エラー: ${retryErr.message || 'ログインに失敗しました。'}` });
+          setStatusMessage({ type: retryErr?.code === 'merge/deferred' ? 'info' : 'error', text: retryErr.message || 'データ連携に失敗しました。' });
           return;
         }
       }
-      setStatusMessage({ type: 'error', text: `認証エラー: ${err.message || 'ログインに失敗しました。'}` });
+      setStatusMessage({ type: err?.code === 'merge/deferred' ? 'info' : 'error', text: err.message || 'データ連携に失敗しました。' });
     } finally {
       setLoading(false);
     }

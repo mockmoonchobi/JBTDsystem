@@ -6,6 +6,7 @@ const compile = text => ts.transpileModule(text, { compilerOptions: { module: ts
 require.extensions['.ts'] = (module, filename) => module._compile(compile(fs.readFileSync(filename, 'utf8')), filename);
 require.cache[path.join(root, 'src/lib/googleAuth.ts')] = { exports: { getCurrentUser: () => null, getActiveGoogleAccountName: () => '' } };
 const { readAllSheetData, SheetsWriteSafety } = require('../src/utils/sheetsReadSafety.ts');
+const { stableMergeValue, verifyMergedReadback } = require('../src/utils/threeWaySheetsMerge.ts');
 const sheet = (title, rowCount) => ({ properties: { title, gridProperties: { rowCount, columnCount: 100 } } });
 
 test('second page failure rejects the whole import instead of returning 1999 records', async () => {
@@ -61,6 +62,14 @@ function harness() {
   const data = { templeInfo: { name: '試験寺院' }, temples: [], households: [{ id: 'H1' }], pastRecords: [{ id: 'P1' }], transactions: [{ id: 'T1', amount: 1000 }], deletedRecords: [], memorialServices: [], templeTodos: [], masterOptions: {}, templeMasterOptionsMap: {}, priests: [], noticeTemplates: { higan: '', niibon: '' }, batchAccountingData: null, disasterEvents: [] };
   const statuses = [], gate = new SheetsWriteSafety();
   const context = {
+    getAllSavedNoticeTemplates: () => [], getSavedBatchAccountingConfig: () => null,
+    stableMergeValue, verifyMergedReadback, crypto: require('node:crypto'),
+    MAX_DELETED_LOG_LENGTH: 1000, getActiveGoogleAccountName: () => 'テスト操作者',
+    setMergeSaving() {}, isAuthError: e => e?.status === 401, clearCachedAccessToken() {},
+    readMergeBaseline: async () => ({ version: 1, sheetId: 'sheet', local: data, remote: data }),
+    acknowledgeSheets: async () => {}, idbGet: async () => null, draftKey: id => id,
+    saveMergeDraft: async () => {}, backupMergeAttempt: async () => {},
+    askMerge: async () => null, mergeDraftRef: { current: null },
     syncStateRef: { current: structuredClone(data) }, writeSafetyRef: { current: gate },
     isSyncInProgressRef: { current: false }, isCleanWritingRef: { current: false }, isImportingRef: { current: false },
     lastSyncedSignatureRef: { current: '' }, loadDeletedRecordsLog: () => context.syncStateRef.current.deletedRecords,
@@ -101,7 +110,7 @@ test('pending edits and edits during download are preserved and block automatic 
   const { context, gate } = harness();
   gate.accept('sheet', JSON.stringify(context.payload(context.syncStateRef.current)));
   context.syncStateRef.current.transactions[0].amount = 2000;
-  await assert.rejects(context.read('token', 'sheet'), /未保存/);
+  await assert.rejects(context.read('token', 'sheet'), /保留/);
   assert.equal(context.syncStateRef.current.transactions[0].amount, 2000);
   assert(!gate.canWrite('sheet'));
   const concurrent = { ...context, getSheetsPayload: context.payload, safeImportWithAutoRecovery: async () => {
@@ -120,6 +129,81 @@ test('the export wrapper blocks writes after a failure and never redirects to a 
   gate.accept('sheet', 'ok');
   await assert.rejects(write('token', 'sheet', async () => { writes++; throw Error('404'); }));
   await assert.rejects(write('token', 'sheet', async () => { writes++; })); assert.equal(writes, 1);
+});
+
+function mergeHarness() {
+  const { context, gate, data } = harness();
+  let remote = structuredClone(data), saved = null, acknowledgements = 0, writes = 0, reviews = 0;
+  context.syncStateRef.current.transactions[0].amount = 2000;
+  const { planSheetsMerge } = require('../src/utils/threeWaySheetsMerge.ts');
+  const env = { ...context, getSheetsPayload: context.payload, computePayloadSignature: JSON.stringify,
+    getActiveGoogleAccountName: () => '操作者', MAX_DELETED_LOG_LENGTH: 1000,
+    safeImportWithAutoRecovery: async () => ({ data: structuredClone(remote), sheet: { id: 'sheet' } }),
+    importFromSheets: async () => structuredClone(remote),
+    idbGet: async () => saved,
+    saveMergeDraft: async draft => { saved = structuredClone(draft); },
+    backupMergeAttempt: async () => {},
+    acknowledgeSheets: async () => { acknowledgements++; },
+    askMerge: async draft => {
+      reviews++;
+      const p = planSheetsMerge(draft.base, draft.local, draft.remote);
+      const choices = Object.fromEntries(p.conflicts.map(c => [c.key, { side: 'local', fingerprint: c.fingerprint }]));
+      return planSheetsMerge(draft.base, draft.local, draft.remote, choices).merged;
+    },
+    exportToSheets: async (...args) => {
+      writes++;
+      remote = { templeInfo: args[2], households: args[3], pastRecords: args[4], memorialServices: args[5], transactions: args[6], masterOptions: args[7], noticeTemplates: args[8], templeTodos: args[9], temples: args[10], ...args[11] };
+    },
+  };
+  return { env, gate, context, run: () => vm.runInNewContext(compile(`(${fn('syncWithGoogleDrive')})`), env)('token', 'sheet'),
+    get remote() { return remote; }, get saved() { return saved; }, get writes() { return writes; }, get reviews() { return reviews; }, get acknowledgements() { return acknowledgements; } };
+}
+
+test('explicit merge writes only after review and fresh read, then acknowledges a verified result', async () => {
+  const h = mergeHarness();
+  h.remote.households[0].phone = 'other-device';
+  const result = await h.run();
+  assert(result.success); assert.equal(h.writes, 1); assert.equal(h.acknowledgements, 1);
+  assert.equal(h.remote.households[0].phone, 'other-device'); assert.equal(h.remote.transactions[0].amount, 2000);
+  assert(h.gate.canWrite('sheet')); assert.equal(h.saved.phase, 'verified');
+});
+test('remote edits made during review cause a second comparison before any write', async () => {
+  const h = mergeHarness(), ask = h.env.askMerge;
+  h.env.askMerge = async draft => { const selected = await ask(draft); if (h.reviews === 1) h.remote.households[0].phone = 'arrived-during-review'; return selected; };
+  await h.run(); assert.equal(h.reviews, 2); assert.equal(h.writes, 1);
+  assert.equal(h.remote.households[0].phone, 'arrived-during-review');
+});
+test('lost response retains local edits and a sending journal; reconnect verifies instead of replaying', async () => {
+  const h = mergeHarness(), send = h.env.exportToSheets;
+  h.env.exportToSheets = async (...args) => { await send(...args); throw Error('response lost'); };
+  await assert.rejects(h.run(), /response lost/);
+  assert.equal(h.saved.phase, 'sending'); assert(!h.gate.canWrite('sheet')); assert.equal(h.acknowledgements, 0);
+  assert.equal(h.context.syncStateRef.current.transactions[0].amount, 2000);
+  h.env.exportToSheets = send;
+  await h.run(); assert.equal(h.writes, 1, 'do not re-send an already applied merge'); assert(h.gate.canWrite('sheet'));
+});
+test('failed journal persistence prevents sending, and edits during review prevent overwrite', async () => {
+  const h = mergeHarness(); h.env.saveMergeDraft = async () => { throw Error('disk full'); };
+  await assert.rejects(h.run(), /disk full/); assert.equal(h.writes, 0); assert(!h.gate.canWrite('sheet'));
+  const changed = mergeHarness(), ask = changed.env.askMerge;
+  changed.env.askMerge = async draft => { const selected = await ask(draft); changed.context.syncStateRef.current.transactions[0].amount = 3000; return selected; };
+  await assert.rejects(changed.run(), /確認中に端末/); assert.equal(changed.writes, 0);
+  assert.equal(changed.context.syncStateRef.current.transactions[0].amount, 3000);
+});
+test('readback mismatch does not accept the baseline or replace the local dataset', async () => {
+  const h = mergeHarness(), send = h.env.exportToSheets;
+  h.env.exportToSheets = async (...args) => { await send(...args); h.remote.transactions = []; };
+  await assert.rejects(h.run(), /一致しません/); assert.equal(h.acknowledgements, 0); assert(!h.gate.canWrite('sheet'));
+  assert.equal(h.context.syncStateRef.current.transactions.length, 1);
+});
+
+test('a first connection with only local settings still requires review', async () => {
+  const h = mergeHarness();
+  for (const key of ['households', 'pastRecords', 'transactions', 'memorialServices', 'templeTodos', 'deletedRecords']) h.context.syncStateRef.current[key] = [];
+  h.env.readMergeBaseline = async () => null;
+  let prompted = false; h.env.askMerge = async () => { prompted = true; return null; };
+  await assert.rejects(h.run(), /保留/); assert(prompted); assert.equal(h.writes, 0);
+  assert.equal(h.context.syncStateRef.current.templeInfo.name, '試験寺院');
 });
 
 test('a successful read followed by the real auto-save effect never echoes the downloaded data', async () => {
@@ -191,6 +275,92 @@ test('real importer rejects missing mandatory tables and missing batch results',
   } finally { global.fetch = original; }
 });
 
+test('comparison reads return templates without persisting them into the device', async () => {
+  const { importFromSheets } = require('../src/lib/googleSheets.ts');
+  const storage = require('../src/utils/storageUtils.ts');
+  const mock = importMock(), originalFetch = global.fetch, originalSave = storage.saveJsonState;
+  const saves = [];
+  storage.saveJsonState = (...args) => saves.push(args);
+  mock.tables.set('案内文テンプレート', [['テンプレートID', 'テンプレート名称', '用紙種別', '法要区分', '案内文本文'], ['N1', '確認用', 'A4', '自由文書', 'シート側の本文']]);
+  global.fetch = mock.fetch;
+  try {
+    const result = await importFromSheets('token', 'sheet', { requireCompleteSchema: true, readOnly: true });
+    assert.equal(result.allNoticeTemplates[0].content, 'シート側の本文');
+    assert.equal(saves.length, 0, 'a comparison must not update local settings');
+  } finally { global.fetch = originalFetch; storage.saveJsonState = originalSave; }
+});
+
+test('history transport retains 401 rather than reporting an empty history', async () => {
+  const { fetchLatestOperationLogs } = require('../src/lib/googleSheets.ts');
+  const original = global.fetch; global.fetch = async () => new Response('{}', { status: 401 });
+  try { await assert.rejects(fetchLatestOperationLogs('expired', 'sheet'), e => e.status === 401 && e.isAuthError); }
+  finally { global.fetch = original; }
+});
+
+test('a real Sheets export/import round trip satisfies merge readback verification', async () => {
+  const { importFromSheets, exportToSheets } = require('../src/lib/googleSheets.ts');
+  const initial = importMock(); initial.tables.set('過去帳', [['ID', '命日'], ['P1', '2000/01/01']]);
+  initial.tables.set('檀家名簿', [['ID', '世帯主名', '電話番号'], ['H1', '山田太郎', '111']]);
+  const sheets = [...initial.tables].map(([title, rows], i) => ({ properties: { sheetId: i + 1, title, gridProperties: { rowCount: Math.max(100, rows.length), columnCount: 100 } }, rows }));
+  const original = global.fetch;
+  global.fetch = async (url, options = {}) => {
+    if (options.method === 'POST' && url.endsWith(':batchUpdate')) {
+      const replies = [];
+      for (const request of JSON.parse(options.body).requests) {
+        if (request.addSheet) {
+          const properties = { sheetId: sheets.length + 1, gridProperties: { rowCount: 100, columnCount: 100 }, ...request.addSheet.properties };
+          sheets.push({ properties, rows: [] }); replies.push({ addSheet: { properties } });
+        } else {
+          replies.push({});
+          if (request.repeatCell?.fields?.includes('userEnteredValue')) {
+            const range = request.repeatCell.range, s = sheets.find(s => s.properties.sheetId === range.sheetId);
+            for (let row = range.startRowIndex || 0; row < (range.endRowIndex || s.rows.length); row++) s.rows[row] = [];
+          }
+          if (request.updateCells) {
+            const update = request.updateCells, range = update.range || update.start;
+            const s = sheets.find(s => s.properties.sheetId === range.sheetId);
+            const start = range.startRowIndex ?? range.rowIndex ?? 0;
+            for (let i = 0; i < (update.rows || []).length; i++) s.rows[start + i] = update.rows[i].values.map(cell => {
+              const v = cell.userEnteredValue || {}; return v.stringValue ?? v.numberValue ?? v.boolValue ?? '';
+            });
+          }
+          if (request.updateSheetProperties) {
+            const p = request.updateSheetProperties.properties, s = sheets.find(s => s.properties.sheetId === p.sheetId);
+            if (s && p.gridProperties) Object.assign(s.properties.gridProperties, p.gridProperties);
+          }
+        }
+      }
+      return new Response(JSON.stringify({ replies }));
+    }
+    if (url.includes('/values:batchGet')) {
+      const valueRanges = new URL(url).searchParams.getAll('ranges').map(range => {
+        const title = range.match(/^'((?:[^']|'')+)'/)[1].replace(/''/g, "'");
+        const s = sheets.find(s => s.properties.title === title), bounds = range.match(/!A(\d+):ZZ(\d+)/);
+        const values = bounds ? s.rows.slice(+bounds[1] - 1, +bounds[2]) : [...s.rows];
+        while (values.length && (!values.at(-1) || !values.at(-1).length)) values.pop();
+        return { range, values: values.map(row => (row || []).map(v => String(v))) };
+      });
+      return new Response(JSON.stringify({ valueRanges }));
+    }
+    return new Response(JSON.stringify({ spreadsheetId: 'sheet', sheets: sheets.map(({ properties }) => ({ properties })) }));
+  };
+  try {
+    const remote = await importFromSheets('token', 'sheet', { requireCompleteSchema: true, readOnly: true });
+    remote.households[0].phone = '222'; remote.transactions[0].amount = 2000;
+    remote.allNoticeTemplates = [{ id: 'N1', name: '確認用案内', title: '文書タイトル', type: 'kaku2_memo', category: 'custom', content: '比較する本文' }];
+    remote.transactions.push({ ...remote.transactions[0], id: 'ARCHIVE-1', date: '2020/01/01', amount: 7000 });
+    remote.batchAccountingConfig = { id: 'config-temple-main', templeId: 'temple-main', configDate: '令和8年9月15日', cat1: '法要布施', notes1: '', defaultAmount1: 1000, cat2: '護持会費', notes2: '', defaultAmount2: '', cat3: '特別寄付', notes3: '', defaultAmount3: '', appliedPreset: 'default' };
+    remote.batchAccountingData = { ...remote.batchAccountingConfig, entries: { H1: { householdId: 'H1', check1: true, amount1: 1000, check2: false, amount2: '', check3: false, amount3: '' } } };
+    const { context } = harness(), intended = context.payload(remote);
+    await exportToSheets('token', 'sheet', intended.templeInfo, intended.households, intended.pastRecords, intended.memorialServices, intended.transactions,
+      intended.masterOptions, intended.noticeTemplates, intended.templeTodos, intended.temples,
+      { targetTempleId: 'ALL', ...intended });
+    const actual = context.payload(await importFromSheets('token', 'sheet', { requireCompleteSchema: true, readOnly: true }));
+    const mismatches = Object.keys(intended).filter(key => !verifyMergedReadback(intended[key], actual[key], key));
+    assert(verifyMergedReadback(intended, actual), JSON.stringify({ mismatches, intended, actual }));
+  } finally { global.fetch = original; }
+});
+
 test('the 10-second monitor reads only recent history and pulls only on incoming changes', async () => {
   let effect;
   const visit = n => {
@@ -228,6 +398,7 @@ function initializationHarness() {
     deleteAllExistingSpreadsheetsByName: async (...args) => calls.push(['delete', ...args]),
     createNewSpreadsheet: async () => { calls.push(['create']); return { id: 'new-sheet', url: 'test' }; },
     saveDeletedRecordsLog() {}, getSavedBatchAccountingData: () => null, getSavedDisasterMemorialEvents: () => [],
+    setDeletedRecords() {},
     setTimeout: callback => { timers.push(callback); }, isAuthError: () => false, console,
   });
   context.safeStorage.removeItem = () => {};
