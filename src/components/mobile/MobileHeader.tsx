@@ -12,6 +12,7 @@ interface MobileHeaderProps {
   onOpenGoogleSheetsModal?: () => void;
   syncStatus?: 'synced' | 'syncing' | 'error' | 'disconnected';
   lastSyncTime?: string | null;
+  syncCompletionNotice?: React.ReactNode;
   onTriggerManualSync?: () => void;
   activeTab?: string;
 }
@@ -25,6 +26,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
   onOpenGoogleSheetsModal,
   syncStatus = 'disconnected',
   lastSyncTime,
+  syncCompletionNotice,
   activeTab = 'households',
 }) => {
   const [templeDropdownOpen, setTempleDropdownOpen] = useState(false);
@@ -258,6 +260,8 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
         {/* Right: Data Link & PC View Switch Buttons (Enlarged) */}
         <div className="flex items-center gap-2 shrink-0">
           {onOpenGoogleSheetsModal && (
+<div className="relative inline-flex shrink-0">
+              {syncCompletionNotice && <div className="absolute right-full mr-2 top-0 bottom-0 z-50 pointer-events-none">{syncCompletionNotice}</div>}
             <button
               type="button"
               onClick={onOpenGoogleSheetsModal}
@@ -296,6 +300,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
                 </>
               )}
             </button>
+            </div>
           )}
 
           <button
