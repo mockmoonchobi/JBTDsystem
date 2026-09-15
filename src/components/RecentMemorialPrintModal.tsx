@@ -40,6 +40,7 @@ function getKijitsuHeadLabel(item: DailyMemorialItem): string {
   if (label.includes('六七日')) return '六七日';
   if (label.includes('七七日') || label.includes('四十九日')) return '七七日';
   if (label.includes('百ヶ日')) return '百ヶ日';
+  if (label.includes('一周忌')) return '一周忌';
   const match = label.match(/([一二三四五六七八九十百千]+回忌)/);
   if (match) return match[1];
   return '';
