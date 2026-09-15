@@ -429,7 +429,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       deathDate: normalizedDate,
       ageAtDeath: parsedAge !== undefined && !isNaN(parsedAge) && parsedAge > 0 ? parsedAge : undefined,
       relationship: newPastRecordForm.relationship || '',
-      burialLocation: newPastRecordForm.burialLocation || currentIndividualHousehold.tombNumber || '',
+      burialLocation: newPastRecordForm.burialLocation ?? currentIndividualHousehold.tombNumber ?? '',
       niibon: newPastRecordForm.niibon !== undefined && newPastRecordForm.niibon.trim() !== '' ? newPastRecordForm.niibon : (calculatedNiibon || undefined),
       notes: newPastRecordForm.notes || '',
     };
@@ -1601,7 +1601,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       deathDate: normalizedDate,
       ageAtDeath: parsedAge !== undefined && !isNaN(parsedAge) && parsedAge > 0 ? parsedAge : undefined,
       relationship: pastRecordFormData.relationship || '',
-      burialLocation: pastRecordFormData.burialLocation || currentIndividualHousehold?.tombNumber || '',
+      burialLocation: pastRecordFormData.burialLocation ?? currentIndividualHousehold?.tombNumber ?? '',
       niibon: pastRecordFormData.niibon !== undefined && pastRecordFormData.niibon.trim() !== '' ? pastRecordFormData.niibon : (autoNiibon || undefined),
       notes: pastRecordFormData.notes || '',
     };
@@ -5490,3 +5490,4 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     </div>
   );
 };
+

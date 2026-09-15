@@ -29,6 +29,7 @@ export const MobileKakochoModal: React.FC<MobileKakochoModalProps> = ({
   initialHouseholdId,
 }) => {
   const isEditing = !!record;
+  const [burialEdited, setBurialEdited] = useState(false);
   const todayStr = getTodayDateString();
 
   const [formData, setFormData] = useState<Partial<PastRecord>>({
@@ -39,12 +40,13 @@ export const MobileKakochoModal: React.FC<MobileKakochoModalProps> = ({
     householdId: initialHouseholdId || '',
     householdHeadName: '',
     relationship: '',
-    burialLocation: '境内墓地',
+    burialLocation: households.find(h => h.id === initialHouseholdId)?.tombNumber || '',
     notes: '',
     templeId: activeTempleId !== 'ALL' ? activeTempleId : 'temple-main',
   });
 
   useEffect(() => {
+    setBurialEdited(false);
     if (record) {
       setFormData({
         ...record,
@@ -60,7 +62,7 @@ export const MobileKakochoModal: React.FC<MobileKakochoModalProps> = ({
         householdId: initialHouseholdId || '',
         householdHeadName: defaultHh ? (getHouseholdSponsorName(defaultHh) || defaultHh.familyHead) : '',
         relationship: '',
-        burialLocation: '境内墓地',
+        burialLocation: defaultHh?.tombNumber || '',
         notes: '',
         templeId: defaultHh?.templeId || (activeTempleId !== 'ALL' ? activeTempleId : 'temple-main'),
       });
@@ -92,7 +94,7 @@ export const MobileKakochoModal: React.FC<MobileKakochoModalProps> = ({
       householdId: formData.householdId || '',
       householdHeadName: finalHeadName,
       relationship: formData.relationship || '精霊',
-      burialLocation: formData.burialLocation || '境内墓地',
+      burialLocation: formData.burialLocation || '',
       notes: formData.notes || '',
       templeId: formData.templeId || matchedHh?.templeId || 'temple-main',
     };
@@ -228,6 +230,7 @@ export const MobileKakochoModal: React.FC<MobileKakochoModalProps> = ({
                 setFormData({
                   ...formData,
                   householdId: hId,
+                  burialLocation: !isEditing && !burialEdited ? (hh?.tombNumber || '') : formData.burialLocation,
                   // もし当時の施主名が未入力なら、選択した世帯の施主名を初期補完
                   householdHeadName: formData.householdHeadName || currentSponsor,
                   templeId: hh?.templeId || formData.templeId,
@@ -272,7 +275,7 @@ export const MobileKakochoModal: React.FC<MobileKakochoModalProps> = ({
                 type="text"
                 placeholder="例: 境内墓地 A-12, 納骨堂, 永代供養墓"
                 value={formData.burialLocation || ''}
-                onChange={(e) => setFormData({ ...formData, burialLocation: e.target.value })}
+                onChange={(e) => { setBurialEdited(true); setFormData({ ...formData, burialLocation: e.target.value }); }}
                 className="w-full p-2 border border-[#D1CEC7] bg-white text-xs"
               />
             </div>

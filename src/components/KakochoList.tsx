@@ -245,6 +245,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
   // Edit modal state (for creating / editing past records)
   const [showModal, setShowModal] = useState(false);
+  const [burialEdited, setBurialEdited] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PastRecord | null>(null);
   const [formData, setFormData] = useState<Partial<PastRecord>>({
     id: '',
@@ -267,6 +268,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
   const handleOpenAddModal = () => {
     setEditingRecord(null);
+    setBurialEdited(false);
     setFormData({
       id: '',
       householdId: '',
@@ -334,6 +336,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
 
   const handleOpenEditModal = (record: PastRecord) => {
     setEditingRecord(record);
+    setBurialEdited(false);
     const autoNiibon = record.deathDate ? calculateNiibonFromDeathDate(record.deathDate, templeInfo?.bonSeason || '8月盆') : '';
     setFormData({
       ...record,
@@ -369,7 +372,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
       deathDate: normalizedDate,
       ageAtDeath: parsedAge !== undefined && !isNaN(parsedAge) && parsedAge > 0 ? parsedAge : undefined,
       relationship: formData.relationship || '',
-      burialLocation: formData.burialLocation || (selectedHousehold?.tombNumber || ''),
+      burialLocation: formData.burialLocation || '',
       notes: formData.notes || '',
       niibon: formData.niibon !== undefined && formData.niibon.trim() !== ''
         ? formData.niibon.trim()
@@ -1703,7 +1706,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                     {formData.householdId && !isUnlinkedHouseholdId(formData.householdId) && (
                       <button
                         type="button"
-                        onClick={() => setFormData({ ...formData, householdId: getUnlinkedHouseholdId(formData.templeId || activeTempleId, temples) })}
+                        onClick={() => setFormData({ ...formData, householdId: getUnlinkedHouseholdId(formData.templeId || activeTempleId, temples), burialLocation: !editingRecord && !burialEdited ? '' : formData.burialLocation })}
                         className="text-[10px] text-[#8C2D19] hover:underline cursor-pointer"
                       >
                         世帯未設定にする
@@ -1713,7 +1716,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                   <input
                     type="text"
                     value={formData.householdId || ''}
-                    onChange={(e) => setFormData({ ...formData, householdId: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, householdId: e.target.value, burialLocation: !editingRecord && !burialEdited ? (households.find(h => h.id === e.target.value)?.tombNumber || '') : formData.burialLocation })}
                     placeholder={`例: DK-00001 (未設定時は空欄または${getUnlinkedHouseholdId(formData.templeId || activeTempleId, temples)})`}
                     className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-2 text-xs font-bold font-mono"
                   />
@@ -1825,7 +1828,7 @@ export const KakochoList: React.FC<KakochoListProps> = ({
                   <input
                     type="text"
                     value={formData.burialLocation || ''}
-                    onChange={(e) => setFormData({ ...formData, burialLocation: e.target.value })}
+                    onChange={(e) => { setBurialEdited(true); setFormData({ ...formData, burialLocation: e.target.value }); }}
                     placeholder="例: A区-12"
                     className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-2 text-xs"
                   />
@@ -1954,3 +1957,4 @@ export const KakochoList: React.FC<KakochoListProps> = ({
     </div>
   );
 };
+
