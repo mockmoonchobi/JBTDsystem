@@ -1,6 +1,6 @@
 import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from '../utils/noticeTemplateUtils';
 import { readAllSheetData } from '../utils/sheetsReadSafety';
-import { isDanmuPriest, parseDanmuFlag } from '../utils/priestColorUtils';
+import { isDanmuPriest, parseDanmuFlag, shouldRegisterChiefPriest } from '../utils/priestColorUtils';
 import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
 import { SheetsExportCache } from '../utils/sheetsExportCache';
 
@@ -1791,9 +1791,9 @@ export async function exportToSheets(
     '所属寺院ID'
   ];
 
-  const priestsToExport: Priest[] = exportOptions?.priests && exportOptions.priests.length > 0
+  const priestsToExport: Priest[] = exportOptions?.priests !== undefined
     ? exportOptions.priests
-    : allTemples.map((t) => ({
+    : allTemples.filter((t) => shouldRegisterChiefPriest(t.chiefPriest)).map((t) => ({
         id: `priest-chief-${t.id || 'temple-main'}`,
         name: t.chiefPriest || '',
         furigana: '',
