@@ -135,6 +135,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [isResetDbAgreed, setIsResetDbAgreed] = useState<boolean>(false);
   const [showResetAndLoginModal, setShowResetAndLoginModal] = useState<boolean>(false);
   const [showCleanWriteModal, setShowCleanWriteModal] = useState<boolean>(false);
+  const [isInitializingSheets, setIsInitializingSheets] = useState(false);
   const [showTutorialWarningModal, setShowTutorialWarningModal] = useState<boolean>(false);
   const [showSharedDisconnectChoiceModal, setShowSharedDisconnectChoiceModal] = useState<boolean>(false);
 
@@ -215,6 +216,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   if (!isOpen) return null;
 
   const isConnected = Boolean(user && spreadsheetInfo?.id && syncStatus !== 'disconnected');
+  const displaySyncStatus = isInitializingSheets ? 'syncing' : syncStatus;
 
   // 共有データへの再接続ハンドラー（共有モード専用：自分のDrive検索や新規作成は絶対に呼ばない）
   const handleReconnectSharedSheet = async () => {
@@ -498,6 +500,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       return;
     }
     setLoading(true);
+    setIsInitializingSheets(true);
     setStatusMessage({ type: 'loading', text: 'Googleアカウント認証・連携準備中...' });
     try {
       let token = await getAccessToken();
@@ -514,7 +517,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         setUser(res.user);
       }
 
-      setStatusMessage({ type: 'loading', text: '既存ファイルを消去し、新規スプレッドシートを作成して端末データを書き込み中...' });
+      setStatusMessage({ type: 'loading', text: 'Googleデータ初期化中...' });
 
       if (onCleanWriteToSheets) {
         const writeRes = await onCleanWriteToSheets(token);
@@ -524,7 +527,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
         }
         setStatusMessage({
           type: 'success',
-          text: `Googleシートの初期化書き込み完了: 既存ファイルを消去し、新たに作成したファイルへ端末データ（${writeRes?.count ?? 0}件）を書き込みました`,
+          text: `Googleデータ初期化完了：端末データ（${writeRes?.count ?? 0}件）を書き込みました`,
         });
       } else {
         throw new Error('初期化書き込みハンドラーが見つかりません。');
@@ -542,6 +545,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       console.error(err);
       setStatusMessage({ type: 'error', text: `書込エラー: ${err.message || 'Googleシートへの初期化書き込みに失敗しました。'}` });
     } finally {
+      setIsInitializingSheets(false);
       setLoading(false);
     }
   };
@@ -953,28 +957,30 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                     <span>Googleシート常時自動同期ステータス</span>
                   </span>
                   <span className={`px-2 py-0.5 text-xs font-bold flex items-center space-x-1 ${
-                    syncStatus === 'synced'
+                    displaySyncStatus === 'synced'
                       ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/60'
-                      : syncStatus === 'syncing'
+                      : displaySyncStatus === 'syncing'
                       ? 'bg-amber-900/80 text-amber-200 border border-amber-500'
-                      : syncStatus === 'error'
+                      : displaySyncStatus === 'error'
                       ? 'bg-rose-900/80 text-rose-200 border border-rose-500'
                       : 'bg-gray-800 text-gray-400 border border-gray-600'
                   }`}>
-                    {syncStatus === 'synced' && <Check className="w-3 h-3 text-emerald-400" />}
-                    {syncStatus === 'syncing' && <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />}
-                    {syncStatus === 'error' && <AlertCircle className="w-3 h-3 text-rose-400" />}
+                    {displaySyncStatus === 'synced' && <Check className="w-3 h-3 text-emerald-400" />}
+                    {displaySyncStatus === 'syncing' && <RefreshCw className="w-3 h-3 text-amber-400 animate-spin" />}
+                    {displaySyncStatus === 'error' && <AlertCircle className="w-3 h-3 text-rose-400" />}
                     <span>
-                      {syncStatus === 'synced' ? '常時自動同期中' :
-                       syncStatus === 'syncing' ? '保存・同期中...' :
-                       syncStatus === 'error' ? '同期エラー' : '未接続'}
+                      {isInitializingSheets ? 'Googleデータ初期化中...' : displaySyncStatus === 'synced' ? '常時自動同期中' :
+                       displaySyncStatus === 'syncing' ? '保存・同期中...' :
+                       displaySyncStatus === 'error' ? '同期エラー' : '未接続'}
                     </span>
                   </span>
                 </div>
 
                 <div className="text-xs text-[#DDDDDD] space-y-0.5 font-mono pt-1 border-t border-[#333333]">
                   <div>最終同期時刻: <span className="text-[#F9F7F2] font-bold">{lastSyncTime || '同期未実施'}</span></div>
-                  {syncErrorMessage && (
+                  {isInitializingSheets ? (
+                    <div className="text-amber-200 text-[11px] pt-0.5">Googleデータ初期化中...</div>
+                  ) : displaySyncStatus === 'error' && syncErrorMessage && (
                     <div className="text-rose-400 text-[11px] pt-0.5">エラー: {syncErrorMessage}</div>
                   )}
                 </div>
@@ -1769,6 +1775,9 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
                 </p>
                 <p className="text-[11px] leading-relaxed text-[#444444]">
                   Googleドライブ上の既存の「寺院管理・檀家過去帳データ」ファイルを<strong>完全に消去</strong>した上で、新たに「寺院管理・檀家過去帳データ」スプレッドシートを新規作成し、現在この端末にある最新データ（檀家名簿・過去帳・法事予約・出納帳・戦没・災害物故者命日設定・マスタ設定等）を全件書き込みます。
+                </p>
+                <p className="text-[11px] leading-relaxed text-[#444444]">
+                  初期化が成功すると操作・削除履歴もリセットされます。Excelから読み込んだ履歴も、新しいGoogleシートには引き継ぎません。
                 </p>
               </div>
 
