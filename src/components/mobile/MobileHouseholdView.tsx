@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Household, PastRecord, MemorialService, MasterOptions, TempleProfile, TempleInfo } from '../../types';
+import { Household, PastRecord, MemorialService, MasterOptions, TempleProfile, TempleInfo, Transaction } from '../../types';
+import { MobileHouseholdAccounting } from './MobileHouseholdAccounting';
 import { 
   Search, 
   Phone, 
@@ -30,6 +31,7 @@ import { MobileKakochoTextImportModal } from './MobileKakochoTextImportModal';
 
 interface MobileHouseholdViewProps {
   households: Household[];
+  transactions?: Transaction[];
   pastRecords: PastRecord[];
   memorialServices: MemorialService[];
   masterOptions?: MasterOptions;
@@ -46,6 +48,7 @@ interface MobileHouseholdViewProps {
 
 export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   households = [],
+  transactions = [],
   pastRecords = [],
   memorialServices = [],
   masterOptions,
@@ -68,6 +71,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   const [selectedKanaRow, setSelectedKanaRow] = useState<string>('all');
   const [selectedKanaCol, setSelectedKanaCol] = useState<string>('all');
   const [expandedHouseholdId, setExpandedHouseholdId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<'past' | 'accounting'>('past');
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -170,6 +174,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
 
   const toggleExpand = (id: string) => {
     setExpandedHouseholdId(expandedHouseholdId === id ? null : id);
+    setDetailTab('past');
   };
 
   const handleEdit = (h: Household, e: React.MouseEvent) => {
@@ -587,6 +592,23 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                     )}
 
                     {/* Past Records of this Household */}
+                    <div className="flex gap-2" aria-label="当家の詳細表示">
+                      {(['past', 'accounting'] as const).map((tab) => (
+                        <button
+                          key={tab}
+                          type="button"
+                          aria-pressed={detailTab === tab}
+                          onClick={() => setDetailTab(tab)}
+                          className={`flex-1 min-h-11 rounded-xs border font-bold cursor-pointer ${detailTab === tab ? 'bg-[#8C2D19] text-white border-[#8C2D19]' : 'bg-white text-[#8C2D19] border-[#D1CEC7]'}`}
+                        >
+                          {tab === 'past' ? '過去帳' : '会計'}
+                        </button>
+                      ))}
+                    </div>
+                    {detailTab === 'accounting' && (
+                      <MobileHouseholdAccounting key={h.id} householdId={h.id} transactions={transactions} />
+                    )}
+                    {detailTab === 'past' && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="font-bold text-[#8C2D19] flex items-center gap-1.5 text-xs sm:text-sm">
@@ -677,6 +699,8 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                         </div>
                       )}
                     </div>
+
+                    )}
 
                     {/* 塔婆申込・施餓鬼塔婆情報 */}
                     {(() => {

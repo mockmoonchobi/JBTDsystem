@@ -4405,6 +4405,7 @@ export default function App() {
         />
 
         <MobileApp
+          transactions={transactions}
           templeInfo={activeTempleInfo}
           temples={temples}
           activeTempleId={activeTempleId}
