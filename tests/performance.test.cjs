@@ -192,6 +192,8 @@ test('auto sync exports the current snapshot, preserves empty deletions, and wak
     getAccessToken: async () => 'token', safeStorage: { getItem: () => '{"id":"sheet"}', setItem() {} },
     getSavedBatchAccountingData: () => undefined, getSavedDisasterMemorialEvents: () => [], loadDeletedRecordsLog: () => [], computePayloadSignature: JSON.stringify,
     safeExportWithAutoRecovery: async (token,id,callback) => callback(id),
+    acknowledgeSheets: async () => {},
+    getAllSavedNoticeTemplates: () => [], getSavedBatchAccountingConfig: () => null,
     exportToSheets: async (...args) => { exports.push(args); if (exports.length === 1) await new Promise(resolve => { finish = resolve; }); },
     setSyncStatus: status => statuses.push(status), setLastSyncTime() {}, setSyncErrorMessage() {}, isAuthError: () => false,
     setTimeout: callback => { timers.push(callback); return timers.length; }, clearTimeout() {}, console,
