@@ -20,15 +20,16 @@ import {
   DEFAULT_KAKU2_MEMO_TEMPLATE,
   getAllSavedNoticeTemplates,
   saveAllNoticeTemplates,
-  applyEnvelopeMemoTemplate,
 } from '../utils/memorialCalculator';
-import { safeJoinWithSpace } from '../utils/unicodeUtils';
 import { recordOperationLog, getCurrentOperatorInfo } from '../utils/deletedRecordsLog';
 
 interface Kaku2MemoTemplateModalProps {
   isOpen: boolean;
   onClose: () => void;
   templeInfo?: TempleInfo;
+  initialSelectedTemplateId?: string;
+  onTemplateSelected?: (template: NoticeTemplateItem) => void;
+  renderPreview: (text: string, sample: Household) => React.ReactNode;
   onTemplatesUpdated?: (templates?: NoticeTemplateItem[]) => void;
 }
 
@@ -48,6 +49,9 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
   onClose,
   templeInfo,
   onTemplatesUpdated,
+  initialSelectedTemplateId,
+  onTemplateSelected,
+  renderPreview,
 }) => {
   const [allTemplates, setAllTemplates] = useState<NoticeTemplateItem[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('tpl-kaku2-memo-default');
@@ -89,9 +93,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
       const loaded = getAllSavedNoticeTemplates();
       setAllTemplates(loaded);
       const kaku2Templates = loaded.filter((t) => t.type === 'kaku2_memo');
-      if (kaku2Templates.length > 0 && !kaku2Templates.some((t) => t.id === selectedTemplateId)) {
-        setSelectedTemplateId(kaku2Templates[0].id);
-      }
+      setSelectedTemplateId(kaku2Templates.find(t => t.id === initialSelectedTemplateId)?.id || kaku2Templates[0]?.id || '');
       setHasChanges(false);
       setSaveSuccess(false);
     }
@@ -160,20 +162,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
   const executeDeleteTemplate = () => {
     if (!templateToDelete) return;
     const id = templateToDelete.id;
-    let remaining = allTemplates.filter((t) => t.id !== id);
-
-    const remainingKaku2 = remaining.filter((t) => t.type === 'kaku2_memo');
-    if (remainingKaku2.length === 0) {
-      const fallback: NoticeTemplateItem = {
-        id: 'tpl-kaku2-memo-default',
-        name: '重要書類在中・年忌法要案内状同封',
-        type: 'kaku2_memo',
-        category: 'custom',
-        content: DEFAULT_KAKU2_MEMO_TEMPLATE,
-        isDefault: true,
-      };
-      remaining = [...remaining, fallback];
-    }
+    const remaining = allTemplates.filter((t) => t.id !== id);
 
     setAllTemplates(remaining);
     const newKaku2List = remaining.filter((t) => t.type === 'kaku2_memo');
@@ -274,7 +263,8 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
       onTemplatesUpdated(allTemplates);
     }
 
-    showToast('テンプレートの変更を保存しました');
+    onTemplateSelected?.(currentTemplate);
+    showToast('テンプレートを保存し、印刷用に選択しました');
     setTimeout(() => setSaveSuccess(false), 2000);
   };
 
@@ -286,11 +276,6 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
     }
   };
 
-  const previewText = applyEnvelopeMemoTemplate(
-    currentTemplate.content,
-    sampleHousehold,
-    templeInfo
-  );
 
   return (
     <div
@@ -401,6 +386,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
 
           {/* Center: Editor */}
           <div className="lg:col-span-5 p-5 flex flex-col justify-between overflow-y-auto border-r border-stone-200 bg-white space-y-4">
+            {kaku2Templates.length === 0 ? <p className="text-sm text-stone-600">角２宛名面メモは未登録です。「新規追加」から作成できます。</p> : <>
             <div className="space-y-4">
               {/* Template Name */}
               <div className="space-y-1">
@@ -468,7 +454,7 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
             {/* Bottom Controls */}
             <div className="pt-3 border-t border-stone-200 flex items-center justify-between">
               <div>
-                {!currentTemplate.isDefault && (
+                {kaku2Templates.length > 0 && (
                   <button
                     type="button"
                     onClick={() => handleDeleteTemplate(currentTemplate.id)}
@@ -494,12 +480,13 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
                   ) : (
                     <>
                       <Save className="w-4 h-4 text-[#D4AF37]" />
-                      <span>テンプレートを保存</span>
+                      <span>保存してこのテンプレートを使う</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
+            </>}
           </div>
 
           {/* Right: Live Vertical Preview */}
@@ -512,126 +499,10 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
               <span className="text-[10px] text-stone-500 font-mono">角２封筒 (240×332mm)</span>
             </div>
 
-            {/* Simulated Envelope Preview */}
-            <div
-              className="bg-[#FAFAF9] border border-stone-400 shadow-md relative overflow-hidden"
-              style={{
-                width: '260px',
-                height: '360px',
-              }}
-            >
-              {/* 郵便番号 */}
-              <div
-                className="absolute flex items-center justify-end"
-                style={{ top: '8px', right: '8px' }}
-              >
-                {['1', '0', '5', '0', '0', '1', '1'].map((d, i) => (
-                  <div
-                    key={i}
-                    className={`w-[8px] h-[11px] flex items-center justify-center text-[7px] font-bold text-stone-900 ${
-                      i === 3 ? 'ml-[3px]' : i > 0 ? 'ml-[1px]' : ''
-                    }`}
-                    style={{ border: '1px solid #dc2626' }}
-                  >
-                    {d}
-                  </div>
-                ))}
-              </div>
-
-              {/* 料金別納マーク */}
-              <div
-                className="absolute top-[8px] left-[4px] border border-stone-800 p-0.5 text-center flex flex-col items-center justify-center"
-                style={{ width: '26px', height: '32px' }}
-              >
-                <span className="text-[5px] border-b border-stone-800 w-full pb-0.5 font-serif">
-                  料金別納
-                </span>
-                <span className="text-[5px] font-serif pt-0.5">郵便</span>
-              </div>
-
-              {/* 住所 (縦書き) */}
-              <div
-                className="absolute top-[38px] right-[14px] text-stone-800 font-serif"
-                style={{
-                  writingMode: 'vertical-rl',
-                  textOrientation: 'upright',
-                  fontSize: '8.5px',
-                  lineHeight: '1.4',
-                }}
-              >
-                東京都港区芝公園四❘七❘三十五
-              </div>
-
-              {/* 氏名 (上へシフト) */}
-              <div
-                className="absolute left-[50%] text-stone-950 font-serif font-bold whitespace-nowrap"
-                style={{
-                  top: '58px',
-                  transform: 'translateX(-50%)',
-                  writingMode: 'vertical-rl',
-                  textOrientation: 'upright',
-                  fontSize: '18px',
-                  lineHeight: '1.4',
-                  letterSpacing: '3px',
-                }}
-              >
-                佐　藤　　謙　一　　様
-              </div>
-
-              {/* 差出人 */}
-              <div
-                className="absolute bottom-[20px] left-[8px] font-serif text-stone-800 text-[6px] leading-tight"
-                style={{
-                  writingMode: 'vertical-rl',
-                  textOrientation: 'upright',
-                }}
-              >
-                <div className="font-bold text-[7px]">慈光山　圓福寺</div>
-                <div>東京都港区芝公園四❘七❘三十五</div>
-              </div>
-
-              {/* 上部区切り線 (横線) */}
-              <div
-                className="absolute"
-                style={{
-                  bottom: '116px',
-                  left: '70px',
-                  right: '14px',
-                  height: '1px',
-                  backgroundColor: '#1c1917',
-                }}
-              />
-
-              {/* メモ文章（枠線なし・縦書き文章エリア） */}
-              <div
-                className="absolute flex flex-col justify-start"
-                style={{
-                  bottom: '20px',
-                  left: '70px',
-                  right: '14px',
-                  height: '94px',
-                  boxSizing: 'border-box',
-                  padding: '2px 4px',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  className="font-serif text-stone-950 h-full tracking-wide"
-                  style={{
-                    writingMode: 'vertical-rl',
-                    textOrientation: 'upright',
-                    fontSize: '7px',
-                    lineHeight: '1.5',
-                    whiteSpace: 'pre-wrap',
-                  }}
-                >
-                  {previewText}
-                </div>
-              </div>
-            </div>
+            {renderPreview(kaku2Templates.length ? currentTemplate.content : '', sampleHousehold)}
 
             <p className="text-[11px] text-stone-500 mt-2 text-center">
-              ※ 印刷時は実寸（240×332mm）に合わせて高精細にレイアウトされます
+              ※ 印刷と同じ配置・文字サイズを縮小表示しています。用紙位置はプリンターの設定でも変わります。
             </p>
           </div>
         </div>
@@ -678,3 +549,4 @@ export const Kaku2MemoTemplateModal: React.FC<Kaku2MemoTemplateModalProps> = ({
     </div>
   );
 };
+

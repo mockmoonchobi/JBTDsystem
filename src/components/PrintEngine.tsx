@@ -286,9 +286,11 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
       }
     }
     if (selectedKaku2MemoTemplateId) {
-      const foundMemo = loaded.find((t) => t.id === selectedKaku2MemoTemplateId);
+      const foundMemo = loaded.find((t) => t.id === selectedKaku2MemoTemplateId && t.type === 'kaku2_memo');
       if (foundMemo) {
         handleCustomKaku2MemoChange(foundMemo.content);
+      } else {
+        setSelectedKaku2MemoTemplateId('');
       }
     }
   };
@@ -1454,6 +1456,27 @@ export const PrintEngine: React.FC<PrintEngineProps> = ({
       {/* Kaku2 Envelope Memo Template Settings Modal */}
       <Kaku2MemoTemplateModal
         isOpen={isKaku2MemoModalOpen}
+        initialSelectedTemplateId={selectedKaku2MemoTemplateId}
+        onTemplateSelected={(template) => {
+          setSelectedKaku2MemoTemplateId(template.id);
+          handleCustomKaku2MemoChange(template.content);
+        }}
+        renderPreview={(text, sample) => (
+          <div style={{ width: 260, height: 260 * 332 / 240, flexShrink: 0 }}>
+            <div style={{ transform: 'scale(0.2866319444)', transformOrigin: 'top left', width: '240mm', height: '332mm' }}>
+              <PreviewCanvas
+                household={currentPreviewHousehold || sample}
+                templeInfo={previewTempleInfo}
+                docType="envelope_kaku2" postcardTab="front" honorific={honorific}
+                customMessage="" compactPreview showKaku2Memo kaku2MemoText={text}
+                kaku2MemoFontSizeOffset={kaku2MemoFontSizeOffset}
+                showTempleQrCode={showTempleQrCode} showHouseholdQrCode={showHouseholdQrCode}
+                showBetsunoStamp={showBetsunoStamp} hideSender={hideSender}
+                showPostalCodeFrame={showPostalCodeFrame}
+              />
+            </div>
+          </div>
+        )}
         onClose={() => {
           setIsKaku2MemoModalOpen(false);
           reloadTemplates();
@@ -1488,6 +1511,7 @@ interface PreviewCanvasProps {
   showKaku2Memo?: boolean;
   kaku2MemoText?: string;
   kaku2MemoFontSizeOffset?: number;
+  compactPreview?: boolean;
   isPrint?: boolean;
   isLast?: boolean;
   milestoneTargetsMap?: Record<string, MemorialNoticeTarget[]>;
@@ -1788,6 +1812,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   showKaku2Memo = false,
   kaku2MemoText = '',
   kaku2MemoFontSizeOffset = 0,
+  compactPreview = false,
   isPrint = false,
   isLast = false,
   milestoneTargetsMap,
@@ -1825,7 +1850,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
               marginBottom: '-60mm',
             }
           : {}),
-        ...(isKaku2 && !isPrint
+        ...(isKaku2 && !isPrint && !compactPreview
           ? {
               transform: 'scale(0.55)',
               transformOrigin: 'top center',
@@ -2198,7 +2223,9 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                 : 'translate(calc(-50% - 2mm), -50%)',
               writingMode: 'vertical-rl',
               textOrientation: 'upright',
-              fontSize: '38pt',
+              fontSize: showKaku2Memo
+                ? `${Math.min(38, (160 * 72 / 25.4) / Math.max(1, toGraphemes(formatRecipientName(household.familyHead, honorific)).length))}pt`
+                : '38pt',
               lineHeight: '1.4',
             }}
           >
@@ -2243,7 +2270,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
                     whiteSpace: 'pre-wrap',
                   }}
                 >
-                  {applyEnvelopeMemoTemplate(kaku2MemoText || DEFAULT_KAKU2_MEMO_TEMPLATE, household, templeInfo)}
+                  {applyEnvelopeMemoTemplate(kaku2MemoText, household, templeInfo)}
                 </div>
               </div>
             </>
