@@ -823,7 +823,8 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       validCoordCount++;
       latLngBounds.extend([coord.lat, coord.lng]);
 
-      if (activeStep === 3) {
+      // 未採番のピンは表示するが、巡回線には含めない。
+      if (activeStep === 3 && Number.isSafeInteger(h.tanagyoOrder) && h.tanagyoOrder! > 0) {
         routeCoords.push([coord.lat, coord.lng]);
       }
 
