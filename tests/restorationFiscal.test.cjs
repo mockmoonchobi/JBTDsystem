@@ -233,3 +233,14 @@ test('unchanged payload signatures still change at the owning temple fiscal boun
     assert.notEqual(signature(),before);
   }finally{global.Date=OriginalDate;}
 });
+
+test('household yago survives Sheets roundtrip and absent legacy column reads empty',async()=>{
+ const mock=workbookMock(),old=global.fetch;global.fetch=mock.fetch;
+ try{
+  await exportState({...state(),households:[{id:'DK-01001',familyHead:'試験太郎',yago:'山屋',templeId:temple.id}]});
+  const read=()=>importFromSheets('test-token','test-sheet',{readOnly:true});
+  assert.equal((await read()).households.find(h=>h.id==='DK-01001').yago,'山屋');
+  const rows=mock.sheets.get('檀家名簿').rows,idx=rows[0].indexOf('屋号');assert(idx>=0);rows.forEach(r=>r.splice(idx,1));
+  assert.equal((await read()).households.find(h=>h.id==='DK-01001').yago,'');
+ }finally{global.fetch=old;}
+});

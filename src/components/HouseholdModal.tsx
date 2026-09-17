@@ -194,6 +194,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       id: finalId,
       templeId: targetTempleId,
       familyHead: formData.familyHead,
+      yago: formData.yago?.trim() || '',
       furigana: normalizeFurigana(formData.furigana),
       postalCode: formData.postalCode || '',
       address: formData.address || '',

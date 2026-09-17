@@ -258,6 +258,7 @@ export function exportToExcel(
     '修正時間',
     '所属寺院ID',
     '登録日時',
+    '屋号'
   ];
   const householdRows = filteredHouseholds.map((h) => {
     const [cDate, cTime, uDate, uTime] = getAuditRowValues(h);
@@ -302,6 +303,7 @@ export function exportToExcel(
       uTime,
       getTempleId(h.templeId),
       h.createdAt || cDate,
+      h.yago?.trim() || '',
     ];
   });
   const wsHouseholds = XLSX.utils.aoa_to_sheet([householdHeaders, ...householdRows]);
@@ -1390,6 +1392,7 @@ export async function importFromExcel(
     const idIdx = findColIdx(householdHeaders, ['ID', 'id', '檀家ID', '世帯ID', '管理番号', 'コード', '檀家番号', 'No', 'NO']);
     const templeNameIdx = findColIdx(householdHeaders, ['所属寺院', '寺院名', '寺院', '兼務寺院']);
     const templeIdIdx = findColIdx(householdHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
+    const yagoIdx = findColIdx(householdHeaders, ['屋号', '家の屋号', 'yago']);
     const headIdx = findColIdx(householdHeaders, ['世帯主名', '施主名', '世帯主', '施主', '氏名', '名前', '代表者', '檀家名', '当家名', '戸主', '名義人']);
     const furiganaIdx = findColIdx(householdHeaders, ['フリガナ', 'ふりがな', 'カナ', 'かな', '読み', '氏名カナ', '世帯主カナ']);
     const postalIdx = findColIdx(householdHeaders, ['郵便番号', '郵便', '〒', 'zip', 'postcode']);
@@ -1511,6 +1514,7 @@ export async function importFromExcel(
         id: householdId,
         templeId,
         familyHead: familyHead || '氏名未設定',
+        yago: yagoIdx >= 0 ? String(row[yagoIdx] || '').trim() : '',
         furigana,
         postalCode,
         address,
