@@ -169,7 +169,7 @@ interface HouseholdListProps {
   onUpdateTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   onOpenAddModal: () => void;
-  onEditHousehold: (household: Household) => void;
+  onEditHousehold: (household: Household, creating?: boolean, onCreated?: (id: string) => void) => void | boolean;
   onDeleteHousehold: (id: string) => void;
   onAddPastRecord: (record: PastRecord) => void;
   onUpdatePastRecord: (record: PastRecord) => void;
@@ -317,6 +317,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   }, [viewMode]);
 
   // Inline Household Edit State (for seen-as-is direct editing in individual view)
+  const [isCreatingHousehold, setIsCreatingHousehold] = useState(false);
   const [isEditingHouseholdInline, setIsEditingHouseholdInline] = useState(false);
   const [inlineHouseholdForm, setInlineHouseholdForm] = useState<Household | null>(null);
 
@@ -350,9 +351,20 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     return Array.from(set).filter(Boolean);
   }, [masterOptions?.statuses, households]);
 
-  // 新規登録は保存時採番の専用フォームへ。入力前の仮レコードは作らない。
+  // 新規入力は端末内の下書き。IDの採番と登録は保存時に行う。
   const handleStartAddNewHousehold = () => {
-    onOpenAddModal();
+    if (isCreatingHousehold) return;
+    setInlineHouseholdForm({
+      id: '', templeId: activeTempleId !== 'ALL' ? activeTempleId : (temples.find(t => t.isMain)?.id || 'temple-main'),
+      familyHead: '', furigana: '', postalCode: '', address: '', phone: '',
+      householdType: '正檀家', district: '', tombNumber: '', status: '', familyMembers: [], createdAt: '',
+    });
+    setIsCreatingHousehold(true);
+    setIsEditingHouseholdInline(true);
+    setIsEditingFamilyInline(false);
+    setEditingPastRecordId(null);
+    setIsAddingNewPastRecordInline(false);
+    setViewMode('individual');
   };
 
   // Inline New Past Record in Individual View State
@@ -1126,7 +1138,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   // Current selected individual household
   const currentHouseholdIndex = sortedHouseholds.findIndex((h) => h.id === selectedIndividualId);
-  const currentIndividualHousehold =
+  const currentIndividualHousehold = isCreatingHousehold ? inlineHouseholdForm :
     sortedHouseholds.find((h) => h.id === selectedIndividualId) ||
     sortedHouseholds[0] ||
     households[0];
@@ -1147,17 +1159,17 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   // 個別表示モード時に検索条件やフィルタが変更された場合、該当リスト内の先頭世帯を自動選択
   useEffect(() => {
-    if (viewMode === 'individual' && sortedHouseholds.length > 0) {
+    if (!isCreatingHousehold && viewMode === 'individual' && sortedHouseholds.length > 0) {
       const existsInSorted = sortedHouseholds.some((h) => h.id === selectedIndividualId);
       if (!existsInSorted) {
         setSelectedIndividualId(sortedHouseholds[0].id);
       }
     }
-  }, [viewMode, sortedHouseholds, selectedIndividualId]);
+  }, [viewMode, sortedHouseholds, selectedIndividualId, isCreatingHousehold]);
 
   // Past records for the current selected individual household (sorted by date ascending, records without deathDate at bottom)
   const currentHouseholdPastRecords = useMemo(() => {
-    if (!currentIndividualHousehold) return [];
+    if (!currentIndividualHousehold?.id) return [];
     return pastRecords
       .filter((r) => r.householdId === currentIndividualHousehold.id)
       .sort((a, b) => {
@@ -1174,7 +1186,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   // Accounting transactions for the current selected individual household (sorted by date ascending)
   const currentHouseholdTransactions = useMemo(() => {
-    if (!currentIndividualHousehold || !transactions) return [];
+    if (!currentIndividualHousehold?.id || !transactions) return [];
     return (transactions || [])
       .filter((t) => t.householdId === currentIndividualHousehold.id)
       .sort((a, b) => {
@@ -1360,7 +1372,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
   // Navigation handlers in individual view
   const handlePrevHousehold = () => {
-    if (sortedHouseholds.length === 0) return;
+    if (isCreatingHousehold || sortedHouseholds.length === 0) return;
     if (individualContentRef.current) {
       lastIndividualScrollTopRef.current = individualContentRef.current.scrollTop;
     }
@@ -1375,7 +1387,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
   };
 
   const handleNextHousehold = () => {
-    if (sortedHouseholds.length === 0) return;
+    if (isCreatingHousehold || sortedHouseholds.length === 0) return;
     if (individualContentRef.current) {
       lastIndividualScrollTopRef.current = individualContentRef.current.scrollTop;
     }
@@ -1403,20 +1415,27 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
         alert('世帯主氏名（戸主名）を入力してください。');
         return;
       }
-      onEditHousehold(inlineHouseholdForm);
+      if (isCreatingHousehold) {
+        onEditHousehold(inlineHouseholdForm, true, (id) => {
+          setSelectedIndividualId(id);
+          setSearchTerm('');
+          setTypeFilter('ALL'); setStatusFilter('ALL'); setDistrictFilter('ALL');
+          setTobaFilter('ALL'); setTanagyoFilter('ALL'); setShowExcludedMode('active');
+          setIsCreatingHousehold(false);
+          setIsEditingHouseholdInline(false);
+          setInlineHouseholdForm(null);
+        });
+        return;
+      }
+      if (onEditHousehold(inlineHouseholdForm) === false) return;
       setIsEditingHouseholdInline(false);
       setInlineHouseholdForm(null);
     }
   };
 
   const handleCancelInlineHousehold = () => {
-    if (currentIndividualHousehold && (!currentIndividualHousehold.familyHead || currentIndividualHousehold.familyHead.trim() === '')) {
-      onDeleteHousehold(currentIndividualHousehold.id);
-      const remaining = households.filter((h) => h.id !== currentIndividualHousehold.id);
-      if (remaining.length > 0) {
-        setSelectedIndividualId(remaining[0].id);
-      }
-    }
+    if (isCreatingHousehold) setViewMode('list');
+    setIsCreatingHousehold(false);
     setIsEditingHouseholdInline(false);
     setInlineHouseholdForm(null);
   };
@@ -1656,7 +1675,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
           </button>
 
           <button
-            onClick={() => setViewMode('list')}
+            disabled={isCreatingHousehold} onClick={() => setViewMode('list')}
             className={`px-3.5 py-2 font-bold tracking-wider uppercase transition-colors flex items-center space-x-1.5 ${
               viewMode === 'list'
                 ? 'bg-[#D4AF37] text-[#1A1A1A]'
@@ -1685,7 +1704,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
           </button>
 
           <button
-            onClick={handleStartAddNewHousehold}
+            disabled={isCreatingHousehold} onClick={handleStartAddNewHousehold}
             className="px-3.5 py-2 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold tracking-wider uppercase transition-colors flex items-center space-x-1.5 shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -2675,7 +2694,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
             <div className="flex flex-1 items-center space-x-3">
               <button
                 type="button"
-                onClick={() => setViewMode('list')}
+                disabled={isCreatingHousehold} onClick={() => setViewMode('list')}
                 className="px-3.5 py-2 bg-[#F9F7F2] hover:bg-[#EBE7DF] border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs flex items-center space-x-1 font-sans shrink-0 cursor-pointer shadow-xs transition-colors"
                 title="リスト一覧へ戻る（現在の検索状態は維持されます）"
               >
@@ -2709,7 +2728,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
             {/* Pagination & Next/Prev Navigation */}
             <div className="flex items-center justify-between md:justify-end space-x-3 font-sans text-xs shrink-0">
               <span className="text-[#888888]">
-                {sortedHouseholds.length > 0
+                {isCreatingHousehold ? '新規檀徒を入力中' : sortedHouseholds.length > 0
                   ? `${currentHouseholdIndex >= 0 ? currentHouseholdIndex + 1 : 1} / ${sortedHouseholds.length} 世帯`
                   : '0 / 0 世帯'}
                 {searchTerm && <span className="text-[#B8860B] font-bold ml-1">（検索中）</span>}
@@ -2719,7 +2738,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 <button
                   type="button"
                   onClick={handlePrevHousehold}
-                  disabled={sortedHouseholds.length <= 1}
+                  disabled={isCreatingHousehold || sortedHouseholds.length <= 1}
                   className="p-1.5 bg-[#F9F7F2] hover:bg-[#EBE7DF] disabled:opacity-40 disabled:cursor-not-allowed border border-[#D1CEC7] text-[#1A1A1A] cursor-pointer"
                   title="前の世帯"
                 >
@@ -2728,7 +2747,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 <button
                   type="button"
                   onClick={handleNextHousehold}
-                  disabled={sortedHouseholds.length <= 1}
+                  disabled={isCreatingHousehold || sortedHouseholds.length <= 1}
                   className="p-1.5 bg-[#F9F7F2] hover:bg-[#EBE7DF] disabled:opacity-40 disabled:cursor-not-allowed border border-[#D1CEC7] text-[#1A1A1A] cursor-pointer"
                   title="次の世帯"
                 >
@@ -2739,7 +2758,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
           </div>
 
           {/* 検索結果が0件の場合 */}
-          {sortedHouseholds.length === 0 ? (
+          {!isCreatingHousehold && sortedHouseholds.length === 0 ? (
             <div className="bg-white border-x border-b border-[#D1CEC7] p-8 text-center text-[#888888] font-sans shadow-sm flex-1 min-h-0 overflow-y-auto">
               <p className="text-base font-bold text-[#444444] mb-2">検索条件に一致する檀家世帯が見つかりませんでした。</p>
               <p className="text-xs text-[#888888] mb-4">検索キーワード: 「{searchTerm}」</p>
@@ -2762,7 +2781,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               <div className="w-full md:w-auto space-y-1">
                 <div className="flex flex-wrap items-center gap-2 mb-1 font-sans">
                   <span className="text-xs font-mono bg-[#2A2A2A] text-[#D4AF37] border border-[#D4AF37]/50 px-2 py-0.5">
-                    檀家ID: {currentIndividualHousehold.id}
+                    檀家ID: {isCreatingHousehold ? '保存時に採番' : currentIndividualHousehold.id}
                   </span>
                   {isEditingHouseholdInline && inlineHouseholdForm ? (
                     <div className="flex flex-wrap items-center gap-2">
@@ -3432,6 +3451,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               </div>
             </div>
 
+            {isCreatingHousehold ? (
+              <p className="p-6 bg-[#F9F7F2] text-sm font-sans text-[#666666]">名簿を保存すると、家族・過去帳・会計を登録できます。</p>
+            ) : <>
             {/* FAMILY MEMBERS SECTION (家族構成) */}
             <div className="p-6 border-b border-[#F0EFEA] bg-[#F9F7F2]">
               <div className="flex items-center justify-between mb-3">
@@ -4320,6 +4342,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               </div>
             </div>
           </div>
+            </>}
         </div>
       ) : null}
     </div>

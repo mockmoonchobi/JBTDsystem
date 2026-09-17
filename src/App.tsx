@@ -2796,7 +2796,7 @@ export default function App() {
   };
 
   // Handlers: Household CRUD
-  const handleSaveHousehold = (household: Household, creating = false) => {
+  const handleSaveHousehold = (household: Household, creating = false, onCreated?: (id: string) => void) => {
     if (creating) {
       // Allocate from all current records at commit time; never interpret a new
       // household as an update just because its provisional ID is occupied.
@@ -2837,6 +2837,7 @@ export default function App() {
         return [auditedHousehold, ...prev];
       }
     });
+    if (creating) onCreated?.(auditedHousehold.id);
   };
 
   const handleBatchUpdateHouseholds = (updatedList: Household[], description?: string) => {

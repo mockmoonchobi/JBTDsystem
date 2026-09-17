@@ -102,7 +102,9 @@ test('new registration never updates the existing owner of its provisional ID',(
  const env={households,pastRecords:[{householdId:'DK-100020'}],transactions:[{householdId:'DK-100030'}],memorialServices:[],familyMembers:[],templeTodos:[],temples:[],loadDeletedRecordsLog:()=>[],generateNewHouseholdId,
  retainedHouseholds:()=>({}),reserveHousehold:()=>{},withCreationAudit:x=>x,withUpdateAudit:()=>{throw Error('new registration must not update');},recordHistory:()=>{},getCurrentOperatorInfo:()=>({}),recordOperationLog:()=>{},formatHouseholdLogDesc:()=>'',setHouseholds:fn=>households=fn(households)};
  const compiled=ts.transpileModule('('+body+')',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- vm.runInNewContext(compiled,env)({id:'DK-100012',familyHead:'吉岡よしお',familyMembers:[{id:'F1',householdId:'DK-100012'}]},true);
+ let savedId;
+ vm.runInNewContext(compiled,env)({id:'DK-100012',familyHead:'吉岡よしお',familyMembers:[{id:'F1',householdId:'DK-100012'}]},true,id=>savedId=id);
+ assert.equal(savedId,households[0].id);
  assert.equal(households.length,2);assert.equal(households[1].familyHead,'既存の檀家');
  assert.equal(households[0].familyHead,'吉岡よしお');assert.equal(households[0].id,'DK-100031');
  assert.equal(households[0].familyMembers[0].householdId,households[0].id);
@@ -117,14 +119,37 @@ test('six digit IDs containing reserved-looking suffixes stay distinct through n
  assert.equal(generateNewHouseholdId('temple-main',[{id:'DK-200000'}]),'DK-200001');
 });
 
-test('roster new-household button opens the guarded creation form without writing a provisional record',()=>{
+function rosterExpression(name) {
  const source=fs.readFileSync(path.join(root,'src/components/HouseholdList.tsx'),'utf8');
- const ast=ts.createSourceFile('HouseholdList.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let handler;
- function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='handleStartAddNewHousehold')handler=n.initializer.getText(ast);ts.forEachChild(n,visit);}visit(ast);assert(handler);
- let opened=0;const fail=()=>{throw Error('must not write or select a provisional household')};
- const js=ts.transpileModule('('+handler+')()',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
- require('node:vm').runInNewContext(js,{onOpenAddModal:()=>opened++,onEditHousehold:fail,setSelectedIndividualId:fail,setViewMode:fail,setIsEditingHouseholdInline:fail,setInlineHouseholdForm:fail});
- assert.equal(opened,1);assert(source.includes('onClick={handleStartAddNewHousehold}'));
+ const ast=ts.createSourceFile('HouseholdList.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let expression;
+ function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)expression=n.initializer.getText(ast);ts.forEachChild(n,visit);}visit(ast);assert(expression);
+ return expression;
+}
+function runRoster(name,ctx,call=true){
+ const js=ts.transpileModule('('+rosterExpression(name)+')'+(call?'()':''),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ return require('node:vm').runInNewContext(js,ctx);
+}
+test('individual creation opens an ID-less draft without persisting or selecting an existing household',()=>{
+ let draft,mode,creating,editing;const noop=()=>{};
+ const ctx={isCreatingHousehold:false,activeTempleId:'K2',temples:[],setInlineHouseholdForm:x=>draft=x,setIsCreatingHousehold:x=>creating=x,setIsEditingHouseholdInline:x=>editing=x,setViewMode:x=>mode=x,setIsEditingFamilyInline:noop,setEditingPastRecordId:noop,setIsAddingNewPastRecordInline:noop};
+ runRoster('handleStartAddNewHousehold',ctx);
+ assert.equal(mode,'individual');assert.equal(creating,true);assert.equal(editing,true);assert.equal(draft.id,'');assert.equal(draft.templeId,'K2');assert.equal(draft.familyHead,'');
+ assert.equal(runRoster('currentIndividualHousehold',{isCreatingHousehold:true,inlineHouseholdForm:draft,sortedHouseholds:[{id:'DK-1',familyHead:'既存'}],households:[],selectedIndividualId:'DK-1'},false),draft);
+ assert.equal(runRoster('currentIndividualHousehold',{isCreatingHousehold:true,inlineHouseholdForm:draft,sortedHouseholds:[],households:[],selectedIndividualId:null},false),draft);
+ ctx.isCreatingHousehold=true;draft.familyHead='入力中';runRoster('handleStartAddNewHousehold',ctx);assert.equal(draft.familyHead,'入力中');
+});
+test('individual save uses creation allocation and selects the actual saved ID, retaining draft on failure',()=>{
+ let draft={id:'',familyHead:'吉岡よしお'},creating=true,selected,editing=true,saveCalls=0;
+ const noop=()=>{},ctx={isCreatingHousehold:true,inlineHouseholdForm:draft,onEditHousehold:(h,isNew,onCreated)=>{saveCalls++;assert.equal(h,draft);assert.equal(isNew,true);onCreated('DK-200002');},setSelectedIndividualId:x=>selected=x,setIsCreatingHousehold:x=>creating=x,setIsEditingHouseholdInline:x=>editing=x,setInlineHouseholdForm:x=>draft=x,setSearchTerm:noop,setTypeFilter:noop,setStatusFilter:noop,setDistrictFilter:noop,setTobaFilter:noop,setTanagyoFilter:noop,setShowExcludedMode:noop};
+ runRoster('handleSaveInlineHousehold',ctx);assert.equal(saveCalls,1);assert.equal(selected,'DK-200002');assert.equal(creating,false);assert.equal(editing,false);assert.equal(draft,null);
+ draft={id:'',familyHead:'入力を保持'};creating=true;editing=true;ctx.inlineHouseholdForm=draft;ctx.onEditHousehold=()=>false;
+ runRoster('handleSaveInlineHousehold',ctx);assert.equal(draft.familyHead,'入力を保持');assert.equal(creating,true);assert.equal(editing,true);
+ let alerted=false;ctx.inlineHouseholdForm={familyHead:'  '};ctx.alert=()=>alerted=true;ctx.onEditHousehold=()=>{throw Error('empty name must not save')};runRoster('handleSaveInlineHousehold',ctx);assert.equal(alerted,true);
+});
+test('cancelling an individual draft never deletes a stored household',()=>{
+ let draft={},creating=true,mode='individual';
+ runRoster('handleCancelInlineHousehold',{isCreatingHousehold:true,setViewMode:x=>mode=x,setIsCreatingHousehold:x=>creating=x,setIsEditingHouseholdInline:()=>{},setInlineHouseholdForm:x=>draft=x});
+ assert.equal(draft,null);assert.equal(creating,false);assert.equal(mode,'list');
 });
 
 test('open household forms retain typed names and provisional IDs through background list refresh',()=>{
