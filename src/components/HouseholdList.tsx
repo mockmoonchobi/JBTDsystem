@@ -1,3 +1,4 @@
+import { showYagoInList } from '../utils/householdYago';
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { 
   Search, 
@@ -52,6 +53,7 @@ import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import { PostalAddressSearchButton } from './PostalAddressSearchButton';
 
 export type ListColumnKey =
+  | 'yago'
   | 'idTomb'         // ID/墓地
   | 'familyHeadName' // 世帯主名
   | 'district'       // 役職
@@ -77,6 +79,7 @@ export interface ListColumnConfig {
 }
 
 export const DEFAULT_LIST_COLUMNS: ListColumnConfig[] = [
+  { key: 'yago', label: '屋号', description: '施主名の右横に屋号を表示', enabled: false },
   { key: 'idTomb', label: 'ID/墓地', description: '檀家IDと墓地番号・納骨堂位置', enabled: true },
   { key: 'district', label: '役職', description: '役職・地区プルダウン', enabled: true },
   { key: 'householdType', label: '区分１', description: '区分１（正檀家・特別檀家等）', enabled: true },
@@ -578,8 +581,14 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     return DEFAULT_LIST_COLUMNS;
   });
 
+  const [yagoPreference, setYagoPreference] = useState<boolean | undefined>(() => {
+    try { return JSON.parse(safeStorage.getItem('household_list_column_config') || '[]').find((c: ListColumnConfig) => c.key === 'yago')?.enabled; } catch { return undefined; }
+  });
+  const showYago = showYagoInList(households, yagoPreference);
+  const displayedListColumns = listColumns.map(c => c.key === 'yago' ? {...c, enabled: showYago} : c);
   const saveListColumns = (newCols: ListColumnConfig[]) => {
     setListColumns(newCols);
+    setYagoPreference(newCols.find(c => c.key === 'yago')?.enabled);
     try {
       safeStorage.setItem('household_list_column_config', JSON.stringify(newCols));
     } catch (e) {
@@ -1095,6 +1104,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
         .toLowerCase();
 
       const matchesSearch =
+        (h.yago || '').toLowerCase().includes(term) ||
         head.includes(term) ||
         furi.includes(term) ||
         addr.includes(term) ||
@@ -1965,7 +1975,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   </th>
 
                   {/* 動的設定列 */}
-                  {listColumns.filter((c) => c.enabled).map((col) => {
+                  {listColumns.filter((c) => c.enabled && c.key !== 'yago').map((col) => {
                     switch (col.key) {
                       case 'idTomb':
                         return (
@@ -2280,7 +2290,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               <tbody className="divide-y divide-[#EBE7DF]">
                 {sortedHouseholds.length === 0 ? (
                   <tr>
-                    <td colSpan={listColumns.filter((c) => c.enabled).length + 3} className="p-12 text-center text-[#888888]">
+                    <td colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago').length + 3} className="p-12 text-center text-[#888888]">
                       条件に一致する檀家世帯が見つかりませんでした。
                     </td>
                   </tr>
@@ -2289,7 +2299,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     {householdTopSpacerHeight > 0 && (
                       <tr style={{ height: `${householdTopSpacerHeight}px` }} aria-hidden="true">
                         <td
-                          colSpan={listColumns.filter((c) => c.enabled).length + 3}
+                          colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago').length + 3}
                           style={{ height: `${householdTopSpacerHeight}px`, padding: 0, border: 0 }}
                         />
                       </tr>
@@ -2298,7 +2308,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       const household = sortedHouseholds[hIdx];
                       if (!household) return null;
                       const isSelected = selectedIdsForPrint.includes(household.id);
-                      const enabledCols = listColumns.filter((c) => c.enabled);
+                      const enabledCols = listColumns.filter((c) => c.enabled && c.key !== 'yago');
                       const stickyCellBg = isSelected
                         ? 'bg-[#FEF9EE] group-hover:bg-[#FDF3D8]'
                         : 'bg-white group-hover:bg-[#F9F7F2]';
@@ -2341,6 +2351,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                 )}
                                 <div className="text-sm font-bold text-[#1A1A1A] font-serif leading-tight">
                                   {sponsorInfo.sponsorName || '（施主未登録）'}
+                                  {showYago && household.yago?.trim() && <span className="ml-2 text-[0.8em] font-normal" title="屋号">{household.yago.trim()}</span>}
                                 </div>
                               </>
                             );
@@ -2659,7 +2670,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   {householdBottomSpacerHeight > 0 && (
                     <tr style={{ height: `${householdBottomSpacerHeight}px` }} aria-hidden="true">
                       <td
-                        colSpan={listColumns.filter((c) => c.enabled).length + 3}
+                        colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago').length + 3}
                         style={{ height: `${householdBottomSpacerHeight}px`, padding: 0, border: 0 }}
                       />
                     </tr>
@@ -2839,12 +2850,15 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                 </div>
 
                 {isEditingHouseholdInline && inlineHouseholdForm ? (
+                  <>
                   <HouseholdHeadInlineEditor
                     familyHead={inlineHouseholdForm.familyHead}
                     furigana={inlineHouseholdForm.furigana}
                     onChangeHead={(head) => setInlineHouseholdForm((prev) => (prev ? { ...prev, familyHead: head } : null))}
                     onChangeFurigana={(furi) => setInlineHouseholdForm((prev) => (prev ? { ...prev, furigana: furi } : null))}
                   />
+                  <label className="block mt-2 text-sm text-white">屋号<input value={inlineHouseholdForm.yago || ''} onChange={e => setInlineHouseholdForm(prev => prev ? {...prev, yago: e.target.value} : prev)} className="ml-2 px-2 py-1 text-stone-900 bg-white" /></label>
+                  </>
                 ) : (
                   <>
                     <div className="text-xs text-[#CCCCCC] font-sans tracking-wide">{currentIndividualHousehold.furigana}</div>
@@ -2853,7 +2867,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       className="text-2xl sm:text-3xl font-bold text-[#F9F7F2] mt-1 cursor-pointer hover:opacity-80"
                       title="ダブルクリックで直接編集"
                     >
-                      {currentIndividualHousehold.familyHead} <span className="text-base font-normal text-[#CCCCCC]">様</span>
+                      {currentIndividualHousehold.familyHead}{currentIndividualHousehold.yago?.trim() && <span className="ml-2 text-[0.75em] font-normal" title="屋号">{currentIndividualHousehold.yago.trim()}</span>} <span className="text-base font-normal text-[#CCCCCC]">様</span>
                     </h1>
                   </>
                 )}
@@ -5465,9 +5479,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       <HouseholdListColumnConfigModal
         isOpen={showColumnConfigModal}
         onClose={() => setShowColumnConfigModal(false)}
-        columns={listColumns}
+        columns={displayedListColumns}
         onSave={saveListColumns}
-        defaultColumns={DEFAULT_LIST_COLUMNS}
+        defaultColumns={DEFAULT_LIST_COLUMNS.map(c => c.key === 'yago' ? {...c, enabled: showYagoInList(households)} : c)}
       />
 
       {/* 個別檀家 過去帳・精霊 AI取り込みウィザード (墓碑写真・Word・Excel・OCRテキスト) */}
