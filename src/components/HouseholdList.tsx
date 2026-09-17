@@ -1,3 +1,4 @@
+import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
 import { showYagoInList } from '../utils/householdYago';
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { 
@@ -1317,6 +1318,8 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
           tamegaki: currentApp.tamegaki || (household.segakiTamegaki || ''),
         }, undefined, hhTemple);
         onEditHousehold(updated);
+      } else if (field === 'tanagyoMonthlyVisit') {
+        onEditHousehold(setTanagyoParticipation(household, newValue));
       } else if (field === 'isSegakiToba') {
         const updated = toggleHouseholdSponsorSegakiToba(household, newValue);
         onEditHousehold(updated);
@@ -1342,6 +1345,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
           tamegaki: currentApp.tamegaki || (h.segakiTamegaki || ''),
         }, undefined, hhTemple);
       }
+      if (field === 'tanagyoMonthlyVisit') return setTanagyoParticipation(h, newValue);
       if (field === 'isSegakiToba') {
         return toggleHouseholdSponsorSegakiToba(h, newValue);
       }
@@ -3183,7 +3187,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                           <input
                             type="checkbox"
                             checked={!!inlineHouseholdForm.tanagyoMonthlyVisit}
-                            onChange={(e) => setInlineHouseholdForm({ ...inlineHouseholdForm, tanagyoMonthlyVisit: e.target.checked })}
+                            onChange={(e) => setInlineHouseholdForm(setTanagyoParticipation(inlineHouseholdForm, e.target.checked))}
                             className="w-4 h-4 accent-[#1A1A1A]"
                           />
                           <span className="font-bold text-xs text-[#1A1A1A]">棚経 / 月参り 伺い対象</span>
