@@ -1,3 +1,4 @@
+import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Building2, UserCheck, Calendar, Clock, ScrollText, Coins, Sparkles } from 'lucide-react';
 import { Household, HouseholdType, HouseholdStatus, FamilyMember, MasterOptions, TempleProfile, Priest, PastRecord } from '../types';
@@ -623,7 +624,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
                 <input
                   type="checkbox"
                   checked={!!formData.tanagyoMonthlyVisit}
-                  onChange={(e) => setFormData({ ...formData, tanagyoMonthlyVisit: e.target.checked })}
+                  onChange={(e) => setFormData(setTanagyoParticipation(formData, e.target.checked))}
                   className="w-4 h-4 accent-[#1A1A1A]"
                 />
                 <span className="font-bold text-xs text-[#1A1A1A]">棚経 / お盆巡回 対象世帯</span>

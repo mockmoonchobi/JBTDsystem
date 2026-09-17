@@ -1,3 +1,4 @@
+import { reconcileTanagyoAccounting, resetTanagyoAccountingSelection } from '../utils/tanagyoAssignment';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Household, 
@@ -48,7 +49,7 @@ interface HouseholdRowState {
   priestName: string;
   date: string;
   timeSlot: string;
-  order: number;
+  order?: number;
   familyHead: string;
   address: string;
   templeId?: string;
@@ -230,9 +231,9 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
     return found?.name || templeInfo.name || '自寺';
   };
 
-  // モーダルが開かれた時に行データを初期化・構築
+  // 開くたびに選択を初期化し、表示中の再読込では入力を保持する
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) { setRows([]); return; }
 
     // 1. 棚経対象の檀家を抽出
     const tanagyoList = households.filter((h) => !!h.tanagyoMonthlyVisit);
@@ -291,12 +292,12 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
       const existingAmt = existingTxMap.get(h.id);
       return {
         householdId: h.id,
-        // 既に計上されている場合は二重登録防止のためデフォルトで非選択
-        selected: !already,
+        // 会計登録は操作者が明示的に選んだ世帯だけを対象とする
+        selected: false,
         priestName: h.tanagyoPriestName || '担当未定',
         date: h.tanagyoDate || '日程未定',
         timeSlot: h.tanagyoTimeSlot || '未定',
-        order: h.tanagyoOrder ?? (idx + 1),
+        order: h.tanagyoOrder,
         familyHead: h.familyHead,
         address: h.tanagyoAddress || h.address || '住所未登録',
         templeId: h.templeId,
@@ -309,7 +310,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
       };
     });
 
-    setRows(initialRows);
+    setRows(previous => reconcileTanagyoAccounting(previous, initialRows));
   }, [isOpen, households, transactions]);
 
   // 利用可能な担当僧侶一覧（フィルター用）
@@ -724,6 +725,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
                 </select>
               )}
 
+              <button type="button" onClick={() => setRows(resetTanagyoAccountingSelection)} disabled={!rows.some(r => r.selected)} className="px-3 py-1 border border-[#8C2D19] text-[#8C2D19] bg-white font-bold rounded-xs disabled:opacity-40 disabled:cursor-not-allowed" title="表示で絞り込まれている世帯も含め、対象チェックをすべて外します。入力金額と登録済み会計は変更しません。">チェックをリセット</button>
               {/* 未計上のみ表示 */}
               <label className="flex items-center gap-1 cursor-pointer ml-1 font-bold text-gray-700">
                 <input
@@ -805,7 +807,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
 
                     {/* 順序 */}
                     <td className="p-2 text-center font-bold text-gray-600">
-                      {row.order}
+                      {row.order || '未採番'}
                     </td>
 
                     {/* 世帯主名（施主名） */}

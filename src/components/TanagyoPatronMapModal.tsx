@@ -1,3 +1,4 @@
+import { updateTanagyoAssignment, nextTanagyoOrder, numberUnassignedTanagyo, resetTanagyoNumbers } from '../utils/tanagyoAssignment';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import L from 'leaflet';
 import {
@@ -170,7 +171,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
   
   // ステップ3: クリック連番採番モード
   const [isNumberingMode, setIsNumberingMode] = useState<boolean>(false);
-  const [nextOrderNum, setNextOrderNum] = useState<number>(1);
+  // 次の番号は現在の巡回枠の保存済み番号から計算する。
 
   // 地図レイヤー種別 ('std'=標準, 'pale'=淡色, 'photo'=写真)
   const [tileType, setTileType] = useState<'std' | 'pale' | 'photo'>('std');
@@ -272,10 +273,10 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       setDatesList(candidateDates);
 
       // 2. 既に順路や担当僧侶が設定されている世帯を探し、初期選択（日程・僧侶・ステップ）をスマート復元！
-      const orderedHousehold = normalizedHouseholds.find((h) => h.tanagyoOrder && h.tanagyoDate);
+      const orderedHousehold = normalizedHouseholds.find((h) => h.tanagyoMonthlyVisit && h.tanagyoOrder && h.tanagyoDate);
       const assignedHousehold =
         orderedHousehold ||
-        normalizedHouseholds.find((h) => (h.tanagyoPriestId || h.tanagyoPriestName) && h.tanagyoDate);
+        normalizedHouseholds.find((h) => h.tanagyoMonthlyVisit && (h.tanagyoPriestId || h.tanagyoPriestName) && h.tanagyoDate);
       const targetDate =
         (assignedHousehold && assignedHousehold.tanagyoDate) || candidateDates[0] || '8/13';
 
@@ -467,7 +468,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     setLocalHouseholds((prev) =>
       prev.map((h) => {
         if (h.id === householdId) {
-          const merged = { ...h, ...updates };
+          const merged = updateTanagyoAssignment(h, updates);
           // tanagyoDate が設定されている場合、tanagyoTimeSlot が未指定ならデフォルトで '午前' を補完
           if (merged.tanagyoDate && (!merged.tanagyoTimeSlot || merged.tanagyoTimeSlot.trim() === '')) {
             merged.tanagyoTimeSlot = '午前';
@@ -516,18 +517,13 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     }
 
     const unassignedCount = unassignedInDate.length;
+    const targetIds = new Set(unassignedInDate.map(h => h.id));
     setLocalHouseholds((prev) =>
       prev.map((h) => {
-        if (h.tanagyoDate !== step2FilterDate) return h;
+        if (!targetIds.has(h.id)) return h;
         const assigned = resolveAssignedPriest(h);
         if (!assigned && !h.tanagyoPriestId && !h.tanagyoPriestName) {
-          return {
-            ...h,
-            tanagyoMonthlyVisit: true,
-            tanagyoTimeSlot: h.tanagyoTimeSlot || '午前',
-            tanagyoPriestId: targetPriest.id,
-            tanagyoPriestName: targetPriest.name,
-          };
+          return updateTanagyoAssignment(h, {tanagyoMonthlyVisit: true, tanagyoPriestId: targetPriest.id, tanagyoPriestName: targetPriest.name});
         }
         return h;
       })
@@ -546,16 +542,11 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       return;
     }
 
+    const targetIds = new Set(patronsInDate.map(h => h.id));
     setLocalHouseholds((prev) =>
       prev.map((h) => {
-        if (h.tanagyoDate !== step2FilterDate) return h;
-        return {
-          ...h,
-          tanagyoMonthlyVisit: true,
-          tanagyoTimeSlot: h.tanagyoTimeSlot || '午前',
-          tanagyoPriestId: targetPriest.id,
-          tanagyoPriestName: targetPriest.name,
-        };
+        if (!targetIds.has(h.id)) return h;
+        return updateTanagyoAssignment(h, {tanagyoMonthlyVisit: true, tanagyoPriestId: targetPriest.id, tanagyoPriestName: targetPriest.name});
       })
     );
     setHasChanges(true);
@@ -575,13 +566,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     setLocalHouseholds((prev) =>
       prev.map((h) => {
         if (!patronIdSet.has(h.id)) return h;
-        return {
-          ...h,
-          tanagyoMonthlyVisit: true,
-          tanagyoTimeSlot: h.tanagyoTimeSlot || '午前',
-          tanagyoPriestId: targetPriest.id,
-          tanagyoPriestName: targetPriest.name,
-        };
+        return updateTanagyoAssignment(h, {tanagyoMonthlyVisit: true, tanagyoPriestId: targetPriest.id, tanagyoPriestName: targetPriest.name});
       })
     );
     setHasChanges(true);
@@ -608,14 +593,11 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       return;
     }
 
+    const targetIds = new Set(assignedInDate.map(h => h.id));
     setLocalHouseholds((prev) =>
       prev.map((h) => {
-        if (h.tanagyoDate !== step2FilterDate) return h;
-        return {
-          ...h,
-          tanagyoPriestId: '',
-          tanagyoPriestName: '',
-        };
+        if (!targetIds.has(h.id)) return h;
+        return updateTanagyoAssignment(h, {tanagyoPriestId: '', tanagyoPriestName: ''});
       })
     );
     setHasChanges(true);
@@ -644,6 +626,9 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
       })
       .sort((a, b) => (a.tanagyoOrder || 999) - (b.tanagyoOrder || 999));
   }, [tanagyoPatrons, step3FilterDate, step3FilterPriestId, priests, resolveAssignedPriest]);
+
+  const nextOrderNum = nextTanagyoOrder(step3TargetHouseholds);
+  useEffect(() => { setIsNumberingMode(false); }, [activeStep, step3FilterDate, step3FilterPriestId, selectedTempleFilter]);
 
   // 【午前／午後 仕切りバーの位置】
   // 午前午後は「ここから午後」のバーで決める。最初の「午後」となっているインデックス
@@ -985,8 +970,9 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
         } else if (activeStep === 3) {
           // ステップ3: 連番採番モード中の場合は次の順番をセット
           if (isNumberingMode) {
-            updateHouseholdAssignment(h.id, { tanagyoOrder: nextOrderNum });
-            setNextOrderNum((prev) => prev + 1);
+            const targetIds = new Set(step3TargetHouseholds.map(p => p.id));
+            setLocalHouseholds(prev => numberUnassignedTanagyo(prev, targetIds, h.id));
+            setHasChanges(true);
           }
         }
       });
@@ -1098,9 +1084,18 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
     step3FilterPriestId,
     isNumberingMode,
     nextOrderNum,
+    step3TargetHouseholds,
     templeCoord,
     templeInfo,
   ]);
+
+  const handleResetCurrentNumbers = () => {
+    if (!step3FilterDate || !step3FilterPriestId) return;
+    const targetIds = new Set(step3TargetHouseholds.map(h => h.id));
+    setLocalHouseholds(prev => resetTanagyoNumbers(prev, targetIds));
+    setIsNumberingMode(false);
+    setHasChanges(true);
+  };
 
   // ステップ3: 順序番号の上下移動
   const handleMoveOrder = (householdId: string, direction: 'up' | 'down') => {
@@ -2075,18 +2070,17 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-gray-600 leading-tight">
-                    開始後、地図上のピンをクリックした順に No.1, No.2... と番号が振られ、ルート線が繋がります。
+                    未採番のピンをクリックすると、既存の番号の続きから割り当てます。番号のあるピンは変更しません。
                   </p>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => {
-                        setIsNumberingMode(true);
-                        setNextOrderNum(1);
+                        setIsNumberingMode(prev => !prev);
                       }}
                       className="flex-1 py-1.5 bg-[#8C2D19] hover:bg-[#702414] text-white font-bold text-xs rounded-xs cursor-pointer shadow-xs"
                     >
-                      No.1から採番開始
+                      {isNumberingMode ? '採番を停止' : '未採番を続きから割当'}
                     </button>
                     <button
                       type="button"
@@ -2094,10 +2088,12 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                       className="px-2.5 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 font-bold text-xs rounded-xs cursor-pointer"
                       title="現在の表示順序をそのまま No.1..N に確定し、午前午後も連動確定します"
                     >
-                      採番を確定
+                      表示順で全件採番
                     </button>
                   </div>
                 </div>
+
+                <button type="button" onClick={handleResetCurrentNumbers} disabled={!step3FilterDate || !step3FilterPriestId || !step3TargetHouseholds.some(h => h.tanagyoOrder)} className="w-full py-2 px-3 border border-[#8C2D19] text-[#8C2D19] bg-white font-bold text-xs disabled:opacity-40 disabled:cursor-not-allowed" title="現在選択中の日付・担当・寺院の番号だけを消します。日程・担当・午前午後は保持します。">この日付・担当の番号をリセット</button>
 
                 {/* 巡回順序リスト ＆ 午前午後仕切りバー */}
                 <div className="flex-1 flex flex-col min-h-0 border border-gray-200 rounded-xs overflow-hidden">
@@ -2154,8 +2150,8 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
                               }`}
                             >
                               <div className="flex items-center space-x-2 min-w-0 pr-2">
-                                <span className={`w-5 h-5 rounded-full text-white font-black flex items-center justify-center text-[11px] shrink-0 ${isAfternoon ? 'bg-orange-600' : 'bg-blue-600'}`}>
-                                  {h.tanagyoOrder || idx + 1}
+                                <span className={`min-w-5 px-1 h-5 rounded-full text-white font-black flex items-center justify-center text-[11px] shrink-0 ${isAfternoon ? 'bg-orange-600' : 'bg-blue-600'}`}>
+                                  {h.tanagyoOrder || '未採番'}
                                 </span>
                                 <div className="min-w-0">
                                   <div className="font-bold text-gray-800 truncate flex items-center gap-1">
