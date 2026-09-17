@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Household, MasterOptions, TempleProfile, TempleInfo, FamilyMember } from '../../types';
 import { X, Save, Trash2, Plus, Phone, MapPin, Building2, User, ScrollText, Coins, ChevronDown, ChevronUp, Check, Sparkles } from 'lucide-react';
 import { cleanAndNormalizeHouseholdId, generateNewHouseholdId, isUnlinkedHouseholdId } from '../../utils/dankaIdUtils';
@@ -78,7 +78,12 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
   const configuredTobaSlots = getTobaSlots(currentTemple);
   const configuredFeeSlots = getFeeSlots(currentTemple);
 
+  const initializedFormKey = useRef<string | null>(null);
   useEffect(() => {
+    if (!isOpen) { initializedFormKey.current = null; return; }
+    const formKey = household ? 'edit:' + household.id : 'new';
+    if (initializedFormKey.current === formKey) return;
+    initializedFormKey.current = formKey;
     if (household) {
       setFormData({
         ...household,

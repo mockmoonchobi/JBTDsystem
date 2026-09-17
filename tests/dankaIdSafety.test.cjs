@@ -107,3 +107,33 @@ test('new registration never updates the existing owner of its provisional ID',(
  assert.equal(households[0].familyHead,'吉岡よしお');assert.equal(households[0].id,'DK-100031');
  assert.equal(households[0].familyMembers[0].householdId,households[0].id);
 });
+
+test('six digit IDs containing reserved-looking suffixes stay distinct through normalization and allocation',()=>{
+ for(const id of ['DK-100000','DK-199999','DK-200000','K0-299999','K99999-00123']) {
+  assert.equal(isUnlinkedHouseholdId(id),false);
+ }
+ for(const id of ['DK-100000','DK-199999','DK-200000']) assert.equal(cleanAndNormalizeHouseholdId(id,'temple-main'),id);
+ for(const id of ['0','00000','99999','DK-99999','K1-00000','K1-99999-2']) assert.equal(isUnlinkedHouseholdId(id),true);
+ assert.equal(generateNewHouseholdId('temple-main',[{id:'DK-200000'}]),'DK-200001');
+});
+
+test('roster new-household button opens the guarded creation form without writing a provisional record',()=>{
+ const source=fs.readFileSync(path.join(root,'src/components/HouseholdList.tsx'),'utf8');
+ const ast=ts.createSourceFile('HouseholdList.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let handler;
+ function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)==='handleStartAddNewHousehold')handler=n.initializer.getText(ast);ts.forEachChild(n,visit);}visit(ast);assert(handler);
+ let opened=0;const fail=()=>{throw Error('must not write or select a provisional household')};
+ const js=ts.transpileModule('('+handler+')()',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ require('node:vm').runInNewContext(js,{onOpenAddModal:()=>opened++,onEditHousehold:fail,setSelectedIndividualId:fail,setViewMode:fail,setIsEditingHouseholdInline:fail,setInlineHouseholdForm:fail});
+ assert.equal(opened,1);assert(source.includes('onClick={handleStartAddNewHousehold}'));
+});
+
+test('open household forms retain typed names and provisional IDs through background list refresh',()=>{
+ for(const file of ['src/components/HouseholdModal.tsx','src/components/mobile/MobileHouseholdModal.tsx']) {
+  const source=fs.readFileSync(path.join(root,file),'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let effect;
+  function visit(n){if(ts.isCallExpression(n)&&n.expression.getText(ast)==='useEffect'&&n.arguments[0]?.getText(ast).includes('initializedFormKey'))effect=n.arguments[0].getText(ast);ts.forEachChild(n,visit);}visit(ast);assert(effect);
+  let draft,counter=0;const ctx={isOpen:true,initializedFormKey:{current:null},household:null,editingHousehold:null,activeTempleId:'temple-main',temples:[],existingHouseholds:[],existingPastRecords:[],masterOptions:{},generateNewHouseholdId:()=> 'DK-'+(++counter),setFormData:v=>draft=v,setFamilyMembers:()=>{}};
+  const run=()=>require('node:vm').runInNewContext(ts.transpileModule('('+effect+')()',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,ctx);
+  run();draft.familyHead='吉岡よしお';const firstId=draft.id;ctx.existingHouseholds=[{id:'DK-1'}];run();assert.equal(draft.familyHead,'吉岡よしお');assert.equal(draft.id,firstId);assert.equal(counter,1);
+  ctx.isOpen=false;run();ctx.isOpen=true;run();assert.equal(draft.familyHead,'');assert.equal(counter,2);
+ }
+});

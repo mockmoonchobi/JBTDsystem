@@ -78,19 +78,14 @@ export function getUnlinkedHouseholdId(templeId?: string, temples?: TempleProfil
 
 /**
  * 指定された世帯IDが「世帯未設定」「未割当」「不明」であるかを判定します。
- * DK-99999, K0-99999, K1-99999 など、末尾が 99999 のものはすべて未設定IDとして扱われます。
+ * 番号全体が 0 または 99999 のIDだけを未設定とします。100000や199999は通常のIDです。
  */
 export function isUnlinkedHouseholdId(id?: string | null): boolean {
   if (!id) return true;
   const clean = String(id).trim().toUpperCase();
   return (
     clean === '' ||
-    clean === 'DK-99999' ||
-    clean === 'K0-99999' ||
-    clean.endsWith('99999') ||
-    clean.includes('99999') ||
-    clean === 'DK-00000' ||
-    clean.endsWith('00000') ||
+    /^(?:(?:DK|K\d+|TEMPLE|H|D)[-_])?(?:0+|0*99999)(?:-\d+)?$/.test(clean) ||
     clean === 'DK-UNKNOWN' ||
     clean === 'UNKNOWN' ||
     clean === 'UNLINKED' ||
