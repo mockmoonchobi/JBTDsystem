@@ -43,6 +43,7 @@ export interface Household {
   id: string;
   templeId?: string; // 所属寺院ID（兼務寺院管理用）
   familyHead: string;
+  yago?: string; // 屋号（任意）
   furigana: string;
   postalCode: string;
   address: string;

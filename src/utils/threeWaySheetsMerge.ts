@@ -19,7 +19,7 @@ export const mergeTableLabels: Record<string, string> = {
 };
 const fields: Record<string, string> = {
   ...Object.assign({}, ...Object.values(FIELD_LABELS)),
-  familyHead: '世帯主', name: '氏名', address: '住所', phone: '電話番号', mobile: '携帯番号',
+  yago: '屋号', familyHead: '世帯主', name: '氏名', address: '住所', phone: '電話番号', mobile: '携帯番号',
   furigana: 'ふりがな', tombNumber: '墓地番号', notes: '備考', description: '摘要',
   date: '日付', amount: '金額', type: '収支', category: '科目', paymentMethod: '支払方法',
   householdId: '檀家ID', templeId: '寺院ID', secularName: '俗名', dharmaName: '戒名',

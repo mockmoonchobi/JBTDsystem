@@ -100,7 +100,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
       // Search query filter (name, furigana, phone, mobile, address, district)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchName = h.familyHead?.toLowerCase().includes(q);
+        const matchName = h.familyHead?.toLowerCase().includes(q) || h.yago?.toLowerCase().includes(q);
         const matchFurigana = h.furigana?.toLowerCase().includes(q);
         const matchPhone = h.phone?.replace(/[-\s]/g, '').includes(q.replace(/[-\s]/g, ''));
         const matchMobile = h.mobile?.replace(/[-\s]/g, '').includes(q.replace(/[-\s]/g, ''));
@@ -430,7 +430,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                             </div>
                             <div className="flex items-baseline gap-2">
                               <h3 className="text-xl font-black font-serif text-[#1A1A1A]">
-                                {sp.sponsorName || '（施主未登録）'} <span className="text-base font-normal text-gray-500">家</span>
+                                {sp.sponsorName || '（施主未登録）'}{h.yago?.trim() && <span className="ml-2 text-[0.75em] font-normal" title="屋号">{h.yago.trim()}</span>} <span className="text-base font-normal text-gray-500">家</span>
                               </h3>
                               {h.tombNumber && (
                                 <span className="text-xs sm:text-sm font-bold text-gray-600 bg-stone-100 px-2.5 py-0.5 rounded-2xs border border-stone-200">

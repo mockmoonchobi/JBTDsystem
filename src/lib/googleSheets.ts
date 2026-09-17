@@ -1311,7 +1311,8 @@ export async function exportToSheets(
     '修正日',
     '修正時間',
     '所属寺院ID',
-    '登録日時'
+    '登録日時',
+    '屋号'
   ];
 
   const householdRows = filteredHouseholds.map((h) => {
@@ -1368,7 +1369,8 @@ export async function exportToSheets(
       uDate,
       uTime,
       getTempleId(h.templeId),
-      h.createdAt || cDate
+      h.createdAt || cDate,
+      h.yago?.trim() || ''
     ];
   });
 
@@ -2607,6 +2609,7 @@ export async function importFromSheets(
     const idIdx = findColIdx(householdHeaders, ['ID', '檀家ID', '世帯ID', '管理番号', '番号']);
     const templeLabelIdx = findColIdx(householdHeaders, ['所属寺院', '寺院名', '寺院']);
     const templeIdColIdx = findColIdx(householdHeaders, ['所属寺院ID', '寺院ID', 'templeId']);
+    const yagoIdx = findColIdx(householdHeaders, ['屋号', '家の屋号', 'yago']);
     const headIdx = findColIdx(householdHeaders, ['世帯主名', '世帯主', '氏名', '名前', '施主名']);
     const furiIdx = findColIdx(householdHeaders, ['フリガナ', 'ふりがな', 'カナ', '世帯主フリガナ']);
     const zipIdx = findColIdx(householdHeaders, ['郵便番号', '〒', '郵便']);
@@ -2780,6 +2783,7 @@ export async function importFromSheets(
         id: householdId,
         templeId,
         familyHead,
+        yago: yagoIdx >= 0 ? String(row[yagoIdx] || '').trim() : '',
         furigana,
         postalCode,
         address,

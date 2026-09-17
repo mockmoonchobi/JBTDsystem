@@ -6,6 +6,7 @@ import { DeletedEntityType, FieldDiff } from '../types';
 export const FIELD_LABELS: Record<string, Record<string, string>> = {
   household: {
     familyHead: '世帯主名',
+    yago: '屋号',
     furigana: 'フリガナ',
     postalCode: '郵便番号',
     address: '住所',

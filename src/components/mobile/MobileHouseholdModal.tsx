@@ -90,6 +90,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       const autoId = generateNewHouseholdId(targetTemple, existingHouseholds, temples, existingPastRecords);
       setFormData({
         id: autoId,
+        yago: '',
         familyHead: '',
         furigana: '',
         postalCode: '',
@@ -133,6 +134,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       ...formData,
       id: finalId,
       familyHead: formData.familyHead.trim(),
+      yago: formData.yago?.trim() || '',
       furigana: formData.furigana?.trim() || '',
       postalCode: formData.postalCode?.trim() || '',
       address: formData.address?.trim() || '',
@@ -285,6 +287,11 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
                 className="w-full p-2 border border-[#D1CEC7] bg-white text-xs"
               />
             </div>
+          </div>
+
+          <div className="p-3 bg-white border border-[#D1CEC7]">
+            <label htmlFor="mobile-household-yago" className="block font-bold mb-1">屋号</label>
+            <input id="mobile-household-yago" value={formData.yago || ''} onChange={e => setFormData({...formData, yago: e.target.value})} className="w-full p-2 border border-[#D1CEC7] text-sm" placeholder="任意" />
           </div>
 
           {/* Phone Numbers */}
