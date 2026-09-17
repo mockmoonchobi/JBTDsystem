@@ -350,30 +350,9 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     return Array.from(set).filter(Boolean);
   }, [masterOptions?.statuses, households]);
 
-  // New Household Creation Handler (Opens directly in Individual View)
+  // 新規登録は保存時採番の専用フォームへ。入力前の仮レコードは作らない。
   const handleStartAddNewHousehold = () => {
-    const newId = `H-${Math.floor(100 + Math.random() * 900)}`;
-    const newH: Household = {
-      id: newId,
-      familyHead: '',
-      furigana: '',
-      householdType: '',
-      status: '',
-      postalCode: '',
-      address: '',
-      phone: '',
-      district: '',
-      tombNumber: '',
-      qrToken: `QR-${newId}`,
-      familyMembers: [],
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    onEditHousehold(newH);
-    setSelectedIndividualId(newId);
-    setViewMode('individual');
-    setIsEditingHouseholdInline(true);
-    setInlineHouseholdForm(newH);
+    onOpenAddModal();
   };
 
   // Inline New Past Record in Individual View State
