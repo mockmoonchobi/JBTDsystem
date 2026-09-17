@@ -1,5 +1,5 @@
 import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, Building2, UserCheck, Calendar, Clock, ScrollText, Coins, Sparkles } from 'lucide-react';
 import { Household, HouseholdType, HouseholdStatus, FamilyMember, MasterOptions, TempleProfile, Priest, PastRecord } from '../types';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -108,7 +108,12 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
   const configuredTobaTypes = configuredTobaSlots.map((s) => s.name);
   const configuredFeeSlots = getFeeSlots(currentTemple);
 
+  const initializedFormKey = useRef<string | null>(null);
   useEffect(() => {
+    if (!isOpen) { initializedFormKey.current = null; return; }
+    const formKey = editingHousehold ? 'edit:' + editingHousehold.id : 'new';
+    if (initializedFormKey.current === formKey) return;
+    initializedFormKey.current = formKey;
     if (editingHousehold) {
       setFormData(editingHousehold);
       setFamilyMembers(editingHousehold.familyMembers || []);
