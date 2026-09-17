@@ -39,7 +39,7 @@ interface MobileHouseholdViewProps {
   temples?: TempleProfile[];
   activeTempleId?: string;
   onSelectTemple?: (templeId: string) => void;
-  onSaveHousehold: (household: Household) => void;
+  onSaveHousehold: (household: Household, creating?: boolean) => void | boolean;
   onDeleteHousehold: (id: string) => void;
   onOpenAddPastRecord: (householdId: string) => void;
   onOpenAddService: (householdId: string) => void;
@@ -832,6 +832,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         temples={temples}
         activeTempleId={activeTempleId}
         existingHouseholds={households}
+        existingPastRecords={[...pastRecords, ...transactions, ...memorialServices]}
         onSave={onSaveHousehold}
         onDelete={onDeleteHousehold}
       />

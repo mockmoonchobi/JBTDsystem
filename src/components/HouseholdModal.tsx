@@ -21,7 +21,7 @@ import { getFeeSlots, FeeSlotDef } from '../utils/feeUtils';
 interface HouseholdModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (household: Household) => void;
+  onSave: (household: Household, creating?: boolean) => void | boolean;
   onDeleteHousehold?: (id: string) => void;
   editingHousehold?: Household | null;
   masterOptions?: MasterOptions;
@@ -29,7 +29,7 @@ interface HouseholdModalProps {
   temples?: TempleProfile[];
   activeTempleId?: string;
   existingHouseholds?: Household[];
-  existingPastRecords?: PastRecord[];
+  existingPastRecords?: { householdId?: string }[];
   priests?: Priest[];
 }
 
@@ -113,7 +113,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       setFamilyMembers(editingHousehold.familyMembers || []);
     } else {
       const defaultTemple = activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
-      const autoId = generateNewHouseholdId(defaultTemple, existingHouseholds, temples);
+      const autoId = generateNewHouseholdId(defaultTemple, existingHouseholds, temples, existingPastRecords);
       setFormData({
         id: autoId,
         templeId: defaultTemple,
@@ -186,7 +186,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
     const targetTempleId = formData.templeId || (activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'));
     let finalId = cleanAndNormalizeHouseholdId(formData.id || '', targetTempleId, temples);
     // DK-99999 や K0-99999 などの未設定専用予約ID、または空欄の場合は新規自動採番を行う
-    if (!finalId || isUnlinkedHouseholdId(finalId)) {
+    if (!editingHousehold || !finalId || isUnlinkedHouseholdId(finalId)) {
       finalId = generateNewHouseholdId(targetTempleId, existingHouseholds, temples, existingPastRecords);
     }
 
@@ -203,11 +203,12 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       householdType: (formData.householdType as HouseholdType) || '',
       district: formData.district || '',
       tombNumber: formData.tombNumber || '',
-      qrToken: formData.qrToken || `QR-${finalId}`,
+      qrToken: editingHousehold ? (formData.qrToken || `QR-${finalId}`) : `QR-${finalId}`,
       status: (formData.status as HouseholdStatus) || '',
       notes: formData.notes || '',
       familyMembers: familyMembers.map((m) => ({
         ...m,
+        householdId: finalId,
         furigana: m.furigana ? normalizeFurigana(m.furigana) : undefined,
       })),
       isSegakiToba: !!formData.isSegakiToba,
@@ -224,7 +225,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       createdAt: formData.createdAt || new Date().toISOString().split('T')[0],
     };
 
-    onSave(completeHousehold);
+    if (onSave(completeHousehold, !editingHousehold) === false) return;
     setShowSaveConfirm(false);
     onClose();
   };
@@ -279,7 +280,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
                     onChange={(e) => {
                       const newTId = e.target.value;
                       if (!editingHousehold) {
-                        const newAutoId = generateNewHouseholdId(newTId, existingHouseholds, temples);
+                        const newAutoId = generateNewHouseholdId(newTId, existingHouseholds, temples, existingPastRecords);
                         setFormData({
                           ...formData,
                           templeId: newTId,

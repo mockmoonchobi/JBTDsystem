@@ -12,9 +12,11 @@ const compiledDankaIdUtils = ts.transpileModule(dankaIdUtilsSource, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText;
 
+const stored = {};
+const storage = { loadJsonState: (k,d) => stored[k] || d, saveJsonState: (k,v) => { stored[k] = v; } };
 const dankaIdModule = { exports: {} };
 const fn = new Function('require', 'module', 'exports', compiledDankaIdUtils);
-fn(require, dankaIdModule, dankaIdModule.exports);
+fn(name => name === './storageUtils' ? storage : require(name), dankaIdModule, dankaIdModule.exports);
 
 const {
   getUnlinkedHouseholdId,
@@ -81,4 +83,27 @@ test('generateNewHouseholdId never generates 99999 and avoids potential conflict
   const nextId = generateNewHouseholdId('temple-main', existingHouseholds, temples, existingPastRecords);
   assert.equal(nextId, 'DK-00002');
   assert.notEqual(nextId, 'DK-99999');
+});
+
+
+test('deleted highest ID and six-digit IDs are never reissued on this browser',()=>{
+ const first=generateNewHouseholdId('temple-main',[{id:'DK-100005'}]);
+ assert.equal(first,'DK-100006');
+ assert.equal(generateNewHouseholdId('temple-main',[]),'DK-100007');
+ assert.equal(generateNewHouseholdId('temple-main',[],undefined,[{householdId:'DK-100010'}]),'DK-100011');
+});
+
+test('new registration never updates the existing owner of its provisional ID',()=>{
+ const source=fs.readFileSync(path.join(root,'src/App.tsx'),'utf8');
+ const start=source.indexOf('const handleSaveHousehold = '),end=source.indexOf('const handleBatchUpdateHouseholds',start);
+ const body=source.slice(start,end).replace('const handleSaveHousehold = ','').trim().replace(/;$/,'');
+ const vm=require('node:vm');
+ let households=[{id:'DK-100012',familyHead:'既存の檀家'}];
+ const env={households,pastRecords:[{householdId:'DK-100020'}],transactions:[{householdId:'DK-100030'}],memorialServices:[],familyMembers:[],templeTodos:[],temples:[],loadDeletedRecordsLog:()=>[],generateNewHouseholdId,
+ retainedHouseholds:()=>({}),reserveHousehold:()=>{},withCreationAudit:x=>x,withUpdateAudit:()=>{throw Error('new registration must not update');},recordHistory:()=>{},getCurrentOperatorInfo:()=>({}),recordOperationLog:()=>{},formatHouseholdLogDesc:()=>'',setHouseholds:fn=>households=fn(households)};
+ const compiled=ts.transpileModule('('+body+')',{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+ vm.runInNewContext(compiled,env)({id:'DK-100012',familyHead:'吉岡よしお',familyMembers:[{id:'F1',householdId:'DK-100012'}]},true);
+ assert.equal(households.length,2);assert.equal(households[1].familyHead,'既存の檀家');
+ assert.equal(households[0].familyHead,'吉岡よしお');assert.equal(households[0].id,'DK-100031');
+ assert.equal(households[0].familyMembers[0].householdId,households[0].id);
 });
