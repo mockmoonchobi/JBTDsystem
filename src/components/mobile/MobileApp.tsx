@@ -38,7 +38,7 @@ interface MobileAppProps {
   templeTodos?: TempleTodo[];
   priests?: Priest[];
   masterOptions?: MasterOptions;
-  onSaveHousehold: (household: Household) => void;
+  onSaveHousehold: (household: Household, creating?: boolean) => void | boolean;
   onDeleteHousehold: (id: string) => void;
   onSavePastRecord: (record: PastRecord) => void;
   onDeletePastRecord: (id: string) => void;

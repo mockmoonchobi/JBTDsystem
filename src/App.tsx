@@ -1,3 +1,4 @@
+import { generateNewHouseholdId } from './utils/dankaIdUtils';
 import { SheetsWriteSafety } from './utils/sheetsReadSafety';
 import { SheetsMergeWizard, SheetsMergeRequest } from './components/SheetsMergeWizard';
 import { Dataset, MergeChoices, stableMergeValue, verifyMergedReadback } from './utils/threeWaySheetsMerge';
@@ -2795,8 +2796,18 @@ export default function App() {
   };
 
   // Handlers: Household CRUD
-  const handleSaveHousehold = (household: Household) => {
+  const handleSaveHousehold = (household: Household, creating = false) => {
+    if (creating) {
+      // Allocate from all current records at commit time; never interpret a new
+      // household as an update just because its provisional ID is occupied.
+      const related = [...pastRecords, ...transactions, ...memorialServices, ...familyMembers, ...templeTodos,
+        ...loadDeletedRecordsLog().filter(e => e.entityType === 'household').map(e => ({ householdId: e.id }))];
+      const id = generateNewHouseholdId(household.templeId || 'temple-main', households, temples, related);
+      household = { ...household, id, qrToken: 'QR-' + id,
+        familyMembers: household.familyMembers?.map(m => ({ ...m, householdId: id })) };
+    }
     const existing = households.find((h) => h.id === household.id);
+    if (creating && existing) { alert('新規IDの重複を検出しました。入力内容は保持しています。もう一度保存してください。'); return false; }
     const exists = !!existing;
     const auditedHousehold = exists
       ? withUpdateAudit(household, existing)
@@ -4896,7 +4907,7 @@ export default function App() {
         temples={temples}
         activeTempleId={activeTempleId}
         existingHouseholds={households}
-        existingPastRecords={pastRecords}
+        existingPastRecords={[...pastRecords, ...transactions, ...memorialServices, ...familyMembers, ...templeTodos]}
         priests={priests}
       />
 

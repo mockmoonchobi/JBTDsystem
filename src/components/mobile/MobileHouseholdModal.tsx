@@ -22,7 +22,8 @@ interface MobileHouseholdModalProps {
   temples?: TempleProfile[];
   activeTempleId?: string;
   existingHouseholds?: Household[];
-  onSave: (household: Household) => void;
+  existingPastRecords?: { householdId?: string }[];
+  onSave: (household: Household, creating?: boolean) => void | boolean;
   onDelete?: (id: string) => void;
 }
 
@@ -36,6 +37,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
   temples = [],
   activeTempleId = 'temple-main',
   existingHouseholds = [],
+  existingPastRecords = [],
   onSave,
   onDelete,
 }) => {
@@ -85,7 +87,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       });
     } else {
       const targetTemple = activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
-      const autoId = generateNewHouseholdId(targetTemple, existingHouseholds, temples);
+      const autoId = generateNewHouseholdId(targetTemple, existingHouseholds, temples, existingPastRecords);
       setFormData({
         id: autoId,
         familyHead: '',
@@ -122,8 +124,8 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
 
     const targetTemple = formData.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main'));
     let finalId = cleanAndNormalizeHouseholdId(formData.id || household?.id, targetTemple, temples);
-    if (!finalId || isUnlinkedHouseholdId(finalId)) {
-      finalId = generateNewHouseholdId(targetTemple, existingHouseholds, temples);
+    if (!household || !finalId || isUnlinkedHouseholdId(finalId)) {
+      finalId = generateNewHouseholdId(targetTemple, existingHouseholds, temples, existingPastRecords);
     }
 
     const savedData: Household = {
@@ -168,7 +170,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
       createdAt: household?.createdAt || new Date().toISOString(),
     };
 
-    onSave(savedData);
+    if (onSave(savedData, !household) === false) return;
     onClose();
   };
 

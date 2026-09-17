@@ -1,3 +1,4 @@
+import { loadJsonState, saveJsonState } from './storageUtils';
 import { Household, PastRecord, Transaction, MemorialService, FamilyMember, TempleTodo, TempleProfile } from '../types';
 
 /**
@@ -185,7 +186,7 @@ export function generateNewHouseholdId(
   templeId: string,
   existingHouseholds: Household[],
   temples?: TempleProfile[],
-  existingPastRecords?: PastRecord[]
+  existingPastRecords?: { householdId?: string }[]
 ): string {
   const prefix = getTemplePrefix(templeId, temples);
   const existingNumbers = new Set<number>();
@@ -198,7 +199,7 @@ export function generateNewHouseholdId(
     if (match) {
       const num = parseInt(match[0], 10);
       // 0 および 90000以上（99999など）は通常連番から除外
-      if (!isNaN(num) && num > 0 && num < 90000) {
+      if (!isNaN(num) && num > 0 && (num < 90000 || num >= 100000)) {
         existingNumbers.add(num);
       }
     }
@@ -224,7 +225,8 @@ export function generateNewHouseholdId(
   // If there are existing numbers, find highest + 1; otherwise start from 1
   let candidateNum = 1;
   if (existingNumbers.size > 0) {
-    const maxNum = Math.max(...Array.from(existingNumbers));
+    let maxNum = 0;
+    for (const n of existingNumbers) maxNum = Math.max(maxNum, n);
     candidateNum = maxNum + 1;
   }
 
@@ -236,6 +238,10 @@ export function generateNewHouseholdId(
     }
   }
 
+  const highWater = loadJsonState<Record<string, number>>('household-number-high-water-v1', {});
+  candidateNum = Math.max(candidateNum, (highWater[prefix] || 0) + 1);
+  if (candidateNum >= 90000 && candidateNum <= 99999) candidateNum = 100000;
+  saveJsonState('household-number-high-water-v1', { ...highWater, [prefix]: candidateNum });
   const paddedNum = String(candidateNum).padStart(5, '0');
   return `${prefix}${paddedNum}`;
 }
