@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '..');
 const compile = text => ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
 require.extensions['.ts'] = (module, filename) => module._compile(compile(fs.readFileSync(filename, 'utf8')), filename);
 require.cache[path.join(root, 'src/lib/googleAuth.ts')] = { exports: { getCurrentUser: () => null, getActiveGoogleAccountName: () => '' } };
+const { workbook: rowWorkbook, memory: rowMemory } = require('./rowSyncFixture.cjs');
 const { sortHouseholds, getHouseholdNiibonStatus, compareHouseholdsGojuon } = require('../src/utils/memorialCalculator.ts');
 const { SheetsExportCache } = require('../src/utils/sheetsExportCache.ts');
 const { exportToSheets, importFromSheets } = require('../src/lib/googleSheets.ts');
@@ -53,34 +54,17 @@ test('export baseline uses exact values, requires commit, isolates destinations 
   assert.equal(cache.plan('A', updates, false).updates.length, 1, 'manual export always writes');
 });
 
-function sheetMock() {
-  const calls = [], sheets = [{ properties: { title: '独自メモ', sheetId: 99, gridProperties: { rowCount: 1000, columnCount: 100 } } }];
-  let failWrite = false;
-  const fetch = async (url, options = {}) => {
-    const body = options.body ? JSON.parse(options.body) : undefined;
-    calls.push({ url, body, bytes: Buffer.byteLength(options.body || '') });
-    if (url.includes('?fields=')) return new Response(JSON.stringify({ sheets }));
-    if (failWrite && body?.requests?.some(r => r.updateCells)) return new Response(JSON.stringify({ error: { message: 'rejected' } }), { status: 400 });
-    const replies = (body?.requests || []).map(r => {
-      if (!r.addSheet) return {};
-      const sheet = { properties: { ...r.addSheet.properties, sheetId: 100 + sheets.length } };
-      sheets.push(sheet);
-      return { addSheet: sheet };
-    });
-    return new Response(JSON.stringify({ replies }));
-  };
-  const writtenNames = () => calls.flatMap(c => c.body?.requests || []).filter(r => r.updateCells).map(r => sheets.find(s => s.properties.sheetId === r.updateCells.start.sheetId).properties.title);
-  return { calls, sheets, fetch, writtenNames, fail(value) { failWrite = value; } };
-}
+function sheetMock() { const m = rowWorkbook('incremental-test'); m.add('独自メモ'); return m; }
 
-test('auto export skips identical tables, writes deletions atomically, retries failures and resets after import', async () => {
+test('auto export skips identical tables, tombstones deletions atomically, reconciles failures and resets after import', async () => {
   const mock = sheetMock(), originalFetch = global.fetch, OriginalDate = global.Date;
   global.fetch = mock.fetch;
   const households = [{ id: 'H1', familyHead: '世帯1', familyMembers: [] }];
   const past = [{ id: 'P1', householdId: 'H1', deathDate: '2000/01/01' }];
   const transactions = [{ id: 'T1', date: '2026/09/01', amount: 1000, type: 'income', category: '寄付' }];
   const batchAccountingData = { entries: { H1: { check1: true, amount1: 1000 } } };
-  const run = (options = { onlyChangedTables: true }) => exportToSheets('token', 'incremental-test', EMPTY_TEMPLE_INFO, households, past, [], transactions, EMPTY_MASTER_OPTIONS, undefined, [], [], { batchAccountingData, ...options });
+  const deletedRecords = [];
+  const run = (options = { onlyChangedTables: true }) => exportToSheets('token', 'incremental-test', EMPTY_TEMPLE_INFO, households, past, [], transactions, EMPTY_MASTER_OPTIONS, undefined, [], [], { batchAccountingData, deletedRecords, ...options });
   try {
     global.Date = class extends OriginalDate { constructor(...args) { super(...(args.length ? args : ['2026-09-14T04:05:06Z'])); } };
     await run({});
@@ -90,7 +74,7 @@ test('auto export skips identical tables, writes deletions atomically, retries f
     assert.equal(mock.calls.length, 0, 'export-time audit/template timestamps must not dirty unchanged data: ' + mock.writtenNames().join(', '));
     transactions[0].amount = 2000;
     await run();
-    assert.deepEqual(mock.writtenNames(), ['出納・会計']);
+    assert.deepEqual([...new Set(mock.writtenNames())], ['出納・会計']);
     assert(!mock.calls.some(c => c.url.includes('batchClear')));
     mock.calls.length = 0;
     households[0].familyMembers.push({ id: 'F1', name: '家族', householdId: 'H1' });
@@ -103,11 +87,12 @@ test('auto export skips identical tables, writes deletions atomically, retries f
     assert(mock.writtenNames().includes('一括会計受付'), 'derived household names must still update when no config date is saved');
     mock.calls.length = 0;
     past.length = 0;
+    deletedRecords.push({logId:'D1',actionType:'delete',entityType:'pastRecord',id:'P1',deletedTimestamp:123});
     await run();
-    assert.deepEqual(mock.writtenNames(), ['過去帳']);
+    assert.deepEqual(new Set(mock.writtenNames()), new Set(['過去帳', '操作・削除履歴']));
     const atomic = mock.calls.find(c => c.body?.requests?.some(r => r.updateCells)).body.requests;
-    assert.equal(atomic.filter(r => r.repeatCell).length, 1);
-    assert.equal(atomic.find(r => r.updateCells).updateCells.rows.length, 1, 'last deletion leaves only the header');
+    assert.equal(atomic.filter(r => r.repeatCell).length, 0);
+    assert.equal(mock.sheets.get('過去帳').rows[1].at(-3), '1', 'deleted record remains as a tombstone');
     transactions[0].amount = 3000;
     mock.fail(true);
     await assert.rejects(run());
@@ -115,7 +100,7 @@ test('auto export skips identical tables, writes deletions atomically, retries f
     mock.calls.length = 0;
     await run();
     assert(mock.writtenNames().includes('出納・会計'));
-    assert(mock.writtenNames().length > 1, 'unknown/failed outcome forces a fresh baseline');
+    assert(mock.writtenNames().every(name => ['出納・会計', '一括会計設定'].includes(name)), 'unchanged record tables are not rewritten; generated reception date can advance');
     // Even a failed import invalidates the baseline rather than assuming the
     // external workbook is still identical to the last export.
     global.fetch = async () => new Response('{}', { status: 400 });
@@ -123,7 +108,7 @@ test('auto export skips identical tables, writes deletions atomically, retries f
     global.fetch = mock.fetch;
     mock.calls.length = 0;
     await run();
-    assert(mock.writtenNames().length > 1);
+    assert.equal(mock.writtenNames().length, 0, 'fresh verification needs no unchanged writes');
   } finally { global.fetch = originalFetch; global.Date = OriginalDate; }
 });
 
@@ -145,7 +130,7 @@ function freshStorage() {
     });
     return request;
   } } };
-  const context = { exports: {}, window, console, setTimeout };
+  const context = { autoSyncDueRef: {current:null}, maintenanceStopped: () => false, exports: {}, window, console, setTimeout };
   vm.runInNewContext(compile(fs.readFileSync(path.join(root,'src/utils/storageUtils.ts'),'utf8')), context);
   return { storage: context.exports, window, writes, local };
 }
@@ -185,13 +170,13 @@ test('auto sync exports the current snapshot, preserves empty deletions, and wak
   const safety = new SheetsWriteSafety();
   safety.accept('sheet', 'verified test fixture');
   let finish;
-  const context = {
+  const context = { autoSyncDueRef: {current:null}, maintenanceStopped: () => false,
     ...state, isInitialLoaded: true,
     writeSafetyRef: { current: safety }, getSheetsPayload: value => value,
     syncStateRef: { current: state }, isImportingRef: { current: false }, isCleanWritingRef: { current: false }, isSyncInProgressRef: { current: false }, lastSyncedSignatureRef: { current: '' },
     getAccessToken: async () => 'token', safeStorage: { getItem: () => '{"id":"sheet"}', setItem() {} },
     getSavedBatchAccountingData: () => undefined, getSavedDisasterMemorialEvents: () => [], loadDeletedRecordsLog: () => [], computePayloadSignature: JSON.stringify,
-    safeExportWithAutoRecovery: async (token,id,callback) => callback(id),
+    readMergeBaseline:async()=>null,currentPageAudit:async()=>[],receiptOperations:()=>[],directorySaveTables:()=>undefined,safeExportWithAutoRecovery: async (token,id,callback) => callback(id),
     acknowledgeSheets: async () => {},
     getAllSavedNoticeTemplates: () => [], getSavedBatchAccountingConfig: () => null,
     exportToSheets: async (...args) => { exports.push(args); if (exports.length === 1) await new Promise(resolve => { finish = resolve; }); },

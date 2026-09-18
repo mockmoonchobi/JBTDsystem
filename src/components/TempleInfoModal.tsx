@@ -1,3 +1,6 @@
+import { allocateTempleId } from '../utils/templePrefixes';
+import { retainedHouseholds } from '../utils/householdRetention';
+import { templeContentChanged, templeValueKey } from '../utils/templeAudit';
 import { isDanmuPriest, shouldRegisterChiefPriest } from '../utils/priestColorUtils';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -43,8 +46,9 @@ interface TempleInfoModalProps {
   onClose: () => void;
   temples?: TempleProfile[];
   activeTempleId?: string;
+  onSaveConfiguration?: (temples: TempleProfile[], activeId: string, options: MasterOptions, map: Record<string, MasterOptions>, priests: Priest[]) => void;
   onSaveTemples?: (temples: TempleProfile[], activeId?: string) => void;
-  onDeleteTemple?: (templeId: string) => void;
+  onDeleteTemple?: (templeId: string) => void | Promise<void>;
   onResetDatabase?: () => void;
   // Associated record datasets for impact calculation & warning
   households?: Household[];
@@ -118,6 +122,7 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   onClose,
   temples: initialTemples,
   activeTempleId: initialActiveId,
+  onSaveConfiguration,
   onSaveTemples,
   onDeleteTemple,
   onResetDatabase,
@@ -324,21 +329,8 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   };
 
   const handleAddNewTemple = () => {
-    // 兼務寺院（0〜9）の空いている連番インデックスを探索
-    const existingSubIndices = templeList
-      .filter((t) => !t.isMain)
-      .map((t) => {
-        const m = t.id.match(/sub-(\d+)/i);
-        return m ? parseInt(m[1], 10) : -1;
-      });
-    let nextSubIdx = 0;
-    while (existingSubIndices.includes(nextSubIdx) && nextSubIdx < 10) {
-      nextSubIdx++;
-    }
-    if (nextSubIdx >= 10) {
-      nextSubIdx = Math.min(templeList.filter((t) => !t.isMain).length, 9);
-    }
-    const newId = `temple-sub-${nextSubIdx}`;
+    // Deleted temple IDs remain on Sheets and must never be recycled.
+    const newId = allocateTempleId(templeList, [...Object.keys(retainedHouseholds()), ...households.map(h => h.id)]);
     const mainTemple = templeList.find((t) => t.isMain) || templeList[0] || currentTemple;
     const newTemple: TempleProfile = {
       id: newId,
@@ -386,26 +378,16 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
     setTempleToDelete(temple);
   };
 
-  const handleConfirmDeleteTemple = () => {
+  const handleConfirmDeleteTemple = async () => {
     if (!templeToDelete) return;
     const targetId = templeToDelete.id;
     const targetName = templeToDelete.name;
-    const nextList = templeList.filter((x) => x.id !== targetId);
-    setTempleList(nextList);
-    const nextActiveId = nextList[0]?.id || 'temple-main';
-    if (selectedTempleId === targetId) {
-      setSelectedTempleId(nextActiveId);
-    }
-    setTempleToDelete(null);
-    setIsDeleteAgreed(false);
-
     if (onDeleteTemple) {
-      onDeleteTemple(targetId);
-    } else if (onSaveTemples) {
-      onSaveTemples(nextList, nextActiveId);
+      try { await onDeleteTemple(targetId); setTempleToDelete(null); setIsDeleteAgreed(false); }
+      catch (error:any) { alert(error.message || '削除できませんでした。'); }
+      return;
     }
-
-    showNotice(`兼務寺院「${targetName}」および関連レコードを完全に削除しました`);
+    alert('Googleシートと連携してから実行してください。');
   };
 
   const handleExecuteResetDatabase = () => {
@@ -698,13 +680,31 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
   // ==================== SUBMIT ====================
   const executeSaveAndClose = () => {
     // 1. 各寺院オブジェクト内に masterOptions をセットし、tobaType1/2/3 と masterOptions.tobaTypes を完全同期
-    const nowIso = new Date().toISOString();
-    const todayStr = nowIso.split('T')[0];
-    const timeStr = new Date().toLocaleTimeString('ja-JP');
+    const opened = initialSnapshotRef.current ? JSON.parse(initialSnapshotRef.current) : { temples: [], master: {} };
+    // Item names, including IME composition, must never become accounting categories.
+    for (const temple of templeList) {
+      const original = opened.temples.find((item: TempleProfile) => item.id === temple.id);
+      const master = masterStateMap[temple.id || 'temple-main'] || temple.masterOptions || EMPTY_MASTER_OPTIONS;
+      if (temple.id !== selectedTempleId && original && !templeContentChanged(temple, original) && templeValueKey(master) === templeValueKey(opened.master[temple.id || 'temple-main'])) continue;
+      for (const slot of [1, 2, 3] as const) {
+        const name = temple[`feeType${slot}`]?.trim();
+        const category = temple[`feeType${slot}Category`];
+        if (name && (!category || !(master.incomeCategories || []).includes(category))) {
+          setShowSaveConfirm(false);
+          showNotice(`寺院「${temple.name}」の集金項目「${name}」の勘定科目を選択してください。未登録の科目は「区分・勘定科目」で登録してから選択してください。`);
+          return;
+        }
+      }
+    }
     const newMasterMap: Record<string, MasterOptions> = {};
     const updatedTempleProfiles = templeList.map((t) => {
       const tId = t.id || 'temple-main';
       const existingMaster = masterStateMap[tId] || t.masterOptions || EMPTY_MASTER_OPTIONS;
+      const original = opened.temples.find((item: TempleProfile) => item.id === t.id);
+      if (original && !templeContentChanged(t, original) && templeValueKey(existingMaster) === templeValueKey(opened.master[tId])) {
+        newMasterMap[tId] = existingMaster;
+        return t;
+      }
 
       const t1 = t.tobaType1 !== undefined ? t.tobaType1.trim() : '施餓鬼塔婆';
       const t2 = (t.tobaType2 || '').trim();
@@ -736,23 +736,28 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
         tobaType2: t2,
         tobaType3: t3,
         feeType1: f1,
-        feeType1Category: t.feeType1Category || (f1 ? (feeMapping[f1] || f1) : undefined),
+        feeType1Category: t.feeType1Category || undefined,
         feeType1DefaultAmount: t.feeType1DefaultAmount,
         feeType2: f2,
-        feeType2Category: t.feeType2Category || (f2 ? (feeMapping[f2] || f2) : undefined),
+        feeType2Category: t.feeType2Category || undefined,
         feeType2DefaultAmount: t.feeType2DefaultAmount,
         feeType3: f3,
-        feeType3Category: t.feeType3Category || (f3 ? (feeMapping[f3] || f3) : undefined),
+        feeType3Category: t.feeType3Category || undefined,
         feeType3DefaultAmount: t.feeType3DefaultAmount,
         feeTypeMapping: feeMapping,
         masterOptions: updatedMaster,
-        updatedAt: nowIso,
-        updatedDate: todayStr,
-        updatedTime: timeStr,
       };
     });
 
     const activeProfile = updatedTempleProfiles.find((t) => t.id === selectedTempleId) || updatedTempleProfiles[0];
+
+    if (onSaveConfiguration) {
+      const activeOptions = activeProfile?.masterOptions || newMasterMap[selectedTempleId] || newMasterMap['temple-main'] || currentMasterOptions;
+      onSaveConfiguration(updatedTempleProfiles, selectedTempleId, activeOptions, newMasterMap, reconcilePriestsWithTemples(updatedTempleProfiles, priestList));
+      setShowSaveConfirm(false);
+      onClose();
+      return;
+    }
 
     // 2. 寺院リスト保存
     if (onSaveTemples) {
@@ -1403,9 +1408,6 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                         onChange={(e) => {
                           const val = e.target.value;
                           const updates: Partial<TempleProfile> = { feeType1: val };
-                          if (!currentTemple.feeType1Category && val) {
-                            updates.feeType1Category = val;
-                          }
                           updateCurrentTemple(updates);
                         }}
                         className="w-full bg-[#FAF9F5] border border-[#D1CEC7] px-2 py-1 text-xs font-bold focus:border-[#1A1A1A] focus:outline-hidden"
@@ -1414,11 +1416,15 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                     <div>
                       <label className="block text-[10px] font-bold text-[#666666] mb-0.5">連動する勘定科目（収入）</label>
                       <select
-                        value={currentTemple.feeType1Category || (currentTemple.feeType1 ? currentTemple.feeType1 : '護持会費')}
+                        value={currentTemple.feeType1Category || ''}
                         onChange={(e) => updateCurrentTemple({ feeType1Category: e.target.value })}
                         className="w-full bg-white border border-[#D1CEC7] px-2 py-1 text-xs text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-hidden"
                       >
-                        {(currentMasterOptions.incomeCategories || ['護持会費', '法要布施', '墓地管理費', '特別寄付', '繰越金', 'その他']).map((cat) => (
+                        <option value="">科目を選択してください</option>
+                        {currentTemple.feeType1Category && !(currentMasterOptions.incomeCategories || []).includes(currentTemple.feeType1Category) && (
+                          <option value={currentTemple.feeType1Category}>未登録の科目：{currentTemple.feeType1Category}（選び直してください）</option>
+                        )}
+                        {(currentMasterOptions.incomeCategories || []).map((cat) => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                       </select>
@@ -1440,9 +1446,6 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                         onChange={(e) => {
                           const val = e.target.value;
                           const updates: Partial<TempleProfile> = { feeType2: val };
-                          if (!currentTemple.feeType2Category && val) {
-                            updates.feeType2Category = val;
-                          }
                           updateCurrentTemple(updates);
                         }}
                         className="w-full bg-[#FAF9F5] border border-[#D1CEC7] px-2 py-1 text-xs font-bold focus:border-[#1A1A1A] focus:outline-hidden"
@@ -1451,11 +1454,15 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                     <div>
                       <label className="block text-[10px] font-bold text-[#666666] mb-0.5">連動する勘定科目（収入）</label>
                       <select
-                        value={currentTemple.feeType2Category || (currentTemple.feeType2 ? currentTemple.feeType2 : '墓地管理費')}
+                        value={currentTemple.feeType2Category || ''}
                         onChange={(e) => updateCurrentTemple({ feeType2Category: e.target.value })}
                         className="w-full bg-white border border-[#D1CEC7] px-2 py-1 text-xs text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-hidden"
                       >
-                        {(currentMasterOptions.incomeCategories || ['護持会費', '法要布施', '墓地管理費', '特別寄付', '繰越金', 'その他']).map((cat) => (
+                        <option value="">科目を選択してください</option>
+                        {currentTemple.feeType2Category && !(currentMasterOptions.incomeCategories || []).includes(currentTemple.feeType2Category) && (
+                          <option value={currentTemple.feeType2Category}>未登録の科目：{currentTemple.feeType2Category}（選び直してください）</option>
+                        )}
+                        {(currentMasterOptions.incomeCategories || []).map((cat) => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                       </select>
@@ -1477,9 +1484,6 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                         onChange={(e) => {
                           const val = e.target.value;
                           const updates: Partial<TempleProfile> = { feeType3: val };
-                          if (!currentTemple.feeType3Category && val) {
-                            updates.feeType3Category = val;
-                          }
                           updateCurrentTemple(updates);
                         }}
                         className="w-full bg-[#FAF9F5] border border-[#D1CEC7] px-2 py-1 text-xs font-bold focus:border-[#1A1A1A] focus:outline-hidden"
@@ -1488,11 +1492,15 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                     <div>
                       <label className="block text-[10px] font-bold text-[#666666] mb-0.5">連動する勘定科目（収入）</label>
                       <select
-                        value={currentTemple.feeType3Category || (currentTemple.feeType3 ? currentTemple.feeType3 : '特別寄付')}
+                        value={currentTemple.feeType3Category || ''}
                         onChange={(e) => updateCurrentTemple({ feeType3Category: e.target.value })}
                         className="w-full bg-white border border-[#D1CEC7] px-2 py-1 text-xs text-[#1A1A1A] focus:border-[#1A1A1A] focus:outline-hidden"
                       >
-                        {(currentMasterOptions.incomeCategories || ['護持会費', '法要布施', '墓地管理費', '特別寄付', '繰越金', 'その他']).map((cat) => (
+                        <option value="">科目を選択してください</option>
+                        {currentTemple.feeType3Category && !(currentMasterOptions.incomeCategories || []).includes(currentTemple.feeType3Category) && (
+                          <option value={currentTemple.feeType3Category}>未登録の科目：{currentTemple.feeType3Category}（選び直してください）</option>
+                        )}
+                        {(currentMasterOptions.incomeCategories || []).map((cat) => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                       </select>

@@ -33,7 +33,7 @@ export class SheetsExportCache {
       // The exporter generates this timestamp at export time, even when the
       // template itself is unchanged. All actual template fields still compare.
       const values = name === '案内文テンプレート'
-        ? update.values.map(row => row.slice(0, 5)) : (update.comparisonValues || update.values);
+        ? update.values.map(row => row.filter((_, index) => index !== 5)) : (update.comparisonValues || update.values);
       const parts = chunks.get(name) || [];
       parts.push(JSON.stringify(values));
       chunks.set(name, parts);

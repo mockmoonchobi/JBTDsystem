@@ -31,21 +31,31 @@ export async function readAllSheetData(
     if (values.length !== batch.length) throw new Error('Googleシートの一部を完全に読み取れませんでした。');
     values.forEach((value, index) => put(batch[index].properties.title, checkedValues(value, batch[index].properties.title)));
   }
+  const pages: { title: string; start: number; end: number; range: string }[] = [];
+  const collected = new Map<string, any[][]>();
   for (const sheet of sheets) {
     const { title, gridProperties: { rowCount } } = sheet.properties;
     if (result.has(title)) continue;
-    const rows: any[][] = [];
+    collected.set(title, []);
     for (let start = 1; start <= rowCount; start += 2000) {
       const end = Math.min(start + 1999, rowCount);
-      const values = await read([`${quote(title)}!A${start}:ZZ${end}`]);
-      if (values.length !== 1) throw new Error(`「${title}」を完全に読み取れませんでした。`);
-      const chunk = checkedValues(values[0], title);
-      // Only the first grid row is a header, even if the first page is empty.
-      if (start === 1) rows.push(chunk[0] || [], ...chunk.slice(1));
-      else rows.push(...chunk);
+      pages.push({ title, start, end, range: quote(title) + '!A' + start + ':ZZ' + end });
     }
-    put(title, rows);
   }
+  // Batch large-table pages too; do not spend one API request on every 2,000 rows.
+  for (let offset = 0; offset < pages.length; offset += 20) {
+    const batch = pages.slice(offset, offset + 20), values = await read(batch.map(p => p.range));
+    if (values.length !== batch.length) throw new Error('Googleシートの一部を完全に読み取れませんでした。');
+    values.forEach((value, index) => {
+      const page = batch[index], chunk = checkedValues(value, page.title);
+      const bounds = value.range.match(/!A(\d+):[A-Z]+(\d+)$/);
+      if (!bounds || Number(bounds[1]) !== page.start || Number(bounds[2]) !== page.end || chunk.length > page.end - page.start + 1) throw new Error('Googleシートの読込範囲が一致しません。');
+      const rows = collected.get(page.title)!;
+      if (page.start === 1) rows.push(chunk[0] || [], ...chunk.slice(1));
+      else rows.push(...chunk);
+    });
+  }
+  for (const [title, rows] of collected) put(title, rows);
   return result;
 }
 

@@ -2661,7 +2661,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     }
 
     validRows.forEach((row, idx) => {
-      const txId = `TX-SRV-${Date.now()}-${idx + 1}`;
+      const txId = `TX-${crypto.randomUUID()}`;
       
       // ユーザーが明細行の備考(row.notes)に入力した内容を最優先で出納帳の備考としてそのまま反映
       let finalNote = row.notes?.trim() || '';
@@ -2730,7 +2730,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     }
 
     const normDate = normalizeDateInput(service.scheduledDate) || todayStr;
-    const txId = `TX-${Date.now()}`;
+    const txId = `TX-${crypto.randomUUID()}`;
 
     // 所属寺院IDの確実な解決（兼務寺の檀家の場合は確実に兼務寺院IDを設定）
     let resolvedTempleId = service.templeId;

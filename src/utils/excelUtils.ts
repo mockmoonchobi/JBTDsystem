@@ -1,3 +1,4 @@
+import { sortTableGrid } from './tableSort';
 import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from './noticeTemplateUtils';
 import { isDanmuPriest, parseDanmuFlag, shouldRegisterChiefPriest } from './priestColorUtils';
 import * as XLSX from 'xlsx';
@@ -306,7 +307,7 @@ export function exportToExcel(
       h.yago?.trim() || '',
     ];
   });
-  const wsHouseholds = XLSX.utils.aoa_to_sheet([householdHeaders, ...householdRows]);
+  const wsHouseholds = XLSX.utils.aoa_to_sheet(sortTableGrid('檀家名簿', [householdHeaders, ...householdRows]));
   XLSX.utils.book_append_sheet(wb, wsHouseholds, '檀家名簿');
 
   // 3. 家族構成
@@ -413,7 +414,7 @@ export function exportToExcel(
       getTempleId(effectiveTempleId)
     ];
   });
-  const wsPast = XLSX.utils.aoa_to_sheet([pastRecordHeaders, ...pastRows]);
+  const wsPast = XLSX.utils.aoa_to_sheet(sortTableGrid('過去帳', [pastRecordHeaders, ...pastRows]));
   XLSX.utils.book_append_sheet(wb, wsPast, '過去帳');
 
   // 5. 法事・予約一覧
@@ -486,7 +487,7 @@ export function exportToExcel(
       getTempleId(s.templeId)
     ];
   });
-  const wsMemorial = XLSX.utils.aoa_to_sheet([memorialServiceHeaders, ...memorialRows]);
+  const wsMemorial = XLSX.utils.aoa_to_sheet(sortTableGrid('法事予約', [memorialServiceHeaders, ...memorialRows]));
   XLSX.utils.book_append_sheet(wb, wsMemorial, '法事予約');
 
   // 6. 寺院行事・ToDo
@@ -531,7 +532,7 @@ export function exportToExcel(
       getTempleId(td.templeId)
     ];
   });
-  const wsTodos = XLSX.utils.aoa_to_sheet([todoHeaders, ...todoRows]);
+  const wsTodos = XLSX.utils.aoa_to_sheet(sortTableGrid('寺院ToDo', [todoHeaders, ...todoRows]));
   XLSX.utils.book_append_sheet(wb, wsTodos, '寺院ToDo');
 
   // 7. 出納・会計
@@ -574,7 +575,7 @@ export function exportToExcel(
       getTempleId(t.templeId)
     ];
   });
-  const wsTransactions = XLSX.utils.aoa_to_sheet([transactionHeaders, ...transactionRows]);
+  const wsTransactions = XLSX.utils.aoa_to_sheet(sortTableGrid('出納・会計', [transactionHeaders, ...transactionRows]));
   XLSX.utils.book_append_sheet(wb, wsTransactions, '出納・会計');
 
   // 8. マスタ設定（区分・勘定科目）

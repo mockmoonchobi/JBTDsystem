@@ -4,7 +4,7 @@
  * Table datasets are stored directly in IndexedDB, completely bypassing localStorage limits.
  */
 
-const DB_NAME = 'TempleManagementDB';
+const DB_NAME = 'TempleManagementDB-Sandbox';
 const DB_VERSION = 1;
 const STORE_NAME = 'app_state';
 
@@ -177,6 +177,30 @@ async function withStore<R>(
     }
   }
   throw new Error('IndexedDB operation failed after retries');
+}
+
+/** Safety journals must distinguish a missing key from an unreadable database. */
+export async function idbGetStrict<T = any>(key: string): Promise<T | null> {
+  return withStore<T | null>('readonly', store => new Promise((resolve, reject) => {
+    const req = store.get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror = () => reject(req.error);
+  }));
+}
+/** One read/write transaction prevents two tabs from overwriting each other's outbox. */
+export async function idbUpdate<T>(key: string, update: (previous: T | null) => T): Promise<void> {
+  const value = await withStore<T>('readwrite', store => new Promise((resolve, reject) => {
+    const read = store.get(key);
+    read.onerror = () => reject(read.error);
+    read.onsuccess = () => {
+      try {
+        const next = update(read.result ?? null), write = store.put(next, key);
+        write.onerror = () => reject(write.error);
+        write.onsuccess = () => resolve(next);
+      } catch (error) { reject(error); }
+    };
+  }));
+  memoryStateCache.set(key, value);
 }
 
 export async function idbGet<T = any>(key: string): Promise<T | null> {

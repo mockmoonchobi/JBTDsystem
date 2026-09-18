@@ -121,6 +121,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       const defaultTemple = activeTempleId && activeTempleId !== 'ALL' ? activeTempleId : (temples[0]?.id || 'temple-main');
       const autoId = generateNewHouseholdId(defaultTemple, existingHouseholds, temples, existingPastRecords);
       setFormData({
+        yago: '',
         id: autoId,
         templeId: defaultTemple,
         familyHead: '',
@@ -357,6 +358,11 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
                   {...headFuriganaInputProps}
                   className="w-full bg-white border border-[#D1CEC7] px-3 py-1.5 text-[#2D2D2D] focus:border-[#1A1A1A] focus:outline-none"
                 />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#444444] mb-1" htmlFor="household-yago">屋号</label>
+                <input id="household-yago" type="text" value={formData.yago || ''} onChange={e => setFormData(prev => ({...prev, yago: e.target.value}))} className="w-full bg-white border border-[#D1CEC7] px-3 py-1.5" placeholder="任意" />
               </div>
 
               <div>

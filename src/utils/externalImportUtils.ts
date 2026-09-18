@@ -346,7 +346,8 @@ export function extractKakochoItems(
     const colIdx = headerIndexMap[colName];
     if (colIdx === undefined || colIdx === -1) return '';
     const cellVal = row[colIdx];
-    return cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+    const value = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+    return value;
   };
 
   const items: KakochoItemInput[] = [];
@@ -445,7 +446,8 @@ export function convertTableToData(
     const colIdx = headerIndexMap[colName];
     if (colIdx === undefined || colIdx === -1) return '';
     const cellVal = row[colIdx];
-    return cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+    const value = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
+    return (fieldKey === 'id' || fieldKey === 'householdId') && value ? cleanAndNormalizeHouseholdId(value, targetTempleId, options.temples) : value;
   };
 
   const warnings: string[] = [];
@@ -457,8 +459,8 @@ export function convertTableToData(
   // Working lists
   // 'replace' mode for household or combined initializes outHouseholds to retain other temples' data
   let outHouseholds: Household[] = ((targetType === 'household' || targetType === 'combined') && options.conflictMode === 'replace') 
-    ? options.existingHouseholds.filter(h => (h.templeId || 'temple-main') !== targetTempleId) 
-    : [...options.existingHouseholds];
+    ? structuredClone(options.existingHouseholds.filter(h => (h.templeId || 'temple-main') !== targetTempleId))
+    : structuredClone(options.existingHouseholds);
   let outPastRecords: PastRecord[] = [];
   let outTransactions: Transaction[] = [];
 
@@ -512,17 +514,7 @@ export function convertTableToData(
       const byExactIdSameTemple = outHouseholds.find(h => (h.templeId || 'temple-main') === targetTempleId && (h.id === cleanRawId || (normalizedCandidate && h.id === normalizedCandidate)));
       if (byExactIdSameTemple) return byExactIdSameTemple;
 
-      const byExactId = outHouseholds.find(h => h.id === cleanRawId || (normalizedCandidate && h.id === normalizedCandidate));
-      if (byExactId) return byExactId;
-
-      const normSearchId = normalizeId(cleanRawId);
-      if (normSearchId) {
-        const byNormIdSameTemple = outHouseholds.find(h => (h.templeId || 'temple-main') === targetTempleId && normalizeId(h.id) === normSearchId);
-        if (byNormIdSameTemple) return byNormIdSameTemple;
-
-        const byNormId = outHouseholds.find(h => normalizeId(h.id) === normSearchId);
-        if (byNormId) return byNormId;
-      }
+      return undefined;
     }
 
     if (!headName) return undefined;
@@ -583,6 +575,7 @@ export function convertTableToData(
   const importAudit = getCurrentAuditFields();
 
   if (targetType === 'household') {
+    const importedIdSources = new Map<string, {row: number; name: string; originalId: string}>();
     rawRows.forEach((row, rowIdx) => {
       const headName = getCell(row, 'familyHead');
       if (!headName) {
@@ -688,9 +681,16 @@ export function convertTableToData(
       } else {
         // Create new with standardized temple-specific 5-digit ID (no -2/-3 suffix)
         let id = rawId ? normalizeToTempleId(rawId) : '';
-        if (id && outHouseholds.some(h => h.id === id)) {
-          // If ID already exists, allocate the next free 5-digit ID for this temple instead of appending '-2'
-          id = getNextAvailableId();
+        const duplicate = id && outHouseholds.find(h => h.id === id);
+        if (duplicate) {
+          const originalId = String(row[headerIndexMap[mapping.id]] ?? '').trim();
+          const earlier = importedIdSources.get(id);
+          if (earlier) {
+            throw new Error(`取込ファイル内で檀家IDが重複しています。${earlier.row}行目「${earlier.name}」（元のID：${earlier.originalId || '未指定'}）と${rowIdx + 2}行目「${headName}」（元のID：${originalId || '未指定'}）が、どちらも「${id}」になります。取込先の既存名簿との重複ではありません。元ファイルのIDまたは取込対象の寺院を確認してください。まだ取り込みは実行していません。`);
+          }
+          const owner = options.temples?.find(t => t.id === duplicate.templeId);
+          const affiliation = owner?.name || duplicate.templeId || '寺院未設定';
+          throw new Error(`取込ファイルの${rowIdx + 2}行目「${headName}」（元のID：${originalId || '未指定'}）の檀家ID「${id}」は、既存名簿の「${duplicate.familyHead}」様（所属：${affiliation}）ですでに使われています。番号を維持するため追加を中止しました。取込先と元ファイルのIDを確認してください。`);
         } else if (!id) {
           id = getNextAvailableId();
         }
@@ -736,6 +736,7 @@ export function convertTableToData(
           updatedTime,
         };
         outHouseholds.push(newH);
+        importedIdSources.set(id, {row:rowIdx+2, name:headName, originalId:String(row[headerIndexMap[mapping.id]] ?? '').trim()});
         importedHouseholds.push(newH);
         householdsCreated++;
       }
@@ -778,9 +779,9 @@ export function convertTableToData(
       if (mapping.householdId || mapping.id) {
         if (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId)) {
           // Preserve exact IDs before considering numeric IDs without a prefix.
-          targetHousehold = outHouseholds.find(h => h.id === rawHouseholdId);
+          targetHousehold = outHouseholds.find(h => h.id === rawHouseholdId && (h.templeId || 'temple-main') === targetTempleId);
           if (!targetHousehold && /^\d+$/.test(rawHouseholdId)) {
-            targetHousehold = outHouseholds.find(h => h.id === normalizeToTempleId(rawHouseholdId));
+            targetHousehold = outHouseholds.find(h => h.id === normalizeToTempleId(rawHouseholdId) && (h.templeId || 'temple-main') === targetTempleId);
           }
         }
         if (!targetHousehold && (!rawHouseholdId || !isUnlinkedHouseholdId(rawHouseholdId))) {
@@ -861,7 +862,7 @@ export function convertTableToData(
       const rawNiibon = getCell(row, 'niibon');
 
       const pastRec: PastRecord = {
-        id: `P-${Date.now().toString(36)}-${rowIdx}-${Math.floor(Math.random() * 9000 + 1000)}`,
+        id: `P-${crypto.randomUUID()}`,
         templeId: targetTempleId,
         householdId,
         householdHeadName: recordedOriginalHeadName,
@@ -1076,9 +1077,10 @@ export function convertTableToData(
 
       // Match Household by ID or name
       const matchedH = findHousehold(headName, undefined, rawHouseholdId);
+      if (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId) && !matchedH) throw new Error('檀家ID「' + rawHouseholdId + '」が取込先の名簿にありません。先に名簿を取り込んでください。');
 
       const trans: Transaction = {
-        id: `TR-${Date.now().toString(36)}-${Math.floor(Math.random() * 9000 + 1000)}`,
+        id: `TR-${crypto.randomUUID()}`,
         templeId: targetTempleId,
         date: date || new Date().toISOString().split('T')[0],
         category: (category || 'その他') as any,

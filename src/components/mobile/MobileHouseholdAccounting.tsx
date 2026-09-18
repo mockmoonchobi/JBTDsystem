@@ -1,6 +1,7 @@
+import { normalizeDateInput } from '../../utils/memorialCalculator';
 import React, { useMemo, useState } from 'react';
 import { Transaction } from '../../types';
-import { normalizeDateInput } from '../../utils/memorialCalculator';
+import { compareTransactionsChronological } from '../../utils/fiscalYearUtils';
 
 interface MobileHouseholdAccountingProps {
   householdId: string;
@@ -12,11 +13,7 @@ export const MobileHouseholdAccounting: React.FC<MobileHouseholdAccountingProps>
   const records = useMemo(() => transactions
     // Household IDs are shared with desktop accounting, including combined temple accounts.
     .filter((transaction) => !!householdId && transaction.householdId === householdId)
-    .sort((a, b) => {
-      const dateA = normalizeDateInput(a.date || '');
-      const dateB = normalizeDateInput(b.date || '');
-      return dateB.localeCompare(dateA);
-    }), [householdId, transactions]);
+    .sort((a, b) => compareTransactionsChronological(b, a)), [householdId, transactions]);
 
   return (
     <section className="space-y-2" aria-label="当家の会計データ">

@@ -17,7 +17,7 @@ function mount(transactions, householdId = 'DK1') {
       return [slots[i], v => { slots[i] = typeof v === 'function' ? v(slots[i]) : v; }];
     },
   };
-  const context = { exports: {}, require: name => name === 'react' ? React : dates };
+  const context = { exports: {}, require: name => name === 'react' ? React : name.includes('fiscalYearUtils') ? require('../src/utils/fiscalYearUtils.ts') : dates };
   vm.runInNewContext(compile(fs.readFileSync(path.join(__dirname, '../src/components/mobile/MobileHouseholdAccounting.tsx'), 'utf8')), context);
   const props = { transactions, householdId };
   const render = () => { cursor = 0; tree = context.exports.MobileHouseholdAccounting(props); };

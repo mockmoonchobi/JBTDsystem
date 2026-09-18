@@ -1,3 +1,4 @@
+import { getTodayDateString } from '../utils/calendarUtils';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { 
   X, 
@@ -88,7 +89,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   };
 
   // 1. Top Settings Bar State: 1 Date, 3 Categories, 3 Provisos (Descriptions), 3 Default Amounts
-  const todayEra = formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false);
+  const todayEra = formatJapaneseEraDate(getTodayDateString(), false);
   const [configDate, setConfigDate] = useState<string>(todayEra);
 
   // Column 1
@@ -118,6 +119,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   const [showSaveConfirm, setShowSaveConfirm] = useState<boolean>(false);
   const isLoadedRef = useRef<boolean>(false);
 
+  // Start each reception session on the local calendar date. Background updates
+  // must not replace a date the operator has deliberately selected.
+  useEffect(() => {
+    if (isOpen) setConfigDate(formatJapaneseEraDate(getTodayDateString(), false));
+  }, [isOpen, templeInfo?.id]);
+
   // Load saved state when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -142,7 +149,6 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       } : null) || getDefaultBatchAccountingConfig(templeInfo);
 
       if (configSource) {
-        if (configSource.configDate) setConfigDate(configSource.configDate);
         if (configSource.cat1 !== undefined) setCat1(configSource.cat1 || '法要布施');
         if (configSource.notes1 !== undefined) setNotes1(configSource.notes1);
         if (configSource.defaultAmount1 !== undefined) setDefaultAmount1(configSource.defaultAmount1);
@@ -390,6 +396,26 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     }
     const globalDefault = colIndex === 1 ? defaultAmount1 : colIndex === 2 ? defaultAmount2 : defaultAmount3;
     return globalDefault;
+  };
+
+  const handleCheckAllItems = (household: Household) => {
+    setEntries(prev => {
+      const current = prev[household.id] || {
+        householdId: household.id,
+        check1: false, amount1: '' as const,
+        check2: false, amount2: '' as const,
+        check3: false, amount3: '' as const,
+      };
+      return {
+        ...prev,
+        [household.id]: {
+          ...current,
+          ...(isCol1Active ? { check1: true, amount1: current.amount1 !== '' ? current.amount1 : getHouseholdDefaultAmount(household, 1) } : {}),
+          ...(isCol2Active ? { check2: true, amount2: current.amount2 !== '' ? current.amount2 : getHouseholdDefaultAmount(household, 2) } : {}),
+          ...(isCol3Active ? { check3: true, amount3: current.amount3 !== '' ? current.amount3 : getHouseholdDefaultAmount(household, 3) } : {}),
+        },
+      };
+    });
   };
 
   // Toggle Check 1
@@ -770,13 +796,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       mode: 'accounting',
       fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4,
     };
-    const normalizedDate = normalizeDateInput(configDate, dateOptions) || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
+    const normalizedDate = normalizeDateInput(configDate, dateOptions) || getTodayDateString();
 
     const newTransactions: Transaction[] = generatedRecordsSummary.recordsToCreate.map((item, index) => {
       const ts = Date.now();
-      const rand = Math.random().toString(36).slice(2, 7);
       return {
-        id: `TX-${ts}-${rand}-${index + 1}`,
+        id: `TX-${crypto.randomUUID()}`,
         templeId: item.household.templeId || templeInfo.id || 'temple-main',
         date: normalizedDate,
         householdId: item.household.id,
@@ -1413,6 +1438,17 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                               )}
                             </div>
                           </div>
+                          {activeColCount > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleCheckAllItems(h)}
+                              disabled={(!isCol1Active || entry.check1) && (!isCol2Active || entry.check2) && (!isCol3Active || entry.check3)}
+                              aria-label={h.familyHead + '様の全項目にチェック'}
+                              className="mt-2 rounded border border-amber-400 bg-amber-50 px-2 py-1 text-xs font-sans font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-default"
+                            >
+                              全項目にチェック
+                            </button>
+                          )}
                         </td>
 
                         {/* 2. 項目１ (チェックボックス + 金額入力) */}

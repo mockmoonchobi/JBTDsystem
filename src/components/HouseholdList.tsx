@@ -939,7 +939,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     const normalizedDate = normalizeDateInput(newHouseholdTxForm.date || '') || new Date().toISOString().slice(0, 10).replace(/-/g, '/');
 
     const newTx: Transaction = {
-      id: `TX-${Date.now()}`,
+      id: `TX-${crypto.randomUUID()}`,
       templeId: currentIndividualHousehold.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples.find((t) => t.isMain)?.id || 'temple-main')),
       date: normalizedDate,
       householdId: currentIndividualHousehold.id,
@@ -1002,7 +1002,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     }
 
     const newTx: Transaction = {
-      id: `TX-${Date.now()}`,
+      id: `TX-${crypto.randomUUID()}`,
       templeId: currentIndividualHousehold.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples.find((t) => t.isMain)?.id || 'temple-main')),
       date: transactionFormData.date || new Date().toISOString().split('T')[0],
       householdId: currentIndividualHousehold.id,

@@ -10,30 +10,27 @@ import {
   Edit3, 
   Trash2, 
   Database, 
-  CheckCircle2, 
   Smartphone, 
   Monitor, 
   User as UserIcon,
   Clock,
   ShieldCheck,
-  AlertCircle,
-  RotateCcw,
-  Undo2
+  AlertCircle
 } from 'lucide-react';
 import { DeletedRecordEntry } from '../types';
 import { getCurrentUser } from '../lib/googleAuth';
 import { safeStorage } from '../utils/storageUtils';
-import { computeCreationDiffs, computeDeletionDiffs } from '../utils/diffUtils';
 
 interface OperationHistoryModalProps {
+  onOpenMaintenance?: () => void;
   isOpen: boolean;
   onClose: () => void;
   deletedRecords: DeletedRecordEntry[];
   onTriggerManualSync?: () => void;
   isSyncing?: boolean;
+  syncErrorMessage?: string | null;
   spreadsheetUrl?: string | null;
   isGoogleConnected?: boolean;
-  onRestoreRecord?: (entry: DeletedRecordEntry, fieldKey?: string) => { success: boolean; message: string };
 }
 
 interface ParsedOperation {
@@ -46,11 +43,19 @@ interface ParsedOperation {
 /**
  * Parses operation entry into a clear, human-readable headline, action summary, and detailed metadata chips.
  */
+const isMergeHistory = (entry: DeletedRecordEntry) => entry.id?.startsWith('SYNC-') &&
+  (entry.logId?.startsWith('MERGE-') || entry.deviceInfo === 'データ統合ウィザード');
+
 export function parseOperationDetails(entry: DeletedRecordEntry): ParsedOperation {
   const rawLabel = (entry.label || '').trim();
   const rawId = (entry.id || '').trim();
   const actionType = entry.actionType || 'delete';
   const entityType = entry.entityType || 'household';
+
+  // Legacy merge entries used the temple category; they do not imply a settings edit.
+  if (isMergeHistory(entry)) {
+    return { headline: rawLabel || '端末とGoogleシートのデータ統合', subHeadline: 'データ同期の統合処理', chips: [], recordId: rawId };
+  }
 
   const getActionPhrase = (act: string, ent: string): string => {
     const isCreate = act === 'create' || act === 'batch_create';
@@ -151,40 +156,17 @@ export function parseOperationDetails(entry: DeletedRecordEntry): ParsedOperatio
 export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
   isOpen,
   onClose,
+  onOpenMaintenance,
   deletedRecords,
   onTriggerManualSync,
   isSyncing = false,
+  syncErrorMessage,
   spreadsheetUrl,
   isGoogleConnected = false,
-  onRestoreRecord,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAction, setSelectedAction] = useState<string>('all');
   const [selectedEntity, setSelectedEntity] = useState<string>('all');
-  const [confirmingEntry, setConfirmingEntry] = useState<DeletedRecordEntry | null>(null);
-  const [restoreFeedback, setRestoreFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-  const [restoringKey, setRestoringKey] = useState<string | null>(null);
-
-  const handleRestore = (entry: DeletedRecordEntry, fieldKey?: string) => {
-    if (!onRestoreRecord) return;
-    const restoreId = fieldKey ? `${entry.logId || entry.id}-${fieldKey}` : `${entry.logId || entry.id}-all`;
-    setRestoringKey(restoreId);
-    try {
-      const res = onRestoreRecord(entry, fieldKey);
-      setRestoreFeedback({
-        type: res.success ? 'success' : 'error',
-        message: res.message
-      });
-    } catch (e: any) {
-      setRestoreFeedback({
-        type: 'error',
-        message: e?.message || '復元処理に失敗しました'
-      });
-    } finally {
-      setRestoringKey(null);
-    }
-  };
-
   // Stats calculation
   const stats = useMemo(() => {
     let creates = 0;
@@ -355,6 +337,7 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
           </div>
           
           <div className="flex items-center gap-2 ml-auto">
+            {onOpenMaintenance && <button onClick={onOpenMaintenance} className="inline-flex items-center px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs">履歴整理</button>}
             {spreadsheetUrl && (
               <a
                 href={spreadsheetUrl}
@@ -379,6 +362,7 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
           </div>
         </div>
 
+        {syncErrorMessage && <div role="alert" className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{syncErrorMessage}</div>}
         {/* Stats & Filter Bar */}
         <div className="p-4 sm:p-5 border-b border-[#E5E0D8] bg-white space-y-3 shrink-0">
           {/* Stats Badges */}
@@ -391,7 +375,7 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              全履歴: <strong className="ml-1">{stats.total}</strong> 件
+              端末の履歴: <strong className="ml-1">{stats.total}</strong> 件
             </button>
             <button
               onClick={() => setSelectedAction('create')}
@@ -473,36 +457,6 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
 
         {/* Content Table */}
         <div className="flex-1 overflow-hidden flex flex-col p-3 sm:p-5 min-h-0 space-y-3">
-          {/* Restore Feedback Notification Banner */}
-          {restoreFeedback && (
-            <div className={`p-3.5 rounded-xl border flex items-start justify-between gap-3 transition-all shrink-0 ${
-              restoreFeedback.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}>
-              <div className="flex items-start gap-2.5">
-                {restoreFeedback.type === 'success' ? (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <h4 className="text-sm font-semibold">
-                    {restoreFeedback.type === 'success' ? '復元が完了しました' : '復元できませんでした'}
-                  </h4>
-                  <p className="text-xs mt-0.5 leading-relaxed">{restoreFeedback.message}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setRestoreFeedback(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
-                title="閉じる"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
           {filteredRecords.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center border border-dashed border-slate-200 text-slate-500 space-y-2 my-auto">
               <AlertCircle className="w-8 h-8 mx-auto text-slate-400" />
@@ -522,7 +476,6 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                       <th className="py-2.5 px-3 whitespace-nowrap w-24">操作種別</th>
                       <th className="py-2.5 px-3 whitespace-nowrap w-28">データ対象</th>
                       <th className="py-2.5 px-3 min-w-[180px]">操作内容 / 詳細</th>
-                      <th className="py-2.5 px-3 whitespace-nowrap w-48 text-center">操作の取り消し</th>
                       <th className="py-2.5 px-3 whitespace-nowrap w-36">操作日時</th>
                       <th className="py-2.5 px-3 whitespace-nowrap w-40">操作者 / 端末</th>
                     </tr>
@@ -531,27 +484,14 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                     {filteredRecords.map((entry, idx) => {
                       const parsed = parseOperationDetails(entry);
                       const logIdentifier = entry.logId || `${entry.id}-${idx}`;
-                      const isCreationRecord = entry.actionType === 'create' || entry.actionType === 'batch_create';
-                      const isDeletedRecord = entry.actionType === 'delete' || entry.actionType === 'batch_delete' || entry.actionType === 'wipe';
-                      const effectiveDiffs = (Array.isArray(entry.diffs) && entry.diffs.length > 0)
-                        ? entry.diffs
-                        : isCreationRecord && entry.afterData
-                        ? computeCreationDiffs(entry.afterData, entry.entityType)
-                        : isDeletedRecord && entry.beforeData
-                        ? computeDeletionDiffs(entry.beforeData, entry.entityType)
-                        : [];
-                      const hasDiffs = effectiveDiffs.length > 0;
-                      const hasBeforeData = Boolean(entry.beforeData && Object.keys(entry.beforeData).length > 0);
-                      const isRestoring = restoringKey === `${logIdentifier}-all`;
-
                       return (
                         <tr key={logIdentifier} className="hover:bg-slate-50/60 transition-colors">
                           <td className="py-2.5 px-3 whitespace-nowrap align-top">
-                            {getActionBadge(entry.actionType)}
+                            {isMergeHistory(entry) ? <span className="text-xs font-medium text-slate-600">データ統合</span> : getActionBadge(entry.actionType)}
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap align-top">
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200 font-medium">
-                              {getEntityLabel(entry.entityType)}
+                              {isMergeHistory(entry) ? 'データ連携' : getEntityLabel(entry.entityType)}
                             </span>
                           </td>
                           <td className="py-2.5 px-3 align-top min-w-0">
@@ -583,60 +523,6 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
                                 </div>
                               )}
                             </div>
-                          </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap align-top text-center">
-                            {(() => {
-                              if (isCreationRecord) {
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmingEntry(entry)}
-                                    disabled={isRestoring || !onRestoreRecord}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-                                    title="この新規登録を取り消し、登録前の状態に戻します"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                                    <span>{isRestoring ? '取消中...' : 'この新規登録を取り消す'}</span>
-                                  </button>
-                                );
-                              }
-
-                              if (isDeletedRecord) {
-                                if (!hasBeforeData) {
-                                  return <span className="text-slate-300 text-xs">—</span>;
-                                }
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmingEntry(entry)}
-                                    disabled={isRestoring || !onRestoreRecord}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-                                    title="この削除を取り消し、削除前のデータを復元します"
-                                  >
-                                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                                    <span>{isRestoring ? '復元中...' : 'この削除を取り消す'}</span>
-                                  </button>
-                                );
-                              }
-
-                              // 変更・更新 (update, undo 等)
-                              if (hasDiffs || hasBeforeData) {
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmingEntry(entry)}
-                                    disabled={isRestoring || !onRestoreRecord}
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-                                    title="この変更・更新を取り消し、変更前の内容に戻します"
-                                  >
-                                    <Undo2 className="w-3.5 h-3.5 shrink-0" />
-                                    <span>{isRestoring ? '取消中...' : 'この変更・更新を取り消す'}</span>
-                                  </button>
-                                );
-                              }
-
-                              return <span className="text-slate-300 text-xs">—</span>;
-                            })()}
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap text-xs text-slate-600 align-top">
                             <div className="flex items-center gap-1.5">
@@ -714,102 +600,6 @@ export const OperationHistoryModal: React.FC<OperationHistoryModalProps> = ({
 
       </div>
 
-      {/* Confirmation Dialog for Undo / Restore */}
-      {confirmingEntry && (() => {
-        const parsed = parseOperationDetails(confirmingEntry);
-        const isCreate = confirmingEntry.actionType === 'create' || confirmingEntry.actionType === 'batch_create';
-        const isDelete = confirmingEntry.actionType === 'delete' || confirmingEntry.actionType === 'batch_delete' || confirmingEntry.actionType === 'wipe';
-        const actionTitle = isCreate
-          ? 'この新規登録を取り消す'
-          : isDelete
-          ? 'この削除を取り消す'
-          : 'この変更・更新を取り消す';
-        const actionDescription = isCreate
-          ? 'この新規登録を取り消すと、作成されたレコードが削除され、登録前の状態に戻ります。よろしいですか？'
-          : isDelete
-          ? 'この削除を取り消すと、削除されたレコードが以前の内容で復元されます。よろしいですか？'
-          : 'この変更・更新を取り消すと、変更された項目が操作前の値に戻ります。よろしいですか？';
-
-        return (
-          <div className="fixed inset-0 z-70 bg-black/60 flex items-center justify-center p-4 backdrop-blur-xs">
-            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  {isCreate ? (
-                    <Trash2 className="w-5 h-5 text-rose-600 shrink-0" />
-                  ) : isDelete ? (
-                    <RotateCcw className="w-5 h-5 text-emerald-600 shrink-0" />
-                  ) : (
-                    <Undo2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  )}
-                  <span>{actionTitle}</span>
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setConfirmingEntry(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-5 space-y-3.5 text-sm text-slate-700">
-                <p className="text-slate-600 leading-relaxed font-medium">
-                  {actionDescription}
-                </p>
-
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-1.5 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400 font-medium shrink-0">対象データ:</span>
-                    <span className="font-bold text-slate-800 break-all">{parsed.headline}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400 font-medium shrink-0">種別:</span>
-                    <span className="font-medium text-slate-700">{getEntityLabel(confirmingEntry.entityType)}</span>
-                  </div>
-                  {parsed.subHeadline && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 font-medium shrink-0">内容:</span>
-                      <span className="text-slate-600">{parsed.subHeadline}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <span className="text-slate-400 font-medium shrink-0">操作日時:</span>
-                    <span className="text-slate-600">{formatDate(confirmingEntry.deletedTimestamp || confirmingEntry.deletedAt)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setConfirmingEntry(null)}
-                  className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-200/80 transition-colors cursor-pointer"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const target = confirmingEntry;
-                    setConfirmingEntry(null);
-                    handleRestore(target);
-                  }}
-                  className={`px-4 py-2 rounded-lg text-xs font-bold text-white shadow-sm transition-colors cursor-pointer ${
-                    isCreate
-                      ? 'bg-rose-600 hover:bg-rose-700'
-                      : isDelete
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
-                      : 'bg-blue-600 hover:bg-blue-700'
-                  }`}
-                >
-                  取り消しを実行する
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 };

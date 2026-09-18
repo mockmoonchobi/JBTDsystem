@@ -304,7 +304,8 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
           const bIsCarry = isCarryoverTransaction(b);
           if (aIsCarry && !bIsCarry) return -1;
           if (!aIsCarry && bIsCarry) return 1;
-          return (a.receiptNumber || a.id || '').localeCompare(b.receiptNumber || b.id || '', undefined, { numeric: true });
+          const sameDayOrder = compareTransactionsChronological(a, b, templeInfo);
+          return sortOrder === 'asc' ? sameDayOrder : -sameDayOrder;
         }
       } else if (sortKey === 'category') {
         const idxA = allMasterCats.indexOf(a.category);

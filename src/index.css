@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "leaflet/dist/leaflet.css";
 
+
 /* Leaflet Map Custom Marker Styles */
 .leaflet-container {
   font-family: inherit;
@@ -228,4 +229,3 @@
 .scrollbar-left::-webkit-scrollbar-thumb:hover {
   background: #78716c;
 }
-

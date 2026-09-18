@@ -80,6 +80,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   onImportSuccess,
   initialTargetType = 'household',
 }) => {
+  const [importBusy, setImportBusy] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [targetType, setTargetType] = useState<ImportTargetType>(initialTargetType);
   const [targetTempleId, setTargetTempleId] = useState<string>(activeTempleId || 'temple-main');
@@ -340,15 +341,17 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     setShowLineageModal(true);
   };
 
+  const convertForImport = async (...args: Parameters<typeof convertTableToData>) => convertTableToData(...args);
+
   // Callback when Kakocho Lineage decisions are confirmed by the user
-  const handleLineageDecisionsConfirmed = (confirmedDecisions: Record<number, LinkingDecision>) => {
+  const handleLineageDecisionsConfirmed = async (confirmedDecisions: Record<number, LinkingDecision>) => {
     setLinkingDecisions(confirmedDecisions);
     setShowLineageModal(false);
 
     if (!rawTable) return;
 
     try {
-      const res = convertTableToData(
+      const res = await convertForImport(
         targetType,
         rawTable.headers,
         rawTable.rawRows,
@@ -366,12 +369,13 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       setConversionResult(res);
       setStep(3);
     } catch (err: any) {
+      setConversionResult(null);
       alert(`データ変換中にエラーが発生しました: ${err.message || err}`);
     }
   };
 
   // Generate Preview & Move to Step 3
-  const handleProceedToPreview = () => {
+  const handleProceedToPreview = async () => {
     if (!rawTable) return;
 
     // Check required fields
@@ -394,7 +398,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     }
 
     try {
-      const res = convertTableToData(
+      const res = await convertForImport(
         targetType,
         rawTable.headers,
         rawTable.rawRows,
@@ -412,16 +416,17 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       setConversionResult(res);
       setStep(3);
     } catch (err: any) {
+      setConversionResult(null);
       alert(`データ変換中にエラーが発生しました: ${err.message || err}`);
     }
   };
 
   // Re-calculate when conflict mode changes dynamically in Step 3
-  const handleConflictModeChange = (newMode: 'append' | 'replace') => {
+  const handleConflictModeChange = async (newMode: 'append' | 'replace') => {
     setConflictMode(newMode);
     if (rawTable) {
       try {
-        const res = convertTableToData(
+        const res = await convertForImport(
           targetType,
           rawTable.headers,
           rawTable.rawRows,
@@ -438,7 +443,8 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
         );
         setConversionResult(res);
       } catch (err) {
-        console.error('Recalculation error on mode switch:', err);
+        setConversionResult(null);
+        setErrorMessage(err instanceof Error ? err.message : '取込内容を確認できませんでした。');
       }
     }
   };
@@ -455,8 +461,11 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   };
 
   // Execute Final Commit
-  const doCommitImport = () => {
-    if (!conversionResult) return;
+  const doCommitImport = async () => {
+    if (!conversionResult || importBusy) return;
+    setImportBusy(true);
+    setErrorMessage(null);
+    try {
 
     let outHouseholds: Household[] | undefined = undefined;
     let outPastRecords: PastRecord[] | undefined = undefined;
@@ -509,6 +518,8 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
 
     setShowReplaceConfirmModal(false);
     setStep(4);
+    } catch (error: any) { setErrorMessage(error.message || '取り込みに失敗しました。'); }
+    finally { setImportBusy(false); }
   };
 
   const handleReset = () => {
@@ -523,6 +534,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto no-print">
       <div className="bg-[#FAF9F5] border border-[#D4AF37] shadow-2xl w-full max-w-5xl my-auto rounded-none flex flex-col max-h-[92vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
+        {errorMessage && <div role="alert" className="p-3 bg-red-50 text-red-800 text-sm">{errorMessage}</div>}
         {/* Header */}
         <div className="bg-[#1A1A1A] border-b border-[#D4AF37] px-6 py-4 flex items-center justify-between text-[#F9F7F2]">
           <div className="flex items-center space-x-3">
@@ -2026,6 +2038,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
 
               <button
                 type="button"
+                disabled={importBusy || !conversionResult}
                 onClick={handleExecuteImport}
                 className={`px-6 py-2 text-white text-xs font-bold flex items-center space-x-2 shadow-md ${
                   conflictMode === 'replace' 
