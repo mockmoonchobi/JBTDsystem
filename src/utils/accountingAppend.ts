@@ -70,7 +70,19 @@ export function makeAccountingAppend(additions: Snapshot, current: Snapshot, she
     const title = resolveExportSheetName(name, sheets.map(s => s.title));
     const raw = current[title];
     const headers = [...grid[0], ...ROW_META];
-    if (!raw || !equal(raw[0], headers)) return null; // Schema upgrades use the guarded general path.
+    const sheet = sheets.find(s => s.title === title);
+    if (!raw || !sheet) return null;
+    if (!equal(raw[0], headers)) {
+      // An untouched legacy workbook has exactly the business columns. Add only
+      // metadata headings in the same atomic batch as the receipt and audit.
+      // Partial metadata and unknown columns must never be guessed or overwritten.
+      if (!equal(raw[0] || [], grid[0])) return null;
+      if (sheet.columnCount !== undefined && sheet.columnCount < headers.length) {
+        requests.push({ updateSheetProperties: { properties: { sheetId: sheet.sheetId, gridProperties: { columnCount: headers.length } }, fields: 'gridProperties.columnCount' } });
+      }
+      requests.push({ updateCells: { start: { sheetId: sheet.sheetId, rowIndex: 0, columnIndex: grid[0].length },
+        rows: [{ values: ROW_META.map(name => ({ userEnteredValue: { stringValue: name } })) }], fields: 'userEnteredValue' } });
+    }
     const existing = new Map<string, unknown[]>();
     for (const row of raw.slice(1).filter(r => r.some(v => value(v)))) {
       const id = value(row[0]);

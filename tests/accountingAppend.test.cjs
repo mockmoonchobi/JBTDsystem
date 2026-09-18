@@ -270,3 +270,27 @@ test('editing one temple master excludes other temple masters',()=>{
  const before={temples:[{id:'a',name:'甲寺'},{id:'b',name:'乙寺'}],templeMasterOptionsMap:{a:{x:1},b:{x:1}}};
  assert.deepEqual(directorySaveTables(before,{...before,templeMasterOptionsMap:{a:{x:2},b:{x:1}}}),['マスタ_甲寺','操作・削除履歴']);
 });
+
+test('first accounting operation upgrades legacy headings atomically without rewriting old rows',async()=>{
+ const {saveAccountingOperations,captureRowReadBaseline}=require('../src/utils/rowSyncClient.ts');
+ const m=workbook('legacy-operations');
+ const base={'出納・会計':[head,['old',500]],'操作・削除履歴':[loghead,['old-log','create','transaction','old']]};
+ for(const [title,rows]of Object.entries(base))m.add(title,rows);
+ await remember('legacy-operations',base);
+ await saveAccountingOperations('t','legacy-operations',desired('new'),spec(m),m.fetch);
+ assert.deepEqual(m.sheets.get('出納・会計').rows[1],['old',500]);
+ assert.deepEqual(m.sheets.get('出納・会計').rows[0],[...head,...ROW_META]);
+ assert.deepEqual((await captureRowReadBaseline('legacy-operations'))['出納・会計'][0],[...head,...ROW_META]);
+ const writes=m.calls.filter(c=>c.body.requests);
+ assert.equal(writes.length,1);assert.equal(writes[0].body.requests.filter(r=>r.updateCells).length,2);
+ assert(writes[0].body.requests.filter(r=>r.updateCells).every(r=>r.updateCells.start.rowIndex===0));
+ await saveAccountingOperations('t','legacy-operations',desired('next'),spec(m),m.fetch);
+ assert.deepEqual(m.sheets.get('出納・会計').rows.slice(1).map(r=>r[0]),['old','new','next']);
+});
+
+test('receipt schema migration rejects partial or unknown headings without producing a write',()=>{
+ for(const extra of [[ROW_META[0]],['unknown']]){
+  const current={'出納・会計':[[...head,...extra]],'操作・削除履歴':[[...loghead,...ROW_META]]};
+  assert.equal(makeAccountingAppend(desired('new'),current,[{title:'出納・会計',sheetId:1},{title:'操作・削除履歴',sheetId:2}],'op'),null);
+ }
+});

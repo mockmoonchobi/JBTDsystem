@@ -1736,7 +1736,7 @@ export default function App() {
       if (!isCleanImport && !discardPendingLocalChanges) {
         const receipts = receiptOperations(await currentPageAudit(), syncStateRef.current.transactions || []);
         if (receipts.length) {
-          setMergeProgress(`${receipts.length}件の受付を保存しています`);
+          setMergeProgress(`${receipts.length}件の会計を保存しています`);
           await appendAccountingReceipts(token, sheetId, receipts, syncStateRef.current.temples || []);
           await acknowledgeReceiptOperations(sheetId, receipts);
           const confirmed = await readMergeBaseline(sheetId);

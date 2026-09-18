@@ -1056,15 +1056,15 @@ export async function appendAccountingReceipts(accessToken: string, spreadsheetI
   const ids=new Set<string>();
   const transactions=entries.map(e=> {
     const t=e.afterData as Transaction;
-    if (e.entityType!=='transaction' || e.actionType!=='create' || !e.logId || !t?.id || e.id!==t.id || ids.has(t.id) || !t.templeId || !Number.isFinite(t.amount)) throw new Error('受付の送信待ちデータが不完全です。');
+    if (e.entityType!=='transaction' || e.actionType!=='create' || !e.logId || !t?.id || e.id!==t.id || ids.has(t.id) || !t.templeId || !Number.isFinite(t.amount)) throw new Error('新規会計の送信待ちデータが不完全です。');
     ids.add(t.id);
     return [t.id,label(t.templeId),t.date || '',t.type || '収入',t.category || '',t.amount,t.householdHeadName || '',t.paymentMethod || '現金受付',t.receiptNumber || '',t.householdId || '',t.notes || '',...getExportAuditRowValues(t),t.templeId];
   });
   const logs=entries.map(e=>[e.logId!,e.actionType!,e.entityType,e.id,e.label || '',e.deletedAt || '',String(e.deletedTimestamp || ''),label(e.templeId),e.templeId || '',normalizeLogOperator(e.operator),e.deviceInfo || '',formatGoogleSheetDiffCell(e)]);
   const response=await fetchWithRetry('https://sheets.googleapis.com/v4/spreadsheets/'+spreadsheetId+'?fields=sheets.properties(sheetId,title,gridProperties)',{headers:{Authorization:'Bearer '+accessToken}});
-  if (!response.ok) throw Object.assign(new Error('受付の保存先を確認できません（HTTP '+response.status+'）。'),{status:response.status,isAuthError:response.status===401});
+  if (!response.ok) throw Object.assign(new Error('新規会計の保存先を確認できません（HTTP '+response.status+'）。'),{status:response.status,isAuthError:response.status===401});
   const data=await response.json();
-  if (!Array.isArray(data.sheets)) throw new Error('受付の保存先の構成情報が不完全です。');
+  if (!Array.isArray(data.sheets)) throw new Error('新規会計の保存先の構成情報が不完全です。');
   const sheets=data.sheets.map((s:any)=>({sheetId:s.properties.sheetId,title:s.properties.title,...s.properties.gridProperties}));
   await saveAccountingOperations(accessToken,spreadsheetId,{'出納・会計':[txHeaders,...transactions],'操作・削除履歴':[logHeaders,...logs]},sheets,fetchWithRetry);
 }
