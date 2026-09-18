@@ -1,7 +1,13 @@
+import { createSyncYield } from '../utils/syncResponsiveness';
+import { waitForSheetsQuota, recordSheetsQuota } from '../utils/sheetsQuota';
+import { RESERVATION_DETAILS_HEADER, serializeReservationDetails, parseReservationDetails } from '../utils/reservationSheetDetails';
+import { guardSheetsMutation, maintenanceClient } from '../utils/historyMaintenance';
+import { isMaintenanceSheet } from '../utils/historyMaintenancePlan';
+import { auditForExport, getLocalAuditRevision } from '../utils/pendingAudit';
 import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from '../utils/noticeTemplateUtils';
 import { readAllSheetData } from '../utils/sheetsReadSafety';
 import { isDanmuPriest, parseDanmuFlag, shouldRegisterChiefPriest } from '../utils/priestColorUtils';
-import { buildSheetReplacementRequests, resolveExportSheetName } from '../utils/sheetsExportUtils';
+import { resolveExportSheetName } from '../utils/sheetsExportUtils';
 import { SheetsExportCache } from '../utils/sheetsExportCache';
 
 const sheetsExportCache = new SheetsExportCache();
@@ -66,6 +72,50 @@ import {
 } from '../utils/tobaUtils';
 import { TobaApplicationItem } from '../types';
 import { partitionTransactionsByTempleFiscalRetention } from '../utils/fiscalYearUtils';
+import { readPhysicalTables, hideTombstones, rememberRowSyncRead, saveIncrementalRows, saveAccountingOperations, captureStartupReset, captureCurrentPageReset } from '../utils/rowSyncClient';
+import { resetHouseholdReviewWatches, registerHouseholdSnapshot, findHouseholdReviews, HouseholdReview, relatedSignature, acknowledgeHouseholdReview } from '../utils/householdRetention';
+import { activeGrid, ROW_META } from '../utils/rowSyncPlan';
+import { idbGet } from '../utils/storageUtils';
+import type { Snapshot } from '../utils/rowSyncPlan';
+
+/** Explicit two-choice decision. Never rewinds business data or related records. */
+export async function resolveHouseholdDeletionReview(token: string, review: HouseholdReview, restore: boolean, actor: { operator?: string; deviceInfo?: string } = {}): Promise<void> {
+  const metadata = await fetchWithRetry('https://sheets.googleapis.com/v4/spreadsheets/'+review.sheetId+'?fields=sheets.properties(sheetId,title,gridProperties)', {headers:{Authorization:'Bearer '+token}});
+  if (!metadata.ok) throw new Error('確認対象を読み込めません（HTTP '+metadata.status+'）。');
+  const properties = (await metadata.json()).sheets;
+  if (!Array.isArray(properties)) throw new Error('確認対象の構成情報が不完全です。');
+  const names = ['檀家名簿','操作・削除履歴','過去帳','出納・会計','出納アーカイブ'];
+  const titles=properties.map((s:any)=>s.properties.title);
+  const selected=new Set(names.map(n=>resolveExportSheetName(n,titles)));
+  const sheets=properties.filter((s:any)=>selected.has(s.properties.title)).map((s:any)=>({...s.properties,...s.properties.gridProperties}));
+  const snapshot = await readPhysicalTables(token,review.sheetId,sheets,fetchWithRetry);
+  const title = resolveExportSheetName('檀家名簿', Object.keys(snapshot));
+  const grid = snapshot[title] || [], header = grid[0] || [];
+  const row = grid.slice(1).find(r => String(r[0]) === review.id);
+  if (!row) throw new Error('対象の檀家を確認できません。再連携してください。');
+  if (String(row[header.indexOf(ROW_META[0])]) !== '1') { await acknowledgeHouseholdReview(review); return; }
+  if (String(row[header.indexOf(ROW_META[2])] || '') !== review.revision || relatedSignature(snapshot, review.id) !== review.signature) {
+    throw new Error('確認中に関連情報が更新されました。最新の内容を再表示します。');
+  }
+  const business = activeGrid(grid);
+  if (restore) business.push(row.slice(0, header.indexOf(ROW_META[0])));
+  const historyTitle = resolveExportSheetName('操作・削除履歴', Object.keys(snapshot));
+  const history = activeGrid(snapshot[historyTitle] || []);
+  if (!history[0]?.length) throw new Error('操作履歴を確認できません。');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(review.id + review.revision + review.signature + restore));
+  const logId = 'HR-' + Array.from(new Uint8Array(digest)).map(n => n.toString(16).padStart(2, '0')).join('');
+  if (!history.slice(1).some(r => r[0] === logId)) {
+    const now = Date.now();
+    history.push([logId, 'update', 'household', review.id,
+      `檀家「${review.name}」：${restore ? '削除を取り消し名簿に復帰' : '関連更新を確認し削除済みを維持'}`, new Date(now).toISOString(), String(now), '', '', actor.operator || '', actor.deviceInfo || '', '']);
+    const writeSheets=sheets.filter((s:any)=>s.title===title || s.title===historyTitle);
+    await saveIncrementalRows(token, review.sheetId, [
+      { range: "'檀家名簿'!A1", values: business },
+      { range: "'操作・削除履歴'!A1", values: history },
+    ], writeSheets, fetchWithRetry, true, undefined, restore ? review.id : undefined);
+  }
+  await acknowledgeHouseholdReview(review);
+}
 
 export const SPREADSHEET_NAME = '寺院管理・檀家過去帳データ';
 
@@ -80,10 +130,16 @@ export async function fetchWithRetry(
   initialBackoffMs: number = 600,
   timeoutMs: number = 35000
 ): Promise<Response> {
+  const release = await guardSheetsMutation(url, options);
+  try { return await fetchWithRetryCore(url, options, maxRetries, initialBackoffMs, timeoutMs); }
+  finally { release(); }
+}
+async function fetchWithRetryCore(url: string, options?: RequestInit, maxRetries = 3, initialBackoffMs = 600, timeoutMs = 35000): Promise<Response> {
   let attempt = 0;
   let lastError: any = null;
 
   while (attempt < maxRetries) {
+    await waitForSheetsQuota(url, options?.method);
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort();
@@ -104,9 +160,11 @@ export async function fetchWithRetry(
       });
       clearTimeout(timer);
 
-      // Retry on 429 (Too Many Requests) or 5xx server errors
+      // Quota exhaustion will not recover with sub-second retries. Let the UI stop.
+      if (res.status === 429) { await recordSheetsQuota(url, res, options?.method); return res; }
+      // Retry transient server errors.
       if (
-        (res.status === 429 || res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) &&
+        (res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) &&
         attempt < maxRetries - 1
       ) {
         attempt++;
@@ -220,6 +278,7 @@ export async function findOrCreateSpreadsheet(
   }
 ): Promise<{ id: string; url: string; isExisting: boolean }> {
   const onProgress = options?.onProgress;
+
 
   if (options?.strictSheetIdOnly) {
     const preferredId = options.preferredSheetId;
@@ -450,6 +509,10 @@ export async function createNewSpreadsheet(
   }
 
   const newSheet = await createRes.json();
+  if (!newSheet.spreadsheetId) throw new Error('作成したGoogleシートのIDを確認できません。');
+  // A successfully created workbook is known to be empty. Seed its first-write
+  // baseline without ever applying this exception to an existing workbook.
+  await rememberRowSyncRead(newSheet.spreadsheetId, Object.fromEntries(BASE_REQUIRED_SHEETS.map(name => [name, []])));
   return {
     id: newSheet.spreadsheetId,
     url: newSheet.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${newSheet.spreadsheetId}`,
@@ -984,6 +1047,28 @@ function getExportAuditRowValues(item: { createdDate?: string; createdTime?: str
     item.updatedTime ? normalizeAuditTime(item.updatedTime) : createdTime];
 }
 
+/** Send immutable receipt operations only; unrelated tables are neither built nor compared. */
+export async function appendAccountingReceipts(accessToken: string, spreadsheetId: string, entries: DeletedRecordEntry[], temples: TempleProfile[] = []): Promise<void> {
+  if (!entries.length) return;
+  const label = (id?: string) => { const t=temples.find(t=>t.id===id); return t ? `${t.mountainName ? t.mountainName+' ' : ''}${t.name}（${t.isMain ? '本寺' : '兼務'}）` : id || ''; };
+  const txHeaders=['伝票ID','所属寺院','日付','収支区分','勘定科目','金額','施主・支払者名','支払方法','領収書番号','世帯ID','備考','作成日','作成時間','修正日','修正時間','所属寺院ID'];
+  const logHeaders=['履歴ID','種別','対象エンティティ','対象ID','対象名称/内容','操作日時','日時(ms)','所属寺院','所属寺院ID','操作者','端末・環境','変更差分詳細'];
+  const ids=new Set<string>();
+  const transactions=entries.map(e=> {
+    const t=e.afterData as Transaction;
+    if (e.entityType!=='transaction' || e.actionType!=='create' || !e.logId || !t?.id || e.id!==t.id || ids.has(t.id) || !t.templeId || !Number.isFinite(t.amount)) throw new Error('受付の送信待ちデータが不完全です。');
+    ids.add(t.id);
+    return [t.id,label(t.templeId),t.date || '',t.type || '収入',t.category || '',t.amount,t.householdHeadName || '',t.paymentMethod || '現金受付',t.receiptNumber || '',t.householdId || '',t.notes || '',...getExportAuditRowValues(t),t.templeId];
+  });
+  const logs=entries.map(e=>[e.logId!,e.actionType!,e.entityType,e.id,e.label || '',e.deletedAt || '',String(e.deletedTimestamp || ''),label(e.templeId),e.templeId || '',normalizeLogOperator(e.operator),e.deviceInfo || '',formatGoogleSheetDiffCell(e)]);
+  const response=await fetchWithRetry('https://sheets.googleapis.com/v4/spreadsheets/'+spreadsheetId+'?fields=sheets.properties(sheetId,title,gridProperties)',{headers:{Authorization:'Bearer '+accessToken}});
+  if (!response.ok) throw Object.assign(new Error('受付の保存先を確認できません（HTTP '+response.status+'）。'),{status:response.status,isAuthError:response.status===401});
+  const data=await response.json();
+  if (!Array.isArray(data.sheets)) throw new Error('受付の保存先の構成情報が不完全です。');
+  const sheets=data.sheets.map((s:any)=>({sheetId:s.properties.sheetId,title:s.properties.title,...s.properties.gridProperties}));
+  await saveAccountingOperations(accessToken,spreadsheetId,{'出納・会計':[txHeaders,...transactions],'操作・削除履歴':[logHeaders,...logs]},sheets,fetchWithRetry);
+}
+
 export async function exportToSheets(
   accessToken: string,
   spreadsheetId: string,
@@ -1008,8 +1093,13 @@ export async function exportToSheets(
     allNoticeTemplates?: NoticeTemplateItem[];
     batchAccountingConfig?: BatchAccountingConfig | null;
     singleAttemptWrite?: boolean;
+    reviewedMerge?: boolean;
+    deletedRecordIds?: string[];
+    onProgress?: (stage: string) => void;
   }
 ): Promise<void> {
+  const auditRevisionAtStart = getLocalAuditRevision();
+  const capturedDisplayLogs = exportOptions?.deletedRecords ?? loadDeletedRecordsLog();
   const targetTablesFilter = exportOptions?.targetTablesOnly && exportOptions.targetTablesOnly.length > 0
     ? new Set(exportOptions.targetTablesOnly.map((t) => t.trim()))
     : null;
@@ -1265,7 +1355,7 @@ export async function exportToSheets(
     ['集金項目３', baseT.feeType3 || ''],
     ['集金項目３勘定科目', baseT.feeType3Category || ''],
     ['集金項目３基準金額', baseT.feeType3DefaultAmount !== undefined ? String(baseT.feeType3DefaultAmount) : ''],
-    ['更新日時', baseT.updatedAt || (baseT.updatedDate ? `${baseT.updatedDate} ${baseT.updatedTime || ''}`.trim() : new Date().toISOString())],
+    ['更新日時', baseT.updatedAt || (baseT.updatedDate ? `${baseT.updatedDate} ${baseT.updatedTime || ''}`.trim() : '')],
     ['修正日', baseT.updatedDate || ''],
     ['修正時間', baseT.updatedTime || ''],
     ['出力寺院数', String(exportTemplesList.length)],
@@ -1523,7 +1613,8 @@ export async function exportToSheets(
     '作成時間',
     '修正日',
     '修正時間',
-    '所属寺院ID'
+    '所属寺院ID',
+    RESERVATION_DETAILS_HEADER
   ];
 
   const memorialRows = filteredMemorialServices.map((s) => {
@@ -1559,7 +1650,8 @@ export async function exportToSheets(
       cTime,
       uDate,
       uTime,
-      getTempleId(s.templeId)
+      getTempleId(s.templeId),
+      serializeReservationDetails(s)
     ];
   });
 
@@ -1877,11 +1969,12 @@ export async function exportToSheets(
     '変更差分詳細'
   ];
 
-  const deletedLogsToExport: DeletedRecordEntry[] = (exportOptions?.deletedRecords && exportOptions.deletedRecords.length > 0)
-    ? exportOptions.deletedRecords
-    : loadDeletedRecordsLog();
+  const deletedLogsToExport: DeletedRecordEntry[] = capturedDisplayLogs;
 
-  const deletedRows = deletedLogsToExport.slice(0, MAX_DELETED_LOG_LENGTH).map((entry, idx) => {
+  const maintenance = typeof window !== 'undefined' ? await maintenanceClient(spreadsheetId) : null;
+  // Other tabs' pending logs must not be acknowledged without their records.
+  const exportLogs = await auditForExport(deletedLogsToExport.slice(0, MAX_DELETED_LOG_LENGTH), !!maintenance?.view, true, auditRevisionAtStart);
+  const deletedRows = exportLogs.map((entry, idx) => {
     const diffCell = formatGoogleSheetDiffCell(entry);
 
     return [
@@ -1907,8 +2000,7 @@ export async function exportToSheets(
   const { headers: disasterHeaders, rows: disasterRows } = convertDisasterEventsToRows(disasterEvents);
   addChunkedUpdates('戦没・災害物故者命日設定', [disasterHeaders, ...disasterRows]);
 
-  // Only managed tables present in this export are replaced. The clear and
-  // writes share one atomic request: a rejected write never leaves empty tables.
+  // Save changed rows in one atomic request, retaining deleted rows as tombstones.
   const plan = sheetsExportCache.plan(
     `${spreadsheetId}:${exportOptions?.targetTempleId || 'ALL'}`,
     updateDataList.map(update => {
@@ -1932,23 +2024,10 @@ export async function exportToSheets(
   );
   if (plan.updates.length === 0) return;
   try {
+    exportOptions?.onProgress?.('保存先のシート構成を確認しています');
     const { sheets } = await ensureAllSheetsExist(accessToken, spreadsheetId, temples, exportOptions,
       sheetCapacities.filter(cap => plan.changed.has(cap.sheetName)));
-    const requests = buildSheetReplacementRequests(plan.updates, sheets);
-    if (requests.length > 0) {
-      const response = await fetchWithRetry(
-        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ requests }),
-        }, exportOptions?.singleAttemptWrite ? 1 : 3, 600, 45000
-      );
-      if (!response.ok) {
-        handleGoogleApiError(response, await response.json().catch(() => ({})), 'Google スプレッドシートへの書き込みに失敗しました');
-      }
-      // Do not fall back to separately clearing/writing chunks on failure.
-    }
+    await saveIncrementalRows(accessToken, spreadsheetId, updateDataList, sheets, fetchWithRetry, exportOptions?.reviewedMerge === true, plan.changed, undefined, exportOptions?.onProgress, exportOptions?.deletedRecordIds);
     plan.commit();
   } catch (error) {
     // A timeout can leave the server outcome unknown. Never reuse that baseline.
@@ -2010,6 +2089,7 @@ export async function exportSpecificTablesToSheets(
 }
 
 export interface SheetsImportResult {
+  householdReviews?: HouseholdReview[];
   allNoticeTemplates?: NoticeTemplateItem[];
   batchAccountingConfig?: BatchAccountingConfig | null;
   needsFiscalRetentionSync?: boolean;
@@ -2033,7 +2113,7 @@ export interface SheetsImportResult {
 }
 
 // Import all app data from Google Sheets (matching Excel specification exactly)
-export async function importFromSheets(
+async function importFromSheetsCore(
   accessToken: string,
   spreadsheetId: string,
   options?: {
@@ -2042,8 +2122,16 @@ export async function importFromSheets(
     priests?: Priest[];
     requireCompleteSchema?: boolean;
     readOnly?: boolean;
+    discardPendingLocalChanges?: boolean;
+    startupReset?: boolean;
+    discardOwnPendingLocalChanges?: boolean;
+    allowUncertainComparison?: boolean;
   }
 ): Promise<SheetsImportResult> {
+  const resetScope = options?.startupReset && options.requireCompleteSchema && options.readOnly ? await captureStartupReset(spreadsheetId) : options?.discardOwnPendingLocalChanges && options.requireCompleteSchema && options.readOnly ? await captureCurrentPageReset(spreadsheetId) : undefined;
+  const yieldToScreen = createSyncYield();
+  const maintenance = typeof window !== 'undefined' ? await maintenanceClient(spreadsheetId) : null;
+  const maintenanceRevision = await maintenance?.beginRead(accessToken);
   // The remote workbook may have changed on another device or directly in Sheets.
   sheetsExportCache.invalidate();
   // 1. Fetch spreadsheet metadata including gridProperties (rowCount, columnCount) to safely paginate large sheets
@@ -2058,7 +2146,7 @@ export async function importFromSheets(
   }
 
   const metaData = await metaRes.json();
-  const rawSheets: any[] = metaData.sheets || [];
+  const rawSheets: any[] = (metaData.sheets || []).filter((s: any) => !isMaintenanceSheet(s.properties?.title || ""));
   const allSheetNames: string[] = rawSheets.map((s: any) => s.properties?.title || '').filter(Boolean);
 
   if (allSheetNames.length === 0) {
@@ -2080,6 +2168,7 @@ export async function importFromSheets(
     return data.valueRanges;
   });
 
+  const physicalSnapshot = hideTombstones(sheetDataMap);
   const getSheetDataByName = (sheetName?: string): { headers: string[]; rows: string[][] } => {
     if (!sheetName) return { headers: [], rows: [] };
     if (sheetDataMap.has(sheetName)) {
@@ -2532,6 +2621,7 @@ export async function importFromSheets(
     const resolvedNotesIdx = notesIdx !== -1 ? notesIdx : (isNewFamily ? 6 : 5);
 
     for (let i = 0; i < familyValues.length; i++) {
+      if (i % 128 === 0) { const pause = yieldToScreen(); if (pause) await pause; }
       const row = familyValues[i];
       if (!row || row.length === 0 || (!row[0] && !row[resolvedHIdIdx])) continue;
       const hId = String(row[resolvedHIdIdx] || '').trim();
@@ -2653,6 +2743,7 @@ export async function importFromSheets(
     const defaultTemple = options?.defaultTempleId || (temples && temples[0]?.id) || 'temple-main';
 
     for (let i = 0; i < householdValues.length; i++) {
+      if (i % 128 === 0) { const pause = yieldToScreen(); if (pause) await pause; }
       const row = householdValues[i];
       if (!row || row.length === 0 || !row[0]) continue;
 
@@ -2856,6 +2947,7 @@ export async function importFromSheets(
     const prUTimeIdx = findColIdx(pastHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
 
     for (let i = 0; i < pastRecordValues.length; i++) {
+      if (i % 128 === 0) { const pause = yieldToScreen(); if (pause) await pause; }
       const row = pastRecordValues[i];
       if (!row || row.length === 0 || (!row[0] && dharmaColIdx === -1 && secularColIdx === -1)) continue;
 
@@ -2961,6 +3053,7 @@ export async function importFromSheets(
     const msUTimeIdx = findColIdx(memorialHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
 
     for (let i = 0; i < memorialValues.length; i++) {
+      if (i % 128 === 0) { const pause = yieldToScreen(); if (pause) await pause; }
       const row = memorialValues[i];
       if (!row || row.length === 0 || !row[0]) continue;
 
@@ -2990,24 +3083,26 @@ export async function importFromSheets(
       const priestName = String((priestNameIdx !== -1 ? row[priestNameIdx] : '') || '').trim();
       const priestId = String((priestIdIdx !== -1 ? row[priestIdIdx] : '') || '').trim();
 
+      const additionalDetails = parseReservationDetails(row[memorialHeaders.indexOf(RESERVATION_DETAILS_HEADER)]);
       memorialServices.push({
+        ...additionalDetails,
         id: String((idIdx !== -1 ? row[idIdx] : row[0]) || `MS-${Date.now()}-${i + 1}`),
         templeId,
         priestId,
         priestName,
         scheduledDate: normalizeDateInput(dateIdx !== -1 ? row[dateIdx] : '') || '',
-        scheduledTime: String((timeIdx !== -1 ? row[timeIdx] : '') || '10:00'),
-        endTime: String((endTimeIdx !== -1 ? row[endTimeIdx] : '') || '11:30'),
+        scheduledTime: String(timeIdx !== -1 ? (row[timeIdx] ?? '') : '10:00'),
+        endTime: String(endTimeIdx !== -1 ? (row[endTimeIdx] ?? '') : '11:30'),
         memorialType: (String((typeIdx !== -1 ? row[typeIdx] : '') || '年忌法要') as any),
         chiefMourner: String((mournerIdx !== -1 ? row[mournerIdx] : '') || ''),
         dharmaName: String((dharmaIdx !== -1 ? row[dharmaIdx] : '') || ''),
         deceasedName: String((decIdx !== -1 ? row[decIdx] : '') || ''),
-        venue: String((venueIdx !== -1 ? row[venueIdx] : '') || '本堂'),
+        venue: String(venueIdx !== -1 ? (row[venueIdx] ?? '') : '本堂'),
         address: String((addrIdx !== -1 ? row[addrIdx] : '') || ''),
         attendeeCount: parseInt(String((attIdx !== -1 ? row[attIdx] : '0')), 10) || 0,
         offeringAmount: parseInt(String((offIdx !== -1 ? row[offIdx] : '0')), 10) || 0,
         tobaCount: parseInt(String((tobaCntIdx !== -1 ? row[tobaCntIdx] : '0')), 10) || 0,
-        tobaType: String((tobaTypeIdx !== -1 ? row[tobaTypeIdx] : '') || '大塔婆'),
+        tobaType: String(tobaTypeIdx !== -1 ? (row[tobaTypeIdx] ?? '') : '大塔婆'),
         tobaFee: parseInt(String((tobaFeeIdx !== -1 ? row[tobaFeeIdx] : '0')), 10) || 0,
         tobaSponsors,
         status: (String((statusIdx !== -1 ? row[statusIdx] : '') || '未入金') as any),
@@ -3051,6 +3146,7 @@ export async function importFromSheets(
     const tdUTimeIdx = findColIdx(todoHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
 
     for (let i = 0; i < todoValues.length; i++) {
+      if (i % 128 === 0) { const pause = yieldToScreen(); if (pause) await pause; }
       const row = todoValues[i];
       if (!row || row.length === 0 || !row[0]) continue;
 
@@ -3133,7 +3229,7 @@ export async function importFromSheets(
   const seenTxIds = new Set<string>();
   const actualArchiveIds = new Set<string>();
 
-  const parseTxSheetRows = (sheetName: string) => {
+  const parseTxSheetRows = async (sheetName: string) => {
     if (!sheetName) return;
     const { headers: tHeaders, rows: tRows } = getSheetDataByName(sheetName);
     if (!tRows || tRows.length === 0) return;
@@ -3156,6 +3252,7 @@ export async function importFromSheets(
     const txUTimeIdx = findColIdx(tHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
 
     for (let i = 0; i < tRows.length; i++) {
+      if (i % 128 === 0) { const pause = yieldToScreen(); if (pause) await pause; }
       const row = tRows[i];
       if (!row || row.length === 0 || !row[0]) continue;
 
@@ -3212,10 +3309,10 @@ export async function importFromSheets(
   };
 
   // 出納・会計シート（現行＋前年度）を読み込み
-  parseTxSheetRows(txSheetName);
+  await parseTxSheetRows(txSheetName);
   // 出納アーカイブシート（前々年度以前）が存在すれば読み込んでマージ
   if (archiveTxSheetName && archiveTxSheetName !== txSheetName) {
-    parseTxSheetRows(archiveTxSheetName);
+    await parseTxSheetRows(archiveTxSheetName);
   }
 
   // 9. Parse Master Options (マスタ設定（総合） / マスタ設定 & Per-temple master sheets)
@@ -3522,6 +3619,7 @@ export async function importFromSheets(
   const extractedFamilyMembers = households.flatMap((h) => h.familyMembers || []);
 
   // Post-import ID sanitization and integrity validation to fix corrupted templeId/householdId mappings
+  registerHouseholdSnapshot(physicalSnapshot);
   const sanitized = sanitizeAppDataset({
     households,
     pastRecords,
@@ -3616,10 +3714,13 @@ export async function importFromSheets(
     Boolean(parsedDisasterEvents && parsedDisasterEvents.length > 0) ||
     Object.keys(templeMasterOptionsMap).length > 0;
 
-  return {
+  const cleanReviewStart = options?.requireCompleteSchema && options?.readOnly && (options.startupReset || options.discardPendingLocalChanges || options.discardOwnPendingLocalChanges);
+  const householdReviews = cleanReviewStart ? [] : await findHouseholdReviews(spreadsheetId, physicalSnapshot);
+  const result: SheetsImportResult = {
     templeInfo,
     temples,
     households: finalHouseholds,
+    householdReviews,
     familyMembers: finalFamilyMembers,
     pastRecords: finalPastRecords,
     memorialServices: finalMemorialServices,
@@ -3635,16 +3736,20 @@ export async function importFromSheets(
     templeMasterOptionsMap: Object.keys(templeMasterOptionsMap).length > 0 ? templeMasterOptionsMap : undefined,
     noticeTemplates,
     priests: parsedPriests.length > 0 ? parsedPriests : undefined,
-    deletedRecords: parsedDeletedRecords.length > 0 ? parsedDeletedRecords : undefined,
+    deletedRecords: parsedDeletedRecords.length > 0 ? parsedDeletedRecords.sort((a, b) => b.deletedTimestamp - a.deletedTimestamp) : undefined,
     batchAccountingData: parsedBatchAccountingData,
     disasterEvents: parsedDisasterEvents,
     hasAnyData,
     totalRecordsCount,
   };
+  await maintenance?.finishRead(accessToken, maintenanceRevision);
+  await rememberRowSyncRead(spreadsheetId, physicalSnapshot, options?.discardPendingLocalChanges === true && options?.requireCompleteSchema === true, options?.allowUncertainComparison === true && options?.readOnly === true, resetScope);
+  if (cleanReviewStart) await resetHouseholdReviewWatches(spreadsheetId);
+  return result;
 }
 
 /**
- * Lightweight check: Fetches only the top recent rows from '操作・削除履歴' sheet.
+ * Reads history only. Append mode requires sorting by timestamp, not physical row position.
  * Used for background polling (every ~10s) without triggering full sheet download or UI sync states.
  */
 export async function fetchLatestOperationLogs(
@@ -3653,7 +3758,9 @@ export async function fetchLatestOperationLogs(
   limit: number = 30
 ): Promise<{ logs: DeletedRecordEntry[]; latestTimestamp: number } | null> {
   try {
-    const range = encodeURIComponent(`'操作・削除履歴'!A2:L${limit + 2}`);
+    // Append mode keeps existing rows in place, so recent entries may be at either end.
+    // Detailed before/after snapshots in column L are unnecessary for polling.
+    const range = encodeURIComponent(`'操作・削除履歴'!A2:G`);
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueRenderOption=FORMATTED_VALUE`;
     const res = await fetchWithRetry(
       url,
@@ -3733,9 +3840,16 @@ export async function fetchLatestOperationLogs(
       });
     });
 
-    return { logs: parsed, latestTimestamp: maxTimestamp };
+    return { logs: parsed.sort((a, b) => b.deletedTimestamp - a.deletedTimestamp).slice(0, limit), latestTimestamp: maxTimestamp };
   } catch (err) {
     // Preserve auth/network distinctions for the reconnect UI.
     throw err;
   }
+}
+
+export async function importFromSheets(...args: Parameters<typeof importFromSheetsCore>): Promise<SheetsImportResult> {
+  if (args[2]?.startupReset && typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('jbtd-row-save-' + args[1], () => importFromSheetsCore(...args));
+  }
+  return importFromSheetsCore(...args);
 }

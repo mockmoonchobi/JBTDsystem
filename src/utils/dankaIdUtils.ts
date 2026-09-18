@@ -1,5 +1,7 @@
 import { loadJsonState, saveJsonState } from './storageUtils';
+import { encodedTemplePrefix, savedTemplePrefix } from './templePrefixes';
 import { Household, PastRecord, Transaction, MemorialService, FamilyMember, TempleTodo, TempleProfile } from '../types';
+import { retainedHouseholds } from './householdRetention';
 
 /**
  * Determines the Danka ID prefix for a temple.
@@ -13,6 +15,9 @@ export function getTemplePrefix(templeId?: string, temples?: TempleProfile[]): s
     return 'DK-';
   }
 
+  const fixed = (/^temple-sub-K/i.test(cleanId) ? encodedTemplePrefix(cleanId) : undefined) || savedTemplePrefix(cleanId) || encodedTemplePrefix(cleanId);
+  if (fixed) return fixed;
+
   if (temples && temples.length > 0) {
     const matchedTemple = temples.find(t => t.id === cleanId);
     if (matchedTemple?.isMain || matchedTemple?.id === 'temple-main' || matchedTemple?.id === 'main') {
@@ -23,7 +28,7 @@ export function getTemplePrefix(templeId?: string, temples?: TempleProfile[]): s
     const subIdx = nonMainTemples.findIndex(t => t.id === cleanId);
     if (subIdx !== -1) {
       // 0番目から9番目まで順番に K0- から K9- を付与
-      const kNum = Math.min(Math.max(subIdx, 0), 9);
+      const kNum = subIdx;
       return `K${kNum}-`;
     }
   }
@@ -32,7 +37,7 @@ export function getTemplePrefix(templeId?: string, temples?: TempleProfile[]): s
   const subMatch = cleanId.match(/sub-(\d+)/i);
   if (subMatch) {
     const rawNum = parseInt(subMatch[1], 10);
-    const kNum = rawNum < 10 ? rawNum : (rawNum % 10);
+    const kNum = rawNum;
     return `K${kNum}-`;
   }
 
@@ -138,7 +143,7 @@ export function cleanAndNormalizeHouseholdId(
       } else {
         const kDigits = rawPrefix.replace(/^K/, '');
         const kNum = parseInt(kDigits, 10);
-        prefix = `K${isNaN(kNum) ? 0 : (kNum < 10 ? kNum : kNum % 10)}-`;
+        prefix = `K${isNaN(kNum) ? 0 : kNum}-`;
       }
     }
     // Strip prefix for number parsing
@@ -207,6 +212,8 @@ export function generateNewHouseholdId(
       collectNumber(h.id);
     }
   });
+
+  Object.keys(retainedHouseholds()).filter(id => id.startsWith(prefix)).forEach(collectNumber);
 
   // 過去帳にすでに振られているID（ただし未設定の99999や00000等を除く）も考慮して重複防止
   if (existingPastRecords && existingPastRecords.length > 0) {

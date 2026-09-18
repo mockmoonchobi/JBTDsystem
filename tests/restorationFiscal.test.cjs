@@ -7,6 +7,7 @@ const compile = text => ts.transpileModule(text, { compilerOptions: { module: ts
 require.extensions['.ts'] = (module, filename) => module._compile(compile(fs.readFileSync(filename, 'utf8')), filename);
 require.cache[path.join(root, 'src/lib/googleAuth.ts')] = { exports: { getCurrentUser: () => null, getActiveGoogleAccountName: () => '' } };
 const load = p => require(path.join(root,p));
+const { workbook: rowWorkbook, memory: rowMemory } = require('./rowSyncFixture.cjs');
 const { buildDeletedTimestampMap } = load('src/utils/deletedRecordsLog.ts');
 const { mergeGenericEntityList, mergeDatasetsWithAuditPriority } = load('src/utils/syncMergeUtils.ts');
 const { formatGoogleSheetDiffCell, parseGoogleSheetDiffCell } = load('src/utils/diffUtils.ts');
@@ -75,27 +76,9 @@ test('Japan midnight, January and non-first-day fiscal starts retain exactly cur
 });
 
 function workbookMock() {
-  const sheets = new Map(), calls=[]; let nextId=1, failWrite=false, failReadTitle='';
-  const add=(title,rows=[])=>{const sheet={properties:{title,sheetId:nextId++,gridProperties:{rowCount:1000,columnCount:100}},rows};sheets.set(title,sheet);return sheet;};
-  const fetch=async(url,options={})=>{
-    const body=options.body ? JSON.parse(options.body) : {};calls.push({url,body});
-    const response=(data,status=200)=>new Response(JSON.stringify(data),{status});
-    if(url.includes('?fields=')) return response({sheets:[...sheets.values()].map(({properties})=>({properties}))});
-    const read=range=>{const match=range.match(/^'((?:[^']|'')+)'/);return sheets.get(match?.[1].replace(/''/g,"'"))?.rows || [];};
-    if(url.includes('/values:batchGet')) {
-      if(failReadTitle) return response({},400);
-      return response({valueRanges:new URL(url).searchParams.getAll('ranges').map(range=>({range,values:read(range)}))});
-    }
-    if(url.includes('/values/')) {const range=decodeURIComponent(url.split('/values/')[1].split('?')[0]);return range.includes(failReadTitle)&&failReadTitle ? response({},400) : response({values:read(range)});}
-    if(failWrite && body.requests?.some(r=>r.updateCells)) return response({error:{message:'simulated atomic rejection'}},400);
-    const replies=(body.requests||[]).map(request=>{
-      if(request.addSheet){const sheet=add(request.addSheet.properties.title);return {addSheet:{properties:sheet.properties}};}
-      if(request.repeatCell?.fields==='userEnteredValue') {const sheet=[...sheets.values()].find(s=>s.properties.sheetId===request.repeatCell.range.sheetId);sheet.rows=[];}
-      if(request.updateCells){const write=request.updateCells;const sheet=[...sheets.values()].find(s=>s.properties.sheetId===write.start.sheetId);write.rows.forEach((row,index)=>{sheet.rows[write.start.rowIndex+index]=row.values.map(cell=>{const value=cell.userEnteredValue;return value?.stringValue??value?.numberValue??value?.boolValue??'';});});}
-      return {};
-    });return response({replies});
-  };
-  return {sheets,calls,fetch,add,failWrite(value){failWrite=value;},failRead(title){failReadTitle=title;}};
+ const m=rowWorkbook();let failed='';const fetch=m.fetch;
+ m.fetch=async(url,options)=>failed && url.includes('/values:batchGet') ? new Response('{}',{status:400}) : fetch(url,options);
+ m.failWrite=m.fail;m.failRead=title=>{failed=title;};return m;
 }
 const exportState=(data,options={})=>exportToSheets('test-token','test-sheet',data.templeInfo,data.households,data.pastRecords,data.memorialServices,data.transactions,data.masterOptions,data.noticeTemplates,data.templeTodos,data.temples,{priests:data.priests,deletedRecords:data.deletedRecords,...options});
 
@@ -189,7 +172,9 @@ test('fiscal rollover moves records atomically and import detects overdue layout
     mock.failWrite(false);mock.calls.length=0;
     await exportState(data,{targetTablesOnly:['出納・会計']});
     assert.equal(mock.calls.filter(c=>c.body.requests?.some(r=>r.updateCells)).length,1);
-    assert.equal(mock.sheets.get('出納・会計').rows[1][0],'TX-KEEP');
+    assert.equal(mock.sheets.get('出納・会計').rows[1][0],'TX-OLD');
+    assert.equal(mock.sheets.get('出納・会計').rows[1].at(-3),'1');
+    assert.equal(mock.sheets.get('出納・会計').rows[2][0],'TX-KEEP');
     assert.equal(mock.sheets.get('出納アーカイブ').rows[1][0],'TX-OLD');
     const roundtrip=await importFromSheets('test-token','test-sheet');
     assert.equal(roundtrip.needsFiscalRetentionSync,false);

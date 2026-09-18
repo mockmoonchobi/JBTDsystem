@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { MemorialService, Household, PastRecord, TempleProfile, TempleTodo } from '../../types';
+import { MemorialService, Household, PastRecord, TempleProfile, TempleTodo, Priest } from '../../types';
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -31,6 +31,7 @@ interface MobileCalendarViewProps {
   households: Household[];
   pastRecords: PastRecord[];
   temples?: TempleProfile[];
+  priests?: Priest[];
   activeTempleId?: string;
   onSelectTemple?: (templeId: string) => void;
   templeTodos?: TempleTodo[];
@@ -45,6 +46,7 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
   households = [],
   pastRecords = [],
   temples = [],
+  priests,
   activeTempleId = 'temple-main',
   onSelectTemple,
   templeTodos = [],
@@ -429,6 +431,7 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
 
       {/* Service Modal */}
       <MobileServiceModal
+        priests={priests}
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         service={editingService}

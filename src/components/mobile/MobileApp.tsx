@@ -273,6 +273,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             {/* Subtab Content */}
             {scheduleSubTab === 'calendar' && (
               <MobileCalendarView
+                priests={priests}
                 memorialServices={memorialServices}
                 households={effectiveAllHouseholds}
                 pastRecords={effectiveAllPastRecords}
@@ -336,6 +337,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
       {/* Cross-feature Quick Service Modal */}
       <MobileServiceModal
+        priests={priests}
         isOpen={quickServiceModalOpen}
         onClose={() => {
           setQuickServiceModalOpen(false);

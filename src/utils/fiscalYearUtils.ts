@@ -166,7 +166,14 @@ export function compareTransactionsChronological(a: Transaction, b: Transaction,
   if (aIsCarryover && !bIsCarryover) return -1;
   if (!aIsCarryover && bIsCarryover) return 1;
 
-  return (a.receiptNumber || a.id || '').localeCompare(b.receiptNumber || b.id || '', undefined, { numeric: true });
+  const seconds = (row: Transaction) => {
+    const time = row.createdTime || row.createdAt?.split(/[T ]/)[1] || '';
+    const match = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3] || 0) : 0;
+  };
+  const timeCmp = seconds(a) - seconds(b);
+  if (timeCmp) return timeCmp;
+  return (a.id || '').localeCompare(b.id || '', undefined, { numeric: true });
 }
 
 /**

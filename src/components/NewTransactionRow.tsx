@@ -56,7 +56,7 @@ export const NewTransactionRow: React.FC<NewTransactionRowProps> = React.memo(({
     const resolvedTxTempleId = matchedHousehold?.templeId || templeInfo?.id || 'temple-main';
 
     const completeTx: Transaction = {
-      id: `TX-${Date.now()}`,
+      id: `TX-${crypto.randomUUID()}`,
       templeId: resolvedTxTempleId,
       date: normalizedDate,
       householdId: form.householdId || '',

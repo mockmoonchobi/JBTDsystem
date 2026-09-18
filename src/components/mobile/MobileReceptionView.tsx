@@ -316,12 +316,12 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
 
     const sponsorInfo = getHouseholdSponsorInfo(selectedHousehold);
     const now = new Date();
-    const currentTimeStr = now.toTimeString().slice(0, 5);
+    const currentTimeStr = now.toTimeString().slice(0, 8);
     const createdDateStr = now.toISOString().slice(0, 10);
 
-    itemsToRecord.forEach((item, idx) => {
+    itemsToRecord.forEach((item) => {
       const newTx: Transaction = {
-        id: `tx-rec-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `TX-${crypto.randomUUID()}`,
         templeId: selectedHousehold.templeId || activeTempleId || 'temple-main',
         date: receptionDate,
         householdId: selectedHousehold.id,
@@ -329,10 +329,9 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
         category: item.category as TransactionCategory,
         type: '収入',
         amount: Number(item.amount),
-        paymentMethod: 'QR受付時',
+        paymentMethod: '現金受付',
         receiptNumber: '',
         notes: item.label,
-        description: item.label,
         createdDate: createdDateStr,
         createdTime: currentTimeStr,
         createdAt: now.toISOString(),

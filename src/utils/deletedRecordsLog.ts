@@ -1,3 +1,4 @@
+import { queueAudit } from './pendingAudit';
 import { DeletedRecordEntry, DeletedEntityType, FieldDiff } from '../types';
 import { safeStorage, saveJsonState, loadJsonState } from './storageUtils';
 import { getCurrentUser, getActiveGoogleAccountName } from '../lib/googleAuth';
@@ -103,7 +104,7 @@ export function recordOperationLog(
   const currentLogs = loadDeletedRecordsLog();
   const now = new Date();
   const nowMs = now.getTime();
-  const logId = `LOG-${nowMs}-${Math.floor(Math.random() * 1000)}`;
+  const logId = 'LOG-' + crypto.randomUUID();
 
   // Automatically compute diffs if not explicitly passed
   let finalDiffs = diffs && diffs.length > 0 ? diffs : undefined;
@@ -138,6 +139,7 @@ export function recordOperationLog(
     return !(isSameTargetAndAction && isWithinDebounce);
   });
 
+  queueAudit([newEntry]);
   const updated = [newEntry, ...filteredLogs].slice(0, MAX_DELETED_LOG_LENGTH);
   saveDeletedRecordsLog(updated);
   return updated;
@@ -175,7 +177,7 @@ export function recordDeletedRecordsBatch(
 
   const newIds = new Set(items.map((i) => i.id.trim()));
   const newEntries: DeletedRecordEntry[] = items.map((i, idx) => ({
-    logId: `LOG-${nowMs}-${idx}-${Math.floor(Math.random() * 1000)}`,
+    logId: 'LOG-' + crypto.randomUUID(),
     id: i.id.trim(),
     entityType: i.entityType,
     deletedAt: nowIso,
@@ -188,6 +190,7 @@ export function recordDeletedRecordsBatch(
   }));
 
   const filtered = currentLogs.filter((entry) => !newIds.has(entry.id.trim()));
+  queueAudit(newEntries);
   const updated = [...newEntries, ...filtered].slice(0, MAX_DELETED_LOG_LENGTH);
   saveDeletedRecordsLog(updated);
   return updated;

@@ -16,7 +16,8 @@ const stored = {};
 const storage = { loadJsonState: (k,d) => stored[k] || d, saveJsonState: (k,v) => { stored[k] = v; } };
 const dankaIdModule = { exports: {} };
 const fn = new Function('require', 'module', 'exports', compiledDankaIdUtils);
-fn(name => name === './storageUtils' ? storage : require(name), dankaIdModule, dankaIdModule.exports);
+require.extensions['.ts'] = (m, p) => m._compile(ts.transpileModule(fs.readFileSync(p,'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,p);
+fn(name => name === './storageUtils' ? storage : name === './templePrefixes' ? require('../src/utils/templePrefixes.ts') : name === './householdRetention' ? { retainedHouseholds: () => ({}) } : require(name), dankaIdModule, dankaIdModule.exports);
 
 const {
   getUnlinkedHouseholdId,

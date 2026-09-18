@@ -1,3 +1,4 @@
+import { retainedHouseholds } from './householdRetention';
 import {
   Household,
   PastRecord,
@@ -101,7 +102,14 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
     let hChanged = false;
 
     if (isCorruptedTempleId(tId, h.id)) {
-      tId = deduceTempleIdFromHousehold(h.id);
+      // An unfamiliar/legacy household ID is not evidence of main-temple membership.
+      // Keep the original data untouched and require a valid temple assignment.
+      const prefix = (h.id || '').match(/^(DK|K\d+)-/i)?.[0].toUpperCase();
+      const matching = prefix ? temples.filter(t => getTemplePrefix(t.id, temples) === prefix) : [];
+      if (matching.length !== 1) {
+        throw new Error(`檀家「${h.familyHead || h.id}」の所属寺院を確認できません（檀家ID：${h.id}）。元データの所属寺院IDを確認してください。本寺への自動変更は行っていません。`);
+      }
+      tId = matching[0].id;
       hChanged = true;
       changed = true;
     }
@@ -172,7 +180,7 @@ export function sanitizeAppDataset(input: DatasetSanitizationInput): DatasetSani
         pChanged = true;
         changed = true;
       }
-    } else if (!householdMap.has(hId)) {
+    } else if (!householdMap.has(hId) && !retainedHouseholds()[hId]) {
       hId = targetUnlinkedId;
       pChanged = true;
       changed = true;

@@ -12,6 +12,7 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 const authPath = path.join(root, 'src/lib/googleAuth.ts');
 require.cache[authPath] = { exports: { getCurrentUser: () => null, getActiveGoogleAccountName: () => '' } };
 const source = (file) => require(path.join(root, file));
+const { workbook: rowWorkbook, memory: rowMemory } = require('./rowSyncFixture.cjs');
 const { syncTobaTodosList } = source('src/utils/tobaTodoSync.ts');
 const { mergeGenericEntityList } = source('src/utils/syncMergeUtils.ts');
 const { exportToSheets } = source('src/lib/googleSheets.ts');
@@ -74,30 +75,7 @@ test('deleting a service preserves tasks explicitly linked to another same-day s
   assert.equal(remaining[0].relatedServiceId, 'S2');
 });
 
-function sheetMock(failure) {
-  const calls = [];
-  const sheets = [{ properties: { title: '独自メモ', sheetId: 99, gridProperties: { rowCount: 1000, columnCount: 100 } } },
-    { properties: { title: '法事・予約一覧', sheetId: 100, gridProperties: { rowCount: 1000, columnCount: 100 } } },
-    { properties: { title: '削除履歴', sheetId: 101, gridProperties: { rowCount: 1000, columnCount: 100 } } }];
-  return { calls, sheets, fetch: async (url, options = {}) => {
-    const body = options.body ? JSON.parse(options.body) : undefined;
-    calls.push({ url, body });
-    const reply = (data, status = 200) => new Response(JSON.stringify(data), { status });
-    if (url.includes('?fields=')) return reply({ sheets });
-    if (body?.requests?.some(r => r.updateCells)) {
-      if (failure) return reply({ error: { message: 'simulated rejected write' } }, failure);
-      return reply({ replies: body.requests.map(() => ({})) });
-    }
-    if (body?.requests) return reply({ replies: body.requests.map(r => {
-      if (!r.addSheet) return {};
-      const sheet = { properties: { ...r.addSheet.properties, sheetId: 200 + sheets.length } };
-      sheets.push(sheet);
-      return { addSheet: sheet };
-    }) });
-    if (failure && url.endsWith('values:batchUpdate')) return reply({ error: { message: 'simulated rejected write' } }, failure);
-    return reply({});
-  } };
-}
+function sheetMock(failure) { const m = rowWorkbook(); m.add('独自メモ'); m.add('法事・予約一覧'); m.add('削除履歴'); if(failure)m.fail(true); return m; }
 
 async function runExport(mock, exportOptions) {
   const original = global.fetch;
@@ -108,20 +86,20 @@ async function runExport(mock, exportOptions) {
   } finally { global.fetch = original; }
 }
 
-test('full export replaces managed sheets atomically and preserves custom tabs', async () => {
+test('first export initializes managed rows atomically and preserves custom tabs', async () => {
   const mock = sheetMock();
   await runExport(mock);
   assert.equal(mock.calls.filter(c => c.url.includes('batchClear') || c.url.endsWith(':clear')).length, 0);
   const writes = mock.calls.filter(c => c.body?.requests?.some(r => r.updateCells));
   assert.equal(writes.length, 1);
   const requests = writes[0].body.requests;
-  const clearedIds = requests.filter(r => r.repeatCell).map(r => r.repeatCell.range.sheetId);
-  assert(!clearedIds.includes(99));
-  assert(clearedIds.includes(100));
-  assert(clearedIds.includes(101));
-  assert.deepEqual(new Set(clearedIds), new Set(requests.filter(r => r.updateCells).map(r => r.updateCells.start.sheetId)));
-  assert(!mock.sheets.some(s => s.properties.title === '法事予約'));
-  assert(!mock.sheets.some(s => s.properties.title === '操作・削除履歴'));
+  assert(!requests.some(r => r.repeatCell));
+  const names = mock.writtenNames();
+  assert(!names.includes('独自メモ'));
+  assert(names.includes('法事・予約一覧'));
+  assert(names.includes('削除履歴'));
+  assert(!mock.sheets.has('法事予約'));
+  assert(!mock.sheets.has('操作・削除履歴'));
 });
 
 test('selected-table export never clears or writes another table', async () => {
@@ -130,7 +108,8 @@ test('selected-table export never clears or writes another table', async () => {
   const writes = mock.calls.filter(c => c.body?.requests?.some(r => r.updateCells));
   assert.equal(writes.length, 1);
   for (const request of writes[0].body.requests) {
-    assert.equal(request.repeatCell?.range.sheetId ?? request.updateCells?.start.sheetId, 100);
+    if (request.updateCells) assert.equal(request.updateCells.start.sheetId, mock.sheets.get('法事・予約一覧').properties.sheetId);
+    assert(!request.repeatCell);
   }
 });
 
@@ -172,7 +151,7 @@ test('storage waits for commit, rejects abort and retries the latest failed data
     } }; open.onsuccess(); });
     return open;
   } } };
-  const storage = source('src/utils/storageUtils.ts');
+  const storage = { ...source('src/utils/storageUtils.ts'), idbSet: require('./rowSyncFixture.cjs').originalIdbSet };
   const tick = () => new Promise(resolve => setImmediate(resolve));
   try {
     let done = false;

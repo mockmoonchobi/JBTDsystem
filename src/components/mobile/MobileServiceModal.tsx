@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MemorialService, Household, PastRecord, TempleProfile, ServiceDeceasedTarget, ServiceTobaItem, TempleTodo, Priest } from '../../types';
 import {
   X,
@@ -165,12 +165,17 @@ export const MobileServiceModal: React.FC<MobileServiceModalProps> = ({
   const [isOtherMemorialType, setIsOtherMemorialType] = useState(false);
   const [customMemorialTypeName, setCustomMemorialTypeName] = useState('');
 
-  // Initialize or reset form when modal opens or props change
+  const initializedForm = useRef<string | null>(null);
+  // Background refreshes must not replace an in-progress selection or form.
   useEffect(() => {
     if (!isOpen) {
+      initializedForm.current = null;
       setIsConfirmDeleteOpen(false);
       return;
     }
+    const formKey = JSON.stringify([service?.id || 'new', initialDate, initialHouseholdId, initialPastRecordId, initialMilestoneType]);
+    if (initializedForm.current === formKey) return;
+    initializedForm.current = formKey;
     setIsConfirmDeleteOpen(false);
 
     if (service) {
