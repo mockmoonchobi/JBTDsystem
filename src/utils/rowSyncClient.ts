@@ -113,7 +113,10 @@ async function readAppendTables(token: string, id: string, sheets: ExportSheet[]
 
 async function tryAccountingAppend(token: string, id: string, desired: Snapshot, baseline: Snapshot, sheets: ExportSheet[], request: Requester, changed?: Set<string>, onProgress?: (stage: string) => void, operations?: Snapshot): Promise<boolean> {
   const pending = await idbGet<any>(journalKey(id));
-  if (pending && pending.kind !== 'accounting-append') return false;
+  if (pending && pending.kind !== 'accounting-append') {
+    if (operations) throw new Error('前回の保存結果を確認できないため、新規会計の保存を停止しています。端末の入力は保持しています。');
+    return false;
+  }
   const additions = operations || accountingAdditions(desired, baseline, changed);
   if (!pending && !additions) return false;
   if (!pending && additions && !Object.keys(additions).length) return true;
@@ -127,7 +130,7 @@ async function tryAccountingAppend(token: string, id: string, desired: Snapshot,
     const accepted = { ...baseline };
     for (const [title, grid] of (pending.owner === await pendingOwner() ? Object.entries(pending.expected) : []) as [string, unknown[][]][]) {
       const ids = new Set((accepted[title] || []).slice(1).map(r => String(r[0])));
-      accepted[title] = [...(accepted[title] || [grid[0]]), ...grid.slice(1).filter(r => !ids.has(String(r[0])))];
+      accepted[title] = [grid[0], ...(accepted[title] || []).slice(1), ...grid.slice(1).filter(r => !ids.has(String(r[0])))];
     }
     await acceptRowBaseline(id, accepted);
     await idbSet(journalKey(id), null);
@@ -139,7 +142,10 @@ async function tryAccountingAppend(token: string, id: string, desired: Snapshot,
   if (additions!['出納・会計'].slice(1).some(r => reserved.has(String(r[0])) || archived.has(String(r[0])))) throw new Error('削除済みIDまたはアーカイブ済みIDの再登録を検出しました。');
   const op = crypto.randomUUID();
   const plan = makeAccountingAppend(additions!, before, sheets, op);
-  if (!plan) return false;
+  if (!plan) {
+    if (operations) throw new Error('会計または操作履歴の列構成が対応していないため、新規会計の保存を停止しています。端末の入力は保持しています。');
+    return false;
+  }
   const record = { kind: 'accounting-append', version: 1, owner: await pendingOwner(), operationId: op, before, expected: plan.expected };
   await idbSet(journalKey(id), record);
   onProgress?.('新規会計をまとめて追記しています');
@@ -160,7 +166,7 @@ async function tryAccountingAppend(token: string, id: string, desired: Snapshot,
   const accepted = { ...baseline };
   for (const [title, grid] of Object.entries(plan.expected)) {
     const known = new Set((baseline[title] || []).slice(1).map(r => String(r[0])));
-    accepted[title] = [...(baseline[title] || [grid[0]]), ...grid.slice(1).filter(r => !known.has(String(r[0])))];
+    accepted[title] = [grid[0], ...(baseline[title] || []).slice(1), ...grid.slice(1).filter(r => !known.has(String(r[0])))];
   }
   await acceptRowBaseline(id, accepted);
   await idbSet(journalKey(id), null);
@@ -168,14 +174,14 @@ async function tryAccountingAppend(token: string, id: string, desired: Snapshot,
 }
 /** Explicit operations never fall back to a whole-workbook plan or maintenance merge. */
 export async function saveAccountingOperations(token: string, id: string, operations: Snapshot, sheets: ExportSheet[], request: Requester, onProgress?: (stage: string) => void): Promise<void> {
-  if (Object.keys(operations).some(t => !APPEND_TABLES.includes(t)) || APPEND_TABLES.some(t => !operations[t]?.length)) throw new Error('受付の送信データが不完全です。');
+  if (Object.keys(operations).some(t => !APPEND_TABLES.includes(t)) || APPEND_TABLES.some(t => !operations[t]?.length)) throw new Error('新規会計の送信データが不完全です。');
   const empty = Object.fromEntries(APPEND_TABLES.map(t => [t, [[...operations[t][0], ...ROW_META]]]));
-  if (!accountingAdditions(operations, empty)) throw new Error('受付の作成内容と操作履歴が一致しません。');
+  if (!accountingAdditions(operations, empty)) throw new Error('新規会計の作成内容と操作履歴が一致しません。');
   const run = async () => {
     const baseline = await loadRowBaseline(id);
-    if (!baseline) throw new Error('受付の保存先を確認できません。先にGoogleシートを読み込んでください。');
+    if (!baseline) throw new Error('新規会計の保存先を確認できません。先にGoogleシートを読み込んでください。');
     if (!await tryAccountingAppend(token,id,operations,baseline,sheets,request,undefined,onProgress,operations))
-      throw new Error('受付用シートの構成、または前回の保存状態を確認できません。端末の受付は保持しています。');
+      throw new Error('新規会計の保存を確認できません。端末の入力は保持しています。');
   };
   if (typeof navigator !== 'undefined' && navigator.locks) await navigator.locks.request('jbtd-row-save-'+id,run);
   else await run();
