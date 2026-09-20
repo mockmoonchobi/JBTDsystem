@@ -67,7 +67,7 @@ import {
   parseDisasterEventsFromRows
 } from '../utils/disasterMemorialUtils';
 import {
-  getHouseholdSponsorTobaApplication,
+  getHouseholdTobaApplication,
   getFamilyMemberTobaApplication
 } from '../utils/tobaUtils';
 import { TobaApplicationItem } from '../types';
@@ -1408,18 +1408,18 @@ export async function exportToSheets(
   const householdRows = filteredHouseholds.map((h) => {
     const [cDate, cTime, uDate, uTime] = getExportAuditRowValues(h);
     const hhTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo;
-    const tobaApp1 = getHouseholdSponsorTobaApplication(h, '塔婆申込１', hhTemple);
-    const tobaApp2 = getHouseholdSponsorTobaApplication(h, '塔婆申込２', hhTemple);
-    const tobaApp3 = getHouseholdSponsorTobaApplication(h, '塔婆申込３', hhTemple);
+    const tobaApp1 = getHouseholdTobaApplication(h, '塔婆申込１', hhTemple);
+    const tobaApp2 = getHouseholdTobaApplication(h, '塔婆申込２', hhTemple);
+    const tobaApp3 = getHouseholdTobaApplication(h, '塔婆申込３', hhTemple);
 
-    const isToba1Applied = Boolean(h.toba1Applied || h.isSegakiToba || tobaApp1.applied);
-    const toba1Tamegaki = h.toba1Tamegaki || h.segakiTamegaki || tobaApp1.tamegaki || '';
+    const isToba1Applied = tobaApp1.applied;
+    const toba1Tamegaki = tobaApp1.tamegaki || '';
 
-    const isToba2Applied = Boolean(h.toba2Applied || tobaApp2.applied);
-    const toba2Tamegaki = h.toba2Tamegaki || tobaApp2.tamegaki || '';
+    const isToba2Applied = tobaApp2.applied;
+    const toba2Tamegaki = tobaApp2.tamegaki || '';
 
-    const isToba3Applied = Boolean(h.toba3Applied || tobaApp3.applied);
-    const toba3Tamegaki = h.toba3Tamegaki || tobaApp3.tamegaki || '';
+    const isToba3Applied = tobaApp3.applied;
+    const toba3Tamegaki = tobaApp3.tamegaki || '';
 
     return [
       h.id,
@@ -1498,14 +1498,14 @@ export async function exportToSheets(
       const fmApp2 = getFamilyMemberTobaApplication(fm, '塔婆申込２', hhTemple);
       const fmApp3 = getFamilyMemberTobaApplication(fm, '塔婆申込３', hhTemple);
 
-      const isFmToba1 = Boolean(fm.toba1Applied || fm.isSegakiToba || fmApp1.applied);
-      const toba1Tamegaki = fm.toba1Tamegaki !== undefined ? fm.toba1Tamegaki : (fm.segakiTamegaki || fmApp1.tamegaki || '');
+      const isFmToba1 = fmApp1.applied;
+      const toba1Tamegaki = fmApp1.tamegaki || '';
 
-      const isFmToba2 = Boolean(fm.toba2Applied || fmApp2.applied);
-      const toba2Tamegaki = fm.toba2Tamegaki || fmApp2.tamegaki || '';
+      const isFmToba2 = fmApp2.applied;
+      const toba2Tamegaki = fmApp2.tamegaki || '';
 
-      const isFmToba3 = Boolean(fm.toba3Applied || fmApp3.applied);
-      const toba3Tamegaki = fm.toba3Tamegaki || fmApp3.tamegaki || '';
+      const isFmToba3 = fmApp3.applied;
+      const toba3Tamegaki = fmApp3.tamegaki || '';
 
       familyRows.push([
         fm.id || `FM-${h.id}-${idx + 1}`,
@@ -2823,42 +2823,13 @@ async function importFromSheetsCore(
 
       const hhTemple = (temples && temples.find((t) => (t.id || 'temple-main') === (templeId || 'temple-main'))) || templeInfo;
 
-      // Synchronize toba flags between household and designated sponsor family member if present
-      const sponsorMember = familyMembers.find((m) => m.isChiefMourner || m.isSponsor);
-      let finalToba1 = isToba1;
-      let finalToba2 = isToba2;
-      let finalToba3 = isToba3;
-      let finalToba1Tamegaki = toba1Tamegaki;
-      let finalToba2Tamegaki = toba2Tamegaki;
-      let finalToba3Tamegaki = toba3Tamegaki;
-
-      if (sponsorMember) {
-        if (!finalToba1 && sponsorMember.toba1Applied) {
-          finalToba1 = true;
-          if (sponsorMember.toba1Tamegaki) finalToba1Tamegaki = sponsorMember.toba1Tamegaki;
-        }
-        if (!finalToba2 && sponsorMember.toba2Applied) {
-          finalToba2 = true;
-          if (sponsorMember.toba2Tamegaki) finalToba2Tamegaki = sponsorMember.toba2Tamegaki;
-        }
-        if (!finalToba3 && sponsorMember.toba3Applied) {
-          finalToba3 = true;
-          if (sponsorMember.toba3Tamegaki) finalToba3Tamegaki = sponsorMember.toba3Tamegaki;
-        }
-        if (finalToba1 && !sponsorMember.toba1Applied) {
-          sponsorMember.toba1Applied = true;
-          sponsorMember.isSegakiToba = true;
-          if (finalToba1Tamegaki && !sponsorMember.toba1Tamegaki) sponsorMember.toba1Tamegaki = finalToba1Tamegaki;
-        }
-        if (finalToba2 && !sponsorMember.toba2Applied) {
-          sponsorMember.toba2Applied = true;
-          if (finalToba2Tamegaki && !sponsorMember.toba2Tamegaki) sponsorMember.toba2Tamegaki = finalToba2Tamegaki;
-        }
-        if (finalToba3 && !sponsorMember.toba3Applied) {
-          sponsorMember.toba3Applied = true;
-          if (finalToba3Tamegaki && !sponsorMember.toba3Tamegaki) sponsorMember.toba3Tamegaki = finalToba3Tamegaki;
-        }
-      }
+      // Keep each person's application independent when reading persisted records.
+      const finalToba1 = isToba1;
+      const finalToba2 = isToba2;
+      const finalToba3 = isToba3;
+      const finalToba1Tamegaki = toba1Tamegaki;
+      const finalToba2Tamegaki = toba2Tamegaki;
+      const finalToba3Tamegaki = toba3Tamegaki;
 
       const tobaApps: Record<string, TobaApplicationItem> = {
         '塔婆申込１': { applied: finalToba1, tamegaki: finalToba1Tamegaki || '' },
