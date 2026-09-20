@@ -34,8 +34,9 @@ export function VerticalRecipientAddress({ address, heightMm, fontPt, secondPt, 
     };
   }, [address, heightMm, fontPt, secondPt]);
   const vertical: React.CSSProperties = { writingMode: 'vertical-rl', textOrientation: 'upright', whiteSpace: 'pre', letterSpacing: '0.025em', lineHeight: 1.4 };
-  return <div className={className} data-recipient-address style={{ alignItems: 'flex-end', maxHeight: `${heightMm}mm` }}>
+  return <div className={className} data-recipient-address style={{ height: layout.lines.length > 1 ? heightMm + 'mm' : undefined, alignItems: 'flex-start', maxHeight: `${heightMm}mm` }}>
     <span ref={probe} aria-hidden="true" style={{ ...vertical, position: 'absolute', visibility: 'hidden', pointerEvents: 'none', height: 'max-content', width: 'max-content' }} />
-    {layout.lines.map((line, index) => <div key={index} className="text-stone-900 select-none" style={{ ...vertical, fontSize: `${layout.sizes[index]}pt`, flexShrink: 0 }}>{line}</div>)}
+    {layout.lines.map((line, index) => <div key={index} className="text-stone-900 select-none" style={{ ...vertical, fontSize: `${layout.sizes[index]}pt`, flexShrink: 0, alignSelf: index === 0 ? 'flex-start' : 'flex-end' }}>{line}</div>)}
   </div>;
 }
+
