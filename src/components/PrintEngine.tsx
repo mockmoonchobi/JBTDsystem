@@ -1,3 +1,4 @@
+import { VerticalRecipientAddress } from './VerticalRecipientAddress';
 import React, { useState, useEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -1544,16 +1545,6 @@ function formatVerticalAddress(address: string): string {
   return cleaned;
 }
 
-function splitVerticalAddress(address: string): [string, string?] {
-  if (!address) return [''];
-  const formatted = formatVerticalAddress(address);
-  const parts = formatted.split(/[\s　]+/);
-  if (parts.length >= 2) {
-    return [parts[0], parts.slice(1).join('　')];
-  }
-  return [formatted];
-}
-
 function formatRecipientName(fullName: string, honorific: string = '様'): string {
   if (!fullName) return honorific;
 
@@ -1969,46 +1960,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           </div>
 
           {/* 住所 (縦書き) */}
-          {(() => {
-            const lines = splitVerticalAddress(household.address);
-            return (
-              <div
-                className="absolute top-[22mm] right-[6mm] flex flex-row-reverse gap-[3.5mm] font-serif"
-                style={{
-                  maxHeight: '160mm',
-                }}
-              >
-                <div
-                  className="text-stone-900 tracking-wide select-none"
-                  style={{
-                    writingMode: 'vertical-rl',
-                    textOrientation: 'upright',
-                    fontSize: '14pt',
-                    lineHeight: '1.4',
-                    alignSelf: 'flex-start',
-                  }}
-                >
-                  {lines[0] || ''}
-                </div>
-
-                {lines.length > 1 && (
-                  <div
-                    className="text-stone-900 tracking-wide select-none"
-                    style={{
-                      writingMode: 'vertical-rl',
-                      textOrientation: 'upright',
-                      fontSize: '13pt',
-                      lineHeight: '1.4',
-                      alignSelf: 'flex-start',
-                      marginTop: '12mm',
-                    }}
-                  >
-                    {lines[1]}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <VerticalRecipientAddress address={formatVerticalAddress(household.address)} heightMm={160} fontPt={14} secondPt={13} className="absolute top-[22mm] right-[6mm] flex flex-row-reverse gap-[3.5mm] font-serif" />
 
           {/* 宛名 (中央・大文字・1mm左へ移動（以前の4mm左から3mm右へ移動）) */}
           <div
@@ -2172,46 +2124,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           </div>
 
           {/* 住所 (縦書き) */}
-          {(() => {
-            const lines = splitVerticalAddress(household.address);
-            return (
-              <div
-                className="absolute top-[34mm] right-[12mm] flex flex-row-reverse gap-[6mm] font-serif"
-                style={{
-                  maxHeight: '230mm',
-                }}
-              >
-                <div
-                  className="text-stone-900 tracking-wide select-none"
-                  style={{
-                    writingMode: 'vertical-rl',
-                    textOrientation: 'upright',
-                    fontSize: '18pt',
-                    lineHeight: '1.45',
-                    alignSelf: 'flex-start',
-                  }}
-                >
-                  {lines[0] || ''}
-                </div>
-
-                {lines.length > 1 && (
-                  <div
-                    className="text-stone-900 tracking-wide select-none"
-                    style={{
-                      writingMode: 'vertical-rl',
-                      textOrientation: 'upright',
-                      fontSize: '16pt',
-                      lineHeight: '1.45',
-                      alignSelf: 'flex-start',
-                      marginTop: '16mm',
-                    }}
-                  >
-                    {lines[1]}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <VerticalRecipientAddress address={formatVerticalAddress(household.address)} heightMm={230} fontPt={18} secondPt={16} className="absolute top-[34mm] right-[12mm] flex flex-row-reverse gap-[6mm] font-serif" />
 
           {/* 宛名 (中央・大文字・長3封筒を踏襲した中央縦書き。メモ印刷時は少々上へ配置) */}
           <div
@@ -2342,46 +2255,7 @@ const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           </div>
 
           {/* 住所 (縦書き) */}
-          {(() => {
-            const lines = splitVerticalAddress(household.address);
-            return (
-              <div
-                className="absolute top-[18mm] right-[4mm] flex flex-row-reverse gap-[2.5mm] font-serif"
-                style={{
-                  maxHeight: '105mm',
-                }}
-              >
-                <div
-                  className="text-stone-900 tracking-wide select-none"
-                  style={{
-                    writingMode: 'vertical-rl',
-                    textOrientation: 'upright',
-                    fontSize: '13pt',
-                    lineHeight: '1.35',
-                    alignSelf: 'flex-start',
-                  }}
-                >
-                  {lines[0] || ''}
-                </div>
-
-                {lines.length > 1 && (
-                  <div
-                    className="text-stone-900 tracking-wide select-none"
-                    style={{
-                      writingMode: 'vertical-rl',
-                      textOrientation: 'upright',
-                      fontSize: '12pt',
-                      lineHeight: '1.35',
-                      alignSelf: 'flex-start',
-                      marginTop: '10mm',
-                    }}
-                  >
-                    {lines[1]}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+          <VerticalRecipientAddress address={formatVerticalAddress(household.address)} heightMm={105} fontPt={13} secondPt={12} className="absolute top-[18mm] right-[4mm] flex flex-row-reverse gap-[2.5mm] font-serif" />
 
           {/* 宛名 (中央・5mm下へ移動) */}
           <div

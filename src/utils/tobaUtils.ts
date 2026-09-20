@@ -442,7 +442,7 @@ export function isHouseholdSponsorAppliedForToba(
 /**
  * Sets the Toba application for the household's sponsor.
  * If a family member is designated as sponsor, updates that member's application.
- * Also keeps the household's top-level slot fields synchronized for list display and spreadsheet exports.
+ * The household head's own application is left unchanged.
  */
 export function setHouseholdSponsorTobaApplication(
   household: Household,
@@ -454,15 +454,14 @@ export function setHouseholdSponsorTobaApplication(
   const designated = getDesignatedSponsorMember(household);
   if (designated) {
     const updatedMembers = (household.familyMembers || []).map((m) => {
-      if (m.id === designated.id || (m.isChiefMourner || m.isSponsor)) {
+      if (m.id === designated.id) {
         return setFamilyMemberTobaApplication(m, tobaType, appliedOrItem, tamegaki, templeInfo);
       }
       return m;
     });
-    // Keep household-level slot fields in sync with sponsor application
-    const hhWithFields = setHouseholdTobaApplication(household, tobaType, appliedOrItem, tamegaki, templeInfo);
+    // The designated member and head are independent applicants.
     return {
-      ...hhWithFields,
+      ...household,
       familyMembers: updatedMembers,
     };
   }
