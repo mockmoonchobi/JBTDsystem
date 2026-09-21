@@ -1,3 +1,4 @@
+import { CHECK_SLOTS, checkLabelKey } from '../utils/householdChecks';
 import { allocateTempleId } from '../utils/templePrefixes';
 import { retainedHouseholds } from '../utils/householdRetention';
 import { templeContentChanged, templeValueKey } from '../utils/templeAudit';
@@ -1506,6 +1507,20 @@ export const TempleInfoModal: React.FC<TempleInfoModalProps> = ({
                       </select>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="bg-[#F9F7F2] border border-[#EBE7DF] p-4 space-y-3">
+                <h3 className="font-bold text-sm text-[#1A1A1A]">チェック項目設定（最大3項目）</h3>
+                <p className="text-xs text-[#777777]">名簿でチェックを付けた項目名が受付票に表示されます。使わない項目は空欄にしてください。</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {CHECK_SLOTS.map(slot => <label key={slot} className="block text-xs font-bold space-y-2">
+                    <span>チェック項目{slot}</span>
+                    <input type="text" maxLength={30} value={currentTemple[checkLabelKey(slot)] || ''}
+                      onChange={e => updateCurrentTemple({ [checkLabelKey(slot)]: e.target.value })}
+                      placeholder={slot === 1 ? '例：領収済' : slot === 2 ? '例：後日郵送' : '例：連絡必要'}
+                      className="w-full border border-[#D5D0C5] bg-white px-3 py-2 text-sm font-sans" />
+                  </label>)}
                 </div>
               </div>
 

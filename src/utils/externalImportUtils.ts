@@ -1,3 +1,4 @@
+import { CHECK_SLOTS, checkKey, parseHouseholdCheck } from './householdChecks';
 import * as XLSX from 'xlsx';
 import { Household, PastRecord, Transaction, FamilyMember, MasterOptions, TempleProfile } from '../types';
 import { normalizeDateInput, normalizeFurigana } from './memorialCalculator';
@@ -26,6 +27,7 @@ export interface ColumnMappingField {
 export const HOUSEHOLD_MAPPING_FIELDS: ColumnMappingField[] = [
   { key: 'id', label: '檀家ID / 檀家管理番号 (任意)', description: '例: H-101 (空欄時は自動採番)', aliases: ['檀家ID', '檀家id', '檀家番号', 'ID', 'id', '世帯ID', '会員番号', '管理番号', 'コード', '檀家コード', '世帯番号', 'No', 'NO', '檀家No', 'No.'] },
   { key: 'yago', label: '屋号', description: '地域で使われる家の呼び名（任意）', aliases: ['屋号', '家の屋号', 'yago'] },
+  ...CHECK_SLOTS.map(n => ({ key: checkKey(n), label: `チェック項目${n}`, description: 'TRUE／1／on／✓でチェックあり、FALSE／0／offでチェックなし', aliases: [`チェック項目${n}`, `check${n}`] })),
   { key: 'familyHead', label: '施主名', required: true, description: '例: 山田 太郎', aliases: ['施主名', '施主', '世帯主', '世帯主名', '氏名', '名前', '檀家名', '檀家氏名', '代表者', '当家名', '戸主', '名義人', '代表'] },
   { key: 'furigana', label: 'フリガナ / ふりがな', description: '例: ヤマダ タロウ', aliases: ['フリガナ', 'ふりがな', 'カナ', 'かな', '読み', '氏名カナ', '世帯主カナ', 'ふりがな（世帯主）'] },
   { key: 'postalCode', label: '郵便番号', description: '例: 123-4567', aliases: ['郵便番号', '〒', '郵便', 'zip', 'postcode', '郵便番号（〒）', '〒番号'] },
@@ -79,6 +81,7 @@ export const COMBINED_MAPPING_FIELDS: ColumnMappingField[] = [
   // Household part
   { key: 'householdId', label: '【檀家】檀家ID / 管理番号 (任意)', description: '例: H-101 (空欄時は自動採番)', aliases: ['檀家ID', '檀家id', '檀家番号', 'ID', 'id', '世帯ID', '会員番号', '管理番号', 'コード', '檀家コード', '世帯番号', 'No', 'NO', '檀家No'] },
   { key: 'yago', label: '屋号', description: '地域で使われる家の呼び名（任意）', aliases: ['屋号', '家の屋号', 'yago'] },
+  ...CHECK_SLOTS.map(n => ({ key: checkKey(n), label: `チェック項目${n}`, description: 'TRUE／1／on／✓でチェックあり、FALSE／0／offでチェックなし', aliases: [`チェック項目${n}`, `check${n}`] })),
   { key: 'familyHead', label: '【檀家】施主名', required: true, description: '例: 山田 太郎', aliases: ['施主名', '世帯主', '世帯主名', '氏名', '名前', '檀家名', '檀家氏名', '代表者', '当家名', '戸主'] },
   { key: 'furigana', label: '【檀家】フリガナ', description: '例: ヤマダ タロウ', aliases: ['フリガナ', 'ふりがな', 'カナ', 'かな', '読み', '氏名カナ'] },
   { key: 'postalCode', label: '【檀家】郵便番号', description: '例: 123-4567', aliases: ['郵便番号', '〒', '郵便', 'zip', 'postcode'] },
@@ -634,6 +637,7 @@ export function convertTableToData(
 
       if (existing) {
         // Update existing
+        CHECK_SLOTS.forEach(n => { if (mapping[checkKey(n)]) existing[checkKey(n)] = parseHouseholdCheck(getCell(row, checkKey(n))); });
         existing.yago = getCell(row, 'yago').trim() || existing.yago;
         existing.furigana = furigana || existing.furigana;
         existing.postalCode = postalCode || existing.postalCode;
@@ -698,6 +702,7 @@ export function convertTableToData(
         const newH: Household = {
           id,
           templeId: targetTempleId,
+          ...Object.fromEntries(CHECK_SLOTS.map(n => [checkKey(n), parseHouseholdCheck(getCell(row, checkKey(n)))])),
           yago: getCell(row, 'yago').trim(),
           familyHead: headName,
           furigana,

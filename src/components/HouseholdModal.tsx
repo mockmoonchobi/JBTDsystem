@@ -1,3 +1,4 @@
+import { HouseholdChecks } from './HouseholdChecks';
 import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, Building2, UserCheck, Calendar, Clock, ScrollText, Coins, Sparkles } from 'lucide-react';
@@ -202,6 +203,9 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
       templeId: targetTempleId,
       familyHead: formData.familyHead,
       yago: formData.yago?.trim() || '',
+      check1: formData.check1 === true,
+      check2: formData.check2 === true,
+      check3: formData.check3 === true,
       furigana: normalizeFurigana(formData.furigana),
       postalCode: formData.postalCode || '',
       address: formData.address || '',
@@ -492,6 +496,7 @@ export const HouseholdModal: React.FC<HouseholdModalProps> = ({
                 </div>
               </div>
 
+              <HouseholdChecks household={formData} temple={currentTemple} onChange={setFormData} />
               {/* 集金項目設定（寺院設定集金項目１〜３・個別金額設定） */}
               <div className="md:col-span-3 pt-2 border-t border-[#D1CEC7]">
                 <div className="bg-emerald-50/70 p-3 border border-emerald-300 space-y-2.5">

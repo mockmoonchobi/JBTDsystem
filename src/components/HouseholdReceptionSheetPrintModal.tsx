@@ -1,3 +1,4 @@
+import { checkedLabels } from '../utils/householdChecks';
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, Search, ClipboardCheck, LayoutGrid, Table, Edit3, Coins } from 'lucide-react';
@@ -17,6 +18,7 @@ interface HouseholdReceptionSheetPrintModalProps {
   pastRecords: PastRecord[];
   templeName?: string;
   templeInfo?: TempleProfile;
+  temples?: TempleProfile[];
   selectedHouseholdIds?: string[];
 }
 
@@ -65,6 +67,7 @@ export interface ReceptionHouseholdItem {
   hatsubonDharmaNames: string[];
   isTanagyo: boolean;
   isPaid: boolean;
+  checkLabels: string[];
   isUnknown: boolean;
   // Toba & Tamegaki
   tobaApplied: boolean;
@@ -79,6 +82,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
   pastRecords,
   templeName = '寺院',
   templeInfo,
+  temples = [],
   selectedHouseholdIds = [],
 }) => {
   // Effective Toba Slot Names
@@ -333,12 +337,13 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
         hatsubonDharmaNames: hatsubonData?.dharmaNames || [],
         isTanagyo,
         isPaid: h.status === '領収済',
+        checkLabels: checkedLabels(h, temples.find(t => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo),
         isUnknown: h.status === '住所不明' || h.householdType === '住所不明',
         tobaApplied: tobaInfo.isApplied,
         tamegakiList: tobaInfo.tamegakiList,
       };
     });
-  }, [households, hatsubonHouseholdMap, selectedTobaSlot, toba1Name, toba2Name, toba3Name, effectiveFeeSlots, templeInfo]);
+  }, [households, hatsubonHouseholdMap, selectedTobaSlot, toba1Name, toba2Name, toba3Name, effectiveFeeSlots, templeInfo, temples]);
 
   // Filtered items
   const filteredItems = useMemo(() => {
@@ -1006,8 +1011,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                               </span>
                             )}
 
+                            {item.checkLabels.map((label, i) => <span key={i} className="inline-block text-[10px] print:text-[9px] font-bold font-sans text-black border border-black px-1 leading-tight">{label}</span>)}
                             {/* Status Tag: 領収済 or 住所不明 */}
-                            {item.isPaid && (
+                            {item.isPaid && !item.checkLabels.includes('領収済') && (
                               <span className="text-[9px] print:text-[8px] font-bold text-red-600 font-sans shrink-0">
                                 領収済
                               </span>
@@ -1166,7 +1172,8 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 棚経
                               </span>
                             )}
-                            {!item.isHatsubon && !item.isTanagyo && (
+                            {item.checkLabels.map((label, i) => <span key={i} className="inline-block text-[10px] print:text-[9px] font-bold font-sans text-black border border-black px-1 leading-tight">{label}</span>)}
+                            {!item.isHatsubon && !item.isTanagyo && item.checkLabels.length === 0 && (
                               <span className="text-[#AAAAAA] text-[10px]">ー</span>
                             )}
                           </div>

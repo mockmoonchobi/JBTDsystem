@@ -43,6 +43,9 @@ export interface Household {
   id: string;
   templeId?: string; // 所属寺院ID（兼務寺院管理用）
   familyHead: string;
+  check1?: boolean;
+  check2?: boolean;
+  check3?: boolean;
   yago?: string; // 屋号（任意）
   furigana: string;
   postalCode: string;
@@ -334,6 +337,9 @@ export interface TempleInfo {
   fiscalYearStartDay?: number;   // 会計年度開始日 (1〜31, デフォルト: 1)
   fiscalYearEndMonth?: number;   // 会計年度終了月 (1〜12, デフォルト: 3)
   fiscalYearEndDay?: number;     // 会計年度終了日 (1〜31, デフォルト: 31)
+  checkLabel1?: string;
+  checkLabel2?: string;
+  checkLabel3?: string;
   tobaType1?: string; // 塔婆申込１（デフォルト: '施餓鬼塔婆'）
   tobaType2?: string; // 塔婆申込２（任意）
   tobaType3?: string; // 塔婆申込３（任意）

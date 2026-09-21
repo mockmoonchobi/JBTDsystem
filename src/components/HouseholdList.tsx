@@ -1,3 +1,5 @@
+import { CheckSlot, getCheckSlots, checkKey } from '../utils/householdChecks';
+import { HouseholdChecks } from './HouseholdChecks';
 import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
 import { showYagoInList } from '../utils/householdYago';
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
@@ -66,6 +68,7 @@ export type ListColumnKey =
   | 'mobile'         // 携帯電話
   | 'toba'           // 塔婆
   | 'tamegaki'       // 為書き
+  | 'checks'
   | 'fee'            // 集金
   | 'tanagyo'        // 棚経
   | 'notes'          // 備考
@@ -91,6 +94,7 @@ export const DEFAULT_LIST_COLUMNS: ListColumnConfig[] = [
   { key: 'mobile', label: '携帯電話', description: '携帯電話番号', enabled: false },
   { key: 'toba', label: '塔婆', description: '塔婆申込状況・本数（種類切替対応）', enabled: true },
   { key: 'tamegaki', label: '為書き', description: '施主・世帯の塔婆・施餓鬼為書き', enabled: false },
+  { key: 'checks', label: 'チェック項目', description: '寺院ごとのチェック項目を切り替えて表示', enabled: true },
   { key: 'fee', label: '集金', description: '護持会費等の集金金額入力', enabled: true },
   { key: 'tanagyo', label: '棚経', description: '棚経伺い対象・希望状況', enabled: true },
   { key: 'familyHeadName', label: '世帯主名', description: '世帯主の氏名（施主名と別の場合等）', enabled: false },
@@ -489,6 +493,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     }
     return temples.find((t) => t.isMain) || templeInfo || temples[0];
   }, [activeTempleId, temples, templeInfo]);
+
+  const [selectedCheckSlot, setSelectedCheckSlot] = useState<CheckSlot>(1);
+  const effectiveCheckSlots = getCheckSlots(currentActiveTemple);
+  const availableCheckSlots = activeTempleId === 'ALL'
+    ? ([1,2,3] as CheckSlot[]).map(slot => ({slot, name: Array.from(new Set(temples.flatMap(t => getCheckSlots(t).filter(s => s.slot === slot).map(s => s.name)))).join(' / ')})).filter(s => s.name)
+    : effectiveCheckSlots;
+  const activeCheckSlot = availableCheckSlots.some(s => s.slot === selectedCheckSlot) ? selectedCheckSlot : availableCheckSlots[0]?.slot || 1;
 
   // Toba Slots & Types from active temple settings (configured slots 1, 2, 3)
   const effectiveTobaSlots = useMemo(() => getTobaSlots(currentActiveTemple), [currentActiveTemple]);
@@ -1977,7 +1988,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   </th>
 
                   {/* 動的設定列 */}
-                  {listColumns.filter((c) => c.enabled && c.key !== 'yago').map((col) => {
+                  {listColumns.filter((c) => c.enabled && c.key !== 'yago' && (c.key !== 'checks' || availableCheckSlots.length > 0)).map((col) => {
                     switch (col.key) {
                       case 'idTomb':
                         return (
@@ -2170,6 +2181,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                             )}
                           </th>
                         );
+                      case 'checks':
+                        return <th key="checks" className="sticky top-0 bg-[#1A1A1A] px-2 py-1.5 text-center whitespace-nowrap">
+                          <select value={activeCheckSlot} onChange={e => setSelectedCheckSlot(Number(e.target.value) as CheckSlot)} title="チェック項目を切り替え" aria-label="チェック項目を切り替え"
+                            className="bg-[#2A2A2A] text-[#D4AF37] border border-[#555555] px-1.5 py-1 text-xs font-bold max-w-[180px]">
+                            {availableCheckSlots.map(s => <option key={s.slot} value={s.slot}>{s.name}</option>)}
+                          </select>
+                        </th>;
                       case 'fee':
                         return (
                           <th
@@ -2292,7 +2310,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               <tbody className="divide-y divide-[#EBE7DF]">
                 {sortedHouseholds.length === 0 ? (
                   <tr>
-                    <td colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago').length + 3} className="p-12 text-center text-[#888888]">
+                    <td colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago' && (c.key !== 'checks' || availableCheckSlots.length > 0)).length + 3} className="p-12 text-center text-[#888888]">
                       条件に一致する檀家世帯が見つかりませんでした。
                     </td>
                   </tr>
@@ -2301,7 +2319,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                     {householdTopSpacerHeight > 0 && (
                       <tr style={{ height: `${householdTopSpacerHeight}px` }} aria-hidden="true">
                         <td
-                          colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago').length + 3}
+                          colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago' && (c.key !== 'checks' || availableCheckSlots.length > 0)).length + 3}
                           style={{ height: `${householdTopSpacerHeight}px`, padding: 0, border: 0 }}
                         />
                       </tr>
@@ -2310,7 +2328,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       const household = sortedHouseholds[hIdx];
                       if (!household) return null;
                       const isSelected = selectedIdsForPrint.includes(household.id);
-                      const enabledCols = listColumns.filter((c) => c.enabled && c.key !== 'yago');
+                      const enabledCols = listColumns.filter((c) => c.enabled && c.key !== 'yago' && (c.key !== 'checks' || availableCheckSlots.length > 0));
                       const stickyCellBg = isSelected
                         ? 'bg-[#FEF9EE] group-hover:bg-[#FDF3D8]'
                         : 'bg-white group-hover:bg-[#F9F7F2]';
@@ -2585,6 +2603,19 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                                   {getHouseholdSponsorTobaApplication(household, activeTobaType, temples.find((t) => (t.id || 'temple-main') === (household.templeId || 'temple-main')) || currentActiveTemple).tamegaki || '-'}
                                 </td>
                               );
+                            case 'checks': {
+                              const rowTemple = temples.find(t => (t.id || 'temple-main') === (household.templeId || 'temple-main')) || currentActiveTemple;
+                              const label = getCheckSlots(rowTemple).find(s => s.slot === activeCheckSlot)?.name;
+                              const checked = household[checkKey(activeCheckSlot)] === true;
+                              return <td key="checks" className="px-2 py-2 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                                {label ? <button type="button" aria-pressed={checked} title={label} aria-label={`${label}：${checked ? 'on' : 'off'}`}
+                                  onClick={() => onEditHousehold({...household, [checkKey(activeCheckSlot)]: !checked})}
+                                  className={`px-2 py-1 text-xs font-sans font-bold border cursor-pointer ${checked ? 'bg-[#1A1A1A] text-[#D4AF37] border-[#D4AF37]' : 'bg-white text-[#888888] border-[#D1CEC7]'}`}>
+                                  {checked ? '✓ on' : '＋ off'}
+                                  {activeTempleId === 'ALL' && <span className="block text-[10px]">{label}</span>}
+                                </button> : '—'}
+                              </td>;
+                            }
                             case 'fee':
                               return (
                                 <td key="fee" className="px-1.5 py-2 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -2672,7 +2703,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                   {householdBottomSpacerHeight > 0 && (
                     <tr style={{ height: `${householdBottomSpacerHeight}px` }} aria-hidden="true">
                       <td
-                        colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago').length + 3}
+                        colSpan={listColumns.filter((c) => c.enabled && c.key !== 'yago' && (c.key !== 'checks' || availableCheckSlots.length > 0)).length + 3}
                         style={{ height: `${householdBottomSpacerHeight}px`, padding: 0, border: 0 }}
                       />
                     </tr>
@@ -3139,6 +3170,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       </div>
 
                       {/* 個別集金・徴収費（設定がある場合のみ表示） */}
+                      <HouseholdChecks<Household> household={inlineHouseholdForm} temple={individualHouseholdTemple} onChange={setInlineHouseholdForm} />
                       {individualFeeSlots.length > 0 && (
                         <div className="space-y-2 pt-1">
                           <div className="flex items-center justify-between">
@@ -3359,6 +3391,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       </div>
 
                       {/* 個別集金・徴収費 表示（設定がある場合のみ表示） */}
+                      <HouseholdChecks household={currentIndividualHousehold} temple={individualHouseholdTemple} onChange={h => onEditHousehold(h)} />
                       {individualFeeSlots.length > 0 && (
                         <div className="space-y-1.5 pt-1 border-t border-[#EBE7DF]">
                           <div className="flex items-center justify-between">
@@ -5459,6 +5492,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
       {/* 受付票印刷モーダル (五十音順2列・手書き記入欄・新盆/棚経朱文字印字・塔婆為書き選択) */}
       <HouseholdReceptionSheetPrintModal
+        temples={temples}
         isOpen={isReceptionSheetModalOpen}
         onClose={() => setIsReceptionSheetModalOpen(false)}
         households={households}

@@ -1,3 +1,4 @@
+import { CHECK_SLOTS, CHECK_HEADERS, CHECK_LABEL_HEADERS, checkKey, checkLabelKey, readHouseholdChecks, readCheckLabels } from '../utils/householdChecks';
 import { createSyncYield } from '../utils/syncResponsiveness';
 import { waitForSheetsQuota, recordSheetsQuota } from '../utils/sheetsQuota';
 import { RESERVATION_DETAILS_HEADER, serializeReservationDetails, parseReservationDetails } from '../utils/reservationSheetDetails';
@@ -1281,7 +1282,8 @@ export async function exportToSheets(
     '年間行事特記',
     'テーマカラー',
     '更新日時',
-    '作成日時'
+    '作成日時',
+    ...CHECK_LABEL_HEADERS
   ];
 
   const exportTemplesList = isIndividualExport ? [currentSingleTemple] : allTemples;
@@ -1319,7 +1321,8 @@ export async function exportToSheets(
     t.annualEventsNotes || '',
     t.color || '#D4AF37',
     t.updatedAt || t.updatedDate || '',
-    t.createdAt || t.createdDate || ''
+    t.createdAt || t.createdDate || '',
+    ...CHECK_SLOTS.map(n => t[checkLabelKey(n)] || '')
   ]);
 
   // 2. Temple Basic Info (寺院基本情報)
@@ -1359,7 +1362,8 @@ export async function exportToSheets(
     ['修正日', baseT.updatedDate || ''],
     ['修正時間', baseT.updatedTime || ''],
     ['出力寺院数', String(exportTemplesList.length)],
-    ['最終出力日時', new Date().toLocaleString('ja-JP')]
+    ['最終出力日時', new Date().toLocaleString('ja-JP')],
+    ...CHECK_SLOTS.map((n, i) => [CHECK_LABEL_HEADERS[i], baseT[checkLabelKey(n)] || '']),
   ];
 
   // 3. Household Sheet Rows (檀家名簿) - Unified with Excel
@@ -1402,7 +1406,8 @@ export async function exportToSheets(
     '修正時間',
     '所属寺院ID',
     '登録日時',
-    '屋号'
+    '屋号',
+    ...CHECK_HEADERS
   ];
 
   const householdRows = filteredHouseholds.map((h) => {
@@ -1460,7 +1465,8 @@ export async function exportToSheets(
       uTime,
       getTempleId(h.templeId),
       h.createdAt || cDate,
-      h.yago?.trim() || ''
+      h.yago?.trim() || '',
+      ...CHECK_SLOTS.map(n => h[checkKey(n)] === true ? 'TRUE' : 'FALSE')
     ];
   });
 
@@ -2383,6 +2389,7 @@ async function importFromSheetsCore(
         feeType3,
         feeType3Category,
         feeType3DefaultAmount,
+        ...readCheckLabels(templeHeaders, row),
         annualEventsNotes,
         color: String((colorIdx !== -1 ? row[colorIdx] : row[12]) || (isMain ? '#D4AF37' : '#1F4E79')).trim(),
         updatedAt,
@@ -2459,6 +2466,7 @@ async function importFromSheetsCore(
         feeType3: fee3 || undefined,
         feeType3Category: fee3Cat || undefined,
         feeType3DefaultAmount: fee3Amt,
+      ...readCheckLabels(CHECK_LABEL_HEADERS, CHECK_LABEL_HEADERS.map(h => map.get(h))),
         annualEventsNotes: evNotes || undefined,
         updatedAt: uAt || undefined,
         updatedDate: uDate || undefined,
@@ -2845,6 +2853,7 @@ async function importFromSheetsCore(
         id: householdId,
         templeId,
         familyHead,
+        ...readHouseholdChecks(householdHeaders, row),
         yago: yagoIdx >= 0 ? String(row[yagoIdx] || '').trim() : '',
         furigana,
         postalCode,
