@@ -1,3 +1,4 @@
+import { CHECK_SLOTS, CHECK_HEADERS, CHECK_LABEL_HEADERS, checkKey, checkLabelKey, readHouseholdChecks, readCheckLabels } from './householdChecks';
 import { sortTableGrid } from './tableSort';
 import { parseNoticeTemplatePaperType, formatNoticeTemplatePaperType } from './noticeTemplateUtils';
 import { isDanmuPriest, parseDanmuFlag, shouldRegisterChiefPriest } from './priestColorUtils';
@@ -174,7 +175,8 @@ export function exportToExcel(
     '集金項目３基準金額',
     '年間行事特記',
     'テーマカラー',
-    '更新日時'
+    '更新日時',
+    ...CHECK_LABEL_HEADERS
   ];
 
   const exportTemplesList = isIndividualExport && selectedTemple
@@ -214,7 +216,8 @@ export function exportToExcel(
     t.feeType3DefaultAmount !== undefined ? t.feeType3DefaultAmount : '',
     t.annualEventsNotes || '',
     t.color || '#D4AF37',
-    t.updatedAt || t.updatedDate || ''
+    t.updatedAt || t.updatedDate || '',
+    ...CHECK_SLOTS.map(n => t[checkLabelKey(n)] || '')
   ]);
   const wsTemples = XLSX.utils.aoa_to_sheet([templeHeaders, ...templeRows]);
   XLSX.utils.book_append_sheet(wb, wsTemples, isIndividualExport ? '寺院情報' : '寺院一覧（本寺・兼務）');
@@ -259,7 +262,8 @@ export function exportToExcel(
     '修正時間',
     '所属寺院ID',
     '登録日時',
-    '屋号'
+    '屋号',
+    ...CHECK_HEADERS
   ];
   const householdRows = filteredHouseholds.map((h) => {
     const [cDate, cTime, uDate, uTime] = getAuditRowValues(h);
@@ -305,6 +309,7 @@ export function exportToExcel(
       getTempleId(h.templeId),
       h.createdAt || cDate,
       h.yago?.trim() || '',
+      ...CHECK_SLOTS.map(n => h[checkKey(n)] === true ? 'TRUE' : 'FALSE'),
     ];
   });
   const wsHouseholds = XLSX.utils.aoa_to_sheet(sortTableGrid('檀家名簿', [householdHeaders, ...householdRows]));
@@ -1129,6 +1134,7 @@ export async function importFromExcel(
         feeType3,
         feeType3Category,
         feeType3DefaultAmount,
+        ...readCheckLabels(templeHeaders, row),
         annualEventsNotes,
         color,
         isMain,
@@ -1211,6 +1217,7 @@ export async function importFromExcel(
       feeType3: fee3Name || undefined,
       feeType3Category: fee3Category || undefined,
       feeType3DefaultAmount: fee3Amount,
+      ...readCheckLabels(CHECK_LABEL_HEADERS, CHECK_LABEL_HEADERS.map(h => infoMap.get(h))),
       annualEventsNotes: annualNotes,
       isMain: true,
       color: '#D4AF37',
@@ -1515,6 +1522,7 @@ export async function importFromExcel(
         id: householdId,
         templeId,
         familyHead: familyHead || '氏名未設定',
+        ...readHouseholdChecks(householdHeaders, row),
         yago: yagoIdx >= 0 ? String(row[yagoIdx] || '').trim() : '',
         furigana,
         postalCode,

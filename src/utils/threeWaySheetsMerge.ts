@@ -75,6 +75,8 @@ export const mergeTableLabels: Record<string, string> = {
 };
 const fields: Record<string, string> = {
   ...Object.assign({}, ...Object.values(FIELD_LABELS)),
+  check1: 'チェック項目1', check2: 'チェック項目2', check3: 'チェック項目3',
+  checkLabel1: 'チェック項目1名称', checkLabel2: 'チェック項目2名称', checkLabel3: 'チェック項目3名称',
   yago: '屋号', familyHead: '世帯主', name: '氏名', address: '住所', phone: '電話番号', mobile: '携帯番号',
   furigana: 'ふりがな', tombNumber: '墓地番号', notes: '備考', description: '摘要',
   date: '日付', amount: '金額', type: '収支', category: '科目', paymentMethod: '支払方法',

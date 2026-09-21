@@ -1,3 +1,4 @@
+import { CHECK_HEADERS, CHECK_LABEL_HEADERS } from './householdChecks';
 import { createSyncYield } from './syncResponsiveness';
 import { RESERVATION_DETAILS_HEADER } from './reservationSheetDetails';
 import { PURGE_LEDGER, readPurgeLedger, RECORD_KINDS } from './purgeLedger';
@@ -97,13 +98,18 @@ function* rowSyncPlanSteps(
     let businessHeaders = oldHeaders.filter(h => !ROW_META.includes(h));
     // Explicitly supported atomic schema extensions. Existing tombstones and
     // row IDs are carried forward; all other schema changes still fail closed.
-    const addedHeader = name === '法事予約' ? RESERVATION_DETAILS_HEADER : name === '檀家名簿' ? '屋号' : undefined;
-    const extendSchema = !!addedHeader && headers.at(-1) === addedHeader &&
-      businessHeaders.length > 0 && !changed(businessHeaders, headers.slice(0, -1));
+    const supportedTail = name === '法事予約' ? [RESERVATION_DETAILS_HEADER]
+      : name === '檀家名簿' ? ['屋号', ...CHECK_HEADERS]
+      : name === '寺院一覧（本寺・兼務）' || name === '寺院情報' ? CHECK_LABEL_HEADERS : [];
+    const addedHeaders = headers.slice(businessHeaders.length);
+    const extendSchema = businessHeaders.length > 0 && addedHeaders.length > 0 &&
+      !changed(businessHeaders, headers.slice(0, businessHeaders.length)) &&
+      addedHeaders.length <= supportedTail.length &&
+      (!changed(addedHeaders, supportedTail.slice(-addedHeaders.length)) || name === '檀家名簿' && !changed(addedHeaders, ['屋号']));
     if (extendSchema) {
       const meta = ROW_META.map(h => oldHeaders.indexOf(h));
       if (meta.some(i => i >= 0) && meta.some((i, n) => i !== businessHeaders.length + n)) throw new Error('管理列が不完全です: ' + title);
-      raw = raw.map((row, index) => [...businessHeaders.map((_, c) => row[c] ?? ''), index === 0 ? addedHeader : '', ...row.slice(businessHeaders.length)]);
+      raw = raw.map((row, index) => [...businessHeaders.map((_, c) => row[c] ?? ''), ...addedHeaders.map(h => index === 0 ? h : ''), ...row.slice(businessHeaders.length)]);
       oldHeaders = raw[0].map(cell);
       businessHeaders = oldHeaders.filter(h => !ROW_META.includes(h));
     }

@@ -1,3 +1,4 @@
+import { HouseholdChecks } from '../HouseholdChecks';
 import React, { useState, useEffect, useRef } from 'react';
 import { Household, MasterOptions, TempleProfile, TempleInfo, FamilyMember } from '../../types';
 import { X, Save, Trash2, Plus, Phone, MapPin, Building2, User, ScrollText, Coins, ChevronDown, ChevronUp, Check, Sparkles } from 'lucide-react';
@@ -501,6 +502,7 @@ export const MobileHouseholdModal: React.FC<MobileHouseholdModalProps> = ({
             </div>
           </div>
 
+              <HouseholdChecks household={formData} temple={currentTemple} onChange={setFormData} />
           {/* 集金項目設定（護持会費・墓地管理費・境内整備費等） */}
           <div className="p-3 bg-emerald-50/70 border border-emerald-300 rounded-xs shadow-2xs space-y-2.5">
             <div className="flex items-center justify-between border-b border-emerald-200 pb-1.5">

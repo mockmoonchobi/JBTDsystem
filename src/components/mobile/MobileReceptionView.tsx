@@ -1,3 +1,4 @@
+import { checkedLabels } from '../../utils/householdChecks';
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
@@ -577,6 +578,9 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
               <h2 className="text-xl font-bold text-white tracking-wide">
                 {getHouseholdSponsorInfo(selectedHousehold).sponsorName || selectedHousehold.familyHead} 殿
               </h2>
+              <div className="flex flex-wrap justify-center gap-2 my-2">
+                {checkedLabels(selectedHousehold, selectedTemple).map((label, i) => <span key={i} className="border border-amber-700 bg-amber-50 text-amber-950 px-2 py-1 text-sm font-bold">{label}</span>)}
+              </div>
               {selectedHousehold.furigana && (
                 <p className="text-xs text-[#D4AF37] font-sans">
                   {selectedHousehold.furigana}
