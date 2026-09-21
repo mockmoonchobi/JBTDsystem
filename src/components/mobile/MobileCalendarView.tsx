@@ -18,11 +18,9 @@ import {
   Layers,
   Trash2,
   AlertTriangle,
-  X,
-  Printer
+  X
 } from 'lucide-react';
 import { MobileServiceModal } from './MobileServiceModal';
-import { DaySchedulePrintModal } from '../DaySchedulePrintModal';
 import { getTodayDateString, getGoogleMapsSearchUrl, getRokuyo, generateGoogleCalendarUrl } from '../../utils/calendarUtils';
 import { extractServiceTobaLines } from '../ReservationCalendarManager';
 
@@ -70,7 +68,6 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
   const [editingService, setEditingService] = useState<MemorialService | null>(null);
   const [modalInitialDate, setModalInitialDate] = useState<string>(todayStr);
   const [deleteConfirmService, setDeleteConfirmService] = useState<MemorialService | null>(null);
-  const [showDaySchedulePrintModal, setShowDaySchedulePrintModal] = useState<boolean>(false);
 
   // 削除確定実行ハンドラ（確認ダイアログ内の「削除する」ボタン1回で即座に実行）
   const handleExecuteDeleteService = () => {
@@ -348,15 +345,6 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowDaySchedulePrintModal(true)}
-                  className="px-2 py-1 bg-[#FAF8F5] text-[#1A1A1A] border border-[#B89F67] hover:bg-[#D4AF37] font-bold text-xs rounded-xs transition-colors flex items-center gap-1 cursor-pointer"
-                  title="この日の予定を印刷"
-                >
-                  <Printer className="w-3.5 h-3.5 text-[#8C2D19]" />
-                  <span>予定印刷</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleAddNew(selectedDate)}
                   className="text-xs sm:text-sm font-bold text-[#D4AF37] hover:underline flex items-center gap-1 cursor-pointer"
                 >
@@ -443,17 +431,6 @@ export const MobileCalendarView: React.FC<MobileCalendarViewProps> = ({
         onSaveTodo={onSaveTodo}
         onDelete={onDeleteService}
         initialDate={modalInitialDate}
-      />
-
-      {/* Day Schedule Vertical Print Modal */}
-      <DaySchedulePrintModal
-        isOpen={showDaySchedulePrintModal}
-        onClose={() => setShowDaySchedulePrintModal(false)}
-        targetDateStr={selectedDate}
-        services={memorialServices}
-        pastRecords={pastRecords}
-        households={households}
-        templeTodos={templeTodos}
       />
 
       {/* 予定・法要 削除確認ダイアログ */}
