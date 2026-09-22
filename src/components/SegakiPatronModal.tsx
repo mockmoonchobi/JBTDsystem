@@ -1,3 +1,4 @@
+import { TobaReadingPrint } from './TobaReadingPrint';
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { X, Printer, Search, Download, LayoutGrid, Table, FileText, Info, Layers } from 'lucide-react';
@@ -91,7 +92,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
   const [selectedTobaType, setSelectedTobaType] = useState<string>(initialTobaType || availableTobaTypes[0] || '施餓鬼塔婆');
   const [searchTerm, setSearchTerm] = useState('');
   const [districtFilter, setDistrictFilter] = useState('ALL');
-  const [viewMode, setViewMode] = useState<'twocolumn' | 'table'>('twocolumn');
+  const [viewMode, setViewMode] = useState<'twocolumn' | 'table' | 'reading'>('twocolumn');
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [showUnderline, setShowUnderline] = useState(true);
   const [showFuriganaRuby, setShowFuriganaRuby] = useState(true);
@@ -310,7 +311,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
       <style>{`
         @media print {
           @page {
-            size: A4 ${printOrientation};
+            size: A3 ${printOrientation};
             margin: 8mm 8mm 8mm 8mm;
           }
           html, body {
@@ -430,6 +431,11 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                 <Table className="w-3.5 h-3.5" />
                 <span>詳細一覧表</span>
               </button>
+              <button onClick={() => { setViewMode('reading'); setPrintOrientation('landscape'); }}
+                className={`px-2.5 py-1 text-xs font-bold transition-colors flex items-center space-x-1 ${viewMode === 'reading' ? 'bg-[#D4AF37] text-[#1A1A1A]' : 'text-[#CCCCCC] hover:text-white'}`}
+                title="氏名と為書きだけの縦書き・読上用一覧">
+                <FileText className="w-3.5 h-3.5" /><span>読上用</span>
+              </button>
             </div>
 
             <button
@@ -514,9 +520,9 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       ? 'bg-[#1A1A1A] text-[#D4AF37]'
                       : 'text-[#666666] hover:text-[#1A1A1A]'
                   }`}
-                  title="A4 縦向き印刷"
+                  title="A3 縦向き印刷"
                 >
-                  A4 縦
+                  A3 縦
                 </button>
                 <button
                   type="button"
@@ -526,9 +532,9 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       ? 'bg-[#1A1A1A] text-[#D4AF37]'
                       : 'text-[#666666] hover:text-[#1A1A1A]'
                   }`}
-                  title="A4 横向き印刷"
+                  title="A3 横向き印刷"
                 >
-                  A4 横
+                  A3 横
                 </button>
               </div>
             </div>
@@ -558,6 +564,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-3 text-xs">
+            {viewMode === 'reading' && <span className="text-[#666666]">上段の右から左、続いて下段の右から左へ読みます</span>}
             <div className="flex items-center space-x-1">
               <span className="text-[#666666]">施主総数:</span>
               <strong className="text-[#1A1A1A] font-mono text-sm">{filteredPatrons.length}</strong>
@@ -569,7 +576,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
         {/* Printable & Scrollable Content Area */}
         <div className="p-4 sm:p-6 md:p-8 overflow-y-auto flex-1 bg-white print:p-0 print:overflow-visible print:m-0" id="segaki-patron-print-area">
           {/* Printable Header */}
-          <div className="mb-3 pb-2 border-b-2 border-[#1A1A1A] flex items-end justify-between segaki-row-header">
+          <div className={`${viewMode === 'reading' ? 'hidden' : ''} mb-3 pb-2 border-b-2 border-[#1A1A1A] flex items-end justify-between segaki-row-header`}>
             <div>
               <div className="text-[11px] print:text-[10px] text-[#666666] font-serif mb-0.5 tracking-wider">
                 {templeName} 施餓鬼会・盂蘭盆会 回向帳票
@@ -595,6 +602,8 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                 ※檀家名簿の世帯主または家族構成の「施餓鬼塔婆」にチェックを入れて為書きを設定してください。
               </p>
             </div>
+          ) : viewMode === 'reading' ? (
+            <TobaReadingPrint patrons={filteredPatrons} orientation={printOrientation} />
           ) : viewMode === 'twocolumn' ? (
             /* 2-Column List View (2段組・五十音順・前揃え振仮名・為書き対応) */
             <div className="space-y-4 print:space-y-3">
@@ -784,7 +793,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
           )}
 
           {/* Print Footer note */}
-          <div className="mt-4 pt-1.5 border-t border-[#D1CEC7] flex justify-between items-center text-[9px] text-[#888888] font-serif">
+          <div className={`${viewMode === 'reading' ? 'hidden' : ''} mt-4 pt-1.5 border-t border-[#D1CEC7] flex justify-between items-center text-[9px] text-[#888888] font-serif`}>
             <div>※本一覧は檀家名簿の施餓鬼塔婆チェック（世帯主・家族構成）より五十音順に自動抽出・マージされたものです。</div>
             <div>頁印字 / 施餓鬼会・盂蘭盆会 塔婆筆耕・受付照合用</div>
           </div>
@@ -793,7 +802,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
         {/* Footer - Screen only */}
         <div className="bg-[#F9F7F2] px-4 sm:px-6 py-3 border-t border-[#D1CEC7] flex flex-wrap items-center justify-between gap-2 text-xs font-sans shrink-0 print:hidden">
           <span className="text-[#666666]">
-            ※「印刷する」ボタンを押すと、A4用紙（縦または横）に最適化されて出力されます。
+            ※「印刷する」ボタンを押すと、A3用紙（縦または横）に最適化されて出力されます。
           </span>
           <button
             onClick={onClose}
@@ -808,3 +817,4 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
 
   return ReactDOM.createPortal(modalContent, document.body);
 };
+
