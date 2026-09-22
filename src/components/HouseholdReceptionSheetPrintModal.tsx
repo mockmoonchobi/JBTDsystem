@@ -158,7 +158,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
     return options;
   }, [templeInfo]);
 
-  // Formats common amount string (e.g. "3000" -> "3,000円", "３０００円" -> "3,000円")
+  // Formats common amount string without "円" (e.g. "3000" -> "3,000", "３０００円" -> "3,000")
   const formatCommonAmount = (amountStr: string): string => {
     if (!amountStr || !amountStr.trim()) return '';
     const trimmed = amountStr.trim();
@@ -166,18 +166,18 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
     const normalized = trimmed.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
     const numOnly = parseInt(normalized.replace(/[^0-9]/g, ''), 10);
     if (!isNaN(numOnly) && numOnly > 0) {
-      return `${numOnly.toLocaleString()}円`;
+      return numOnly.toLocaleString();
     }
-    return trimmed;
+    return trimmed.replace(/円/g, '').trim();
   };
 
-  // Helper to retrieve fee amount for a given column label if assigned to a fee slot or common amount
+  // Helper to retrieve fee amount for a given column label without "円"
   const getColFeeDisplay = (h: Household, colLabel: string, colCommonAmount?: string): string => {
     if (!colLabel || !colLabel.trim()) return '';
     const trimmed = colLabel.trim();
     const amount = getHouseholdFeeAmount(h, trimmed, templeInfo);
     if (amount !== undefined && amount !== null && amount > 0) {
-      return `${amount.toLocaleString()}円`;
+      return amount.toLocaleString();
     }
     if (colCommonAmount && colCommonAmount.trim()) {
       return formatCommonAmount(colCommonAmount);
@@ -502,8 +502,10 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
           .reception-patron-item .reception-tamegaki {
             font-size: calc(9.5px * var(--font-scale, 1)) !important;
           }
-          .reception-patron-item .reception-col-amount {
-            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          /* 金額: 8.5px × 1.3 = 11.05px */
+          .reception-patron-item .reception-col-amount,
+          .reception-print-table .reception-col-amount {
+            font-size: calc(11.05px * var(--font-scale, 1)) !important;
           }
           .reception-patron-item .reception-badge {
             font-size: calc(8.5px * var(--font-scale, 1)) !important;
@@ -539,8 +541,10 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
         .reception-patron-item .reception-tamegaki {
           font-size: calc(11px * var(--font-scale, 1)) !important;
         }
-        .reception-patron-item .reception-col-amount {
-          font-size: calc(10px * var(--font-scale, 1)) !important;
+        /* 金額: 10px × 1.3 = 13px */
+        .reception-patron-item .reception-col-amount,
+        .reception-print-table .reception-col-amount {
+          font-size: calc(13px * var(--font-scale, 1)) !important;
         }
         .reception-patron-item .reception-badge {
           font-size: calc(9.5px * var(--font-scale, 1)) !important;
@@ -1117,7 +1121,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 1 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f1Display ? (
-                                    <span className="reception-col-amount text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
+                                    <span className="reception-col-amount font-mono font-bold text-stone-900 leading-tight mb-0.5 max-w-full text-center truncate">
                                       {f1Display}
                                     </span>
                                   ) : (
@@ -1131,7 +1135,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 2 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f2Display ? (
-                                    <span className="reception-col-amount text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
+                                    <span className="reception-col-amount font-mono font-bold text-stone-900 leading-tight mb-0.5 max-w-full text-center truncate">
                                       {f2Display}
                                     </span>
                                   ) : (
@@ -1145,7 +1149,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 3 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f3Display ? (
-                                    <span className="reception-col-amount text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
+                                    <span className="reception-col-amount font-mono font-bold text-stone-900 leading-tight mb-0.5 max-w-full text-center truncate">
                                       {f3Display}
                                     </span>
                                   ) : (
@@ -1264,7 +1268,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f1Display ? (
-                              <span className="reception-table-text text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="reception-col-amount font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f1Display}
                               </span>
                             ) : (
@@ -1280,7 +1284,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f2Display ? (
-                              <span className="reception-table-text text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="reception-col-amount font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f2Display}
                               </span>
                             ) : (
@@ -1296,7 +1300,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f3Display ? (
-                              <span className="reception-table-text text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="reception-col-amount font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f3Display}
                               </span>
                             ) : (
