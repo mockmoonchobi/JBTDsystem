@@ -1,4 +1,5 @@
 import { checkedLabels } from '../utils/householdChecks';
+import { PrintFontSizeControl } from './PrintFontSizeControl';
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer, Search, ClipboardCheck, LayoutGrid, Table, Edit3, Coins } from 'lucide-react';
@@ -109,6 +110,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [showUnderline, setShowUnderline] = useState<boolean>(true);
   const [showFuriganaRuby, setShowFuriganaRuby] = useState<boolean>(true);
+  const [fontScale, setFontScale] = useState<number>(1.0);
 
   // Selected Toba Slot for Display and Column 1 Label
   const [selectedTobaSlot, setSelectedTobaSlot] = useState<'none' | 'slot1' | 'slot2' | 'slot3' | 'all'>('slot1');
@@ -491,10 +493,82 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
             overflow-wrap: break-word !important;
             box-sizing: border-box !important;
           }
+          .reception-patron-item .reception-sponsor-name {
+            font-size: calc(18.75px * var(--font-scale, 1)) !important;
+          }
+          .reception-patron-item .reception-furigana {
+            font-size: calc(10.4px * var(--font-scale, 1)) !important;
+          }
+          .reception-patron-item .reception-tamegaki {
+            font-size: calc(9.5px * var(--font-scale, 1)) !important;
+          }
+          .reception-patron-item .reception-col-amount {
+            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          }
+          .reception-patron-item .reception-badge {
+            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          }
+          .reception-patron-item .reception-meta {
+            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          }
+          .reception-print-table th {
+            font-size: calc(10px * var(--font-scale, 1)) !important;
+          }
+          .reception-print-table td .reception-table-sponsor {
+            font-size: calc(16.5px * var(--font-scale, 1)) !important;
+          }
+          .reception-print-table td .reception-table-furigana {
+            font-size: calc(10.4px * var(--font-scale, 1)) !important;
+          }
+          .reception-print-table td .reception-table-text {
+            font-size: calc(10px * var(--font-scale, 1)) !important;
+          }
+          .reception-print-table td .reception-table-meta {
+            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          }
+        }
+        .reception-print-container {
+          --font-scale: ${fontScale};
+        }
+        .reception-patron-item .reception-sponsor-name {
+          font-size: calc(21px * var(--font-scale, 1)) !important;
+        }
+        .reception-patron-item .reception-furigana {
+          font-size: calc(11.7px * var(--font-scale, 1)) !important;
+        }
+        .reception-patron-item .reception-tamegaki {
+          font-size: calc(11px * var(--font-scale, 1)) !important;
+        }
+        .reception-patron-item .reception-col-amount {
+          font-size: calc(10px * var(--font-scale, 1)) !important;
+        }
+        .reception-patron-item .reception-badge {
+          font-size: calc(9.5px * var(--font-scale, 1)) !important;
+        }
+        .reception-patron-item .reception-meta {
+          font-size: calc(10px * var(--font-scale, 1)) !important;
+        }
+        .reception-print-table th {
+          font-size: calc(12px * var(--font-scale, 1)) !important;
+        }
+        .reception-print-table td .reception-table-sponsor {
+          font-size: calc(18px * var(--font-scale, 1)) !important;
+        }
+        .reception-print-table td .reception-table-furigana {
+          font-size: calc(11.7px * var(--font-scale, 1)) !important;
+        }
+        .reception-print-table td .reception-table-text {
+          font-size: calc(12px * var(--font-scale, 1)) !important;
+        }
+        .reception-print-table td .reception-table-meta {
+          font-size: calc(10px * var(--font-scale, 1)) !important;
         }
       `}</style>
 
-      <div className="bg-white border border-[#D1CEC7] shadow-2xl w-full max-w-6xl flex flex-col max-h-[95vh] overflow-hidden print:max-h-none print:shadow-none print:border-none print:w-full print:m-0 print:overflow-visible reception-print-container">
+      <div
+        style={{ '--font-scale': fontScale } as React.CSSProperties}
+        className="bg-white border border-[#D1CEC7] shadow-2xl w-full max-w-6xl flex flex-col max-h-[95vh] overflow-hidden print:max-h-none print:shadow-none print:border-none print:w-full print:m-0 print:overflow-visible reception-print-container"
+      >
         {/* Top Navigation Bar - Screen only */}
         <div className="bg-[#1A1A1A] px-4 sm:px-6 py-3.5 border-b border-[#D4AF37] flex flex-wrap items-center justify-between gap-3 text-[#F9F7F2] shrink-0 print:hidden">
           <div className="flex items-center space-x-3">
@@ -685,6 +759,13 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                 </button>
               </div>
             </div>
+
+            {/* Font Size Control */}
+            <PrintFontSizeControl
+              scale={fontScale}
+              onChange={setFontScale}
+              className="border-l border-[#D1CEC7] pl-3"
+            />
 
             {/* Badges Toggles */}
             <div className="flex items-center space-x-2.5 border-l border-[#D1CEC7] pl-3">
@@ -964,12 +1045,12 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                             {/* Name + Furigana Left Aligned (前揃え) */}
                             <div className="inline-flex flex-col items-start leading-tight shrink-0">
                               {showFuriganaRuby && item.furigana ? (
-                                <span className="text-[11.7px] print:text-[10.4px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
+                                <span className="reception-furigana text-[11.7px] print:text-[10.4px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
                                   {item.furigana}
                                 </span>
                               ) : null}
                               <div className="flex items-baseline space-x-0.5">
-                                <span className="font-serif font-bold text-[21px] sm:text-[21px] print:text-[18.75px] text-[#1A1A1A] tracking-wide">
+                                <span className="reception-sponsor-name font-serif font-bold text-[21px] sm:text-[21px] print:text-[18.75px] text-[#1A1A1A] tracking-wide">
                                   {item.sponsorName}
                                 </span>
                                 <span className="text-xs print:text-[10px] text-[#444444] font-serif">様</span>
@@ -978,48 +1059,48 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
 
                             {/* Household head notation when different */}
                             {!item.isFamilyHead && item.householdHead && (
-                              <span className="text-[10px] print:text-[8.5px] text-[#777777] font-sans whitespace-nowrap">
+                              <span className="reception-meta text-[10px] print:text-[8.5px] text-[#777777] font-sans whitespace-nowrap">
                                 （世帯主: {item.householdHead} 方）
                               </span>
                             )}
 
                             {/* Hatsubon Badge */}
                             {showHatsubonBadge && item.isHatsubon && (
-                              <span className="inline-block text-[9px] print:text-[8px] font-bold text-red-600 border border-red-600 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
+                              <span className="reception-badge inline-block text-[9px] print:text-[8px] font-bold text-red-600 border border-red-600 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
                                 新盆
                               </span>
                             )}
 
                             {/* Tanagyo Badge */}
                             {showTanagyoBadge && item.isTanagyo && (
-                              <span className="inline-block text-[9px] print:text-[8px] font-bold text-blue-700 border border-blue-700 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
+                              <span className="reception-badge inline-block text-[9px] print:text-[8px] font-bold text-blue-700 border border-blue-700 px-1 py-0 leading-tight rounded-[1px] tracking-tighter font-sans shrink-0">
                                 棚経
                               </span>
                             )}
 
                             {/* 為書き (Tamegaki) */}
                             {showTamegaki && item.tamegakiList.length > 0 ? (
-                              <span className="font-serif font-bold text-[11px] print:text-[9.5px] text-amber-950 print:text-black bg-amber-50 print:bg-transparent border border-amber-300 print:border-black/40 px-1 py-0.2 print:px-1 print:py-0 whitespace-nowrap shadow-2xs">
+                              <span className="reception-tamegaki font-serif font-bold text-[11px] print:text-[9.5px] text-amber-950 print:text-black bg-amber-50 print:bg-transparent border border-amber-300 print:border-black/40 px-1 py-0.2 print:px-1 print:py-0 whitespace-nowrap shadow-2xs">
                                 為 {item.tamegakiList.join(' / ')}
                               </span>
                             ) : null}
 
                             {/* Toba Applied Badge when no Tamegaki */}
                             {selectedTobaSlot !== 'none' && item.tobaApplied && (!showTamegaki || item.tamegakiList.length === 0) && (
-                              <span className="text-[9px] print:text-[8px] font-bold text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0 leading-tight rounded-[1px] shrink-0 font-sans">
+                              <span className="reception-badge text-[9px] print:text-[8px] font-bold text-amber-900 bg-amber-50 border border-amber-300 px-1 py-0 leading-tight rounded-[1px] shrink-0 font-sans">
                                 申込済
                               </span>
                             )}
 
-                            {item.checkLabels.map((label, i) => <span key={i} className="inline-block text-[10px] print:text-[9px] font-bold font-sans text-black border border-black px-1 leading-tight">{label}</span>)}
+                            {item.checkLabels.map((label, i) => <span key={i} className="reception-badge inline-block text-[10px] print:text-[9px] font-bold font-sans text-black border border-black px-1 leading-tight">{label}</span>)}
                             {/* Status Tag: 領収済 or 住所不明 */}
                             {item.isPaid && !item.checkLabels.includes('領収済') && (
-                              <span className="text-[9px] print:text-[8px] font-bold text-red-600 font-sans shrink-0">
+                              <span className="reception-badge text-[9px] print:text-[8px] font-bold text-red-600 font-sans shrink-0">
                                 領収済
                               </span>
                             )}
                             {item.isUnknown && (
-                              <span className="text-[9px] print:text-[8px] font-bold text-red-700 font-sans shrink-0">
+                              <span className="reception-badge text-[9px] print:text-[8px] font-bold text-red-700 font-sans shrink-0">
                                 住所不明
                               </span>
                             )}
@@ -1036,7 +1117,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 1 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f1Display ? (
-                                    <span className="text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
+                                    <span className="reception-col-amount text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
                                       {f1Display}
                                     </span>
                                   ) : (
@@ -1050,7 +1131,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 2 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f2Display ? (
-                                    <span className="text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
+                                    <span className="reception-col-amount text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
                                       {f2Display}
                                     </span>
                                   ) : (
@@ -1064,7 +1145,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                                 {/* Column 3 Slot */}
                                 <div className="w-12 print:w-11 flex flex-col items-center justify-end min-h-[20px]">
                                   {f3Display ? (
-                                    <span className="text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
+                                    <span className="reception-col-amount text-[10px] print:text-[8.5px] font-mono font-bold text-stone-900 leading-none mb-0.5 truncate max-w-full text-center">
                                       {f3Display}
                                     </span>
                                   ) : (
@@ -1127,11 +1208,11 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         {/* 施主氏名 */}
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] break-words">
                           {item.furigana && (
-                            <div className="text-[11.7px] print:text-[10.4px] text-[#777777] font-sans leading-tight">
+                            <div className="reception-table-furigana text-[11.7px] print:text-[10.4px] text-[#777777] font-sans leading-tight">
                               {item.furigana}
                             </div>
                           )}
-                          <div className="font-bold text-[#1A1A1A] font-serif text-[18px] print:text-[16.5px] leading-tight">
+                          <div className="reception-table-sponsor font-bold text-[#1A1A1A] font-serif text-[18px] print:text-[16.5px] leading-tight">
                             {item.sponsorName} <span className="text-[10px] print:text-[9px] font-normal text-[#555555]">様</span>
                           </div>
                         </td>
@@ -1139,9 +1220,9 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         {/* 地区 / 世帯 */}
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center break-words">
                           <div className="text-xs print:text-[9.5px] leading-tight font-serif">
-                            <span className="font-bold text-[#2D2D2D]">{item.district}</span>
+                            <span className="reception-table-text font-bold text-[#2D2D2D]">{item.district}</span>
                             {!item.isFamilyHead && item.householdHead && (
-                              <div className="text-[9px] print:text-[8px] text-[#777777]">({item.householdHead} 方)</div>
+                              <div className="reception-table-meta text-[9px] print:text-[8px] text-[#777777]">({item.householdHead} 方)</div>
                             )}
                           </div>
                         </td>
@@ -1149,13 +1230,13 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         {/* 為書き */}
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] font-serif text-xs print:text-[10px] break-words">
                           {showTamegaki && item.tamegakiList.length > 0 ? (
-                            <span className="font-bold text-amber-950 print:text-black bg-amber-50 print:bg-transparent px-1 py-0.5 print:p-0 border border-amber-200 print:border-none inline-block">
+                            <span className="reception-table-text font-bold text-amber-950 print:text-black bg-amber-50 print:bg-transparent px-1 py-0.5 print:p-0 border border-amber-200 print:border-none inline-block">
                               為 {item.tamegakiList.join(' / ')}
                             </span>
                           ) : selectedTobaSlot !== 'none' && item.tobaApplied ? (
-                            <span className="text-amber-800 text-[10px]">申込有</span>
+                            <span className="reception-table-text text-amber-800 text-[10px]">申込有</span>
                           ) : (
-                            <span className="text-[#AAAAAA] text-[10px]">ー</span>
+                            <span className="reception-table-text text-[#AAAAAA] text-[10px]">ー</span>
                           )}
                         </td>
 
@@ -1163,16 +1244,16 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center break-words">
                           <div className="flex items-center justify-center gap-1 flex-wrap">
                             {showHatsubonBadge && item.isHatsubon && (
-                              <span className="bg-red-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[9px] print:text-[8px] font-bold tracking-wide font-sans">
+                              <span className="reception-table-meta bg-red-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[9px] print:text-[8px] font-bold tracking-wide font-sans">
                                 新盆
                               </span>
                             )}
                             {showTanagyoBadge && item.isTanagyo && (
-                              <span className="bg-blue-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[9px] print:text-[8px] font-bold tracking-wide font-sans">
+                              <span className="reception-table-meta bg-blue-700 text-white print:bg-black print:text-white px-1 py-0.2 text-[9px] print:text-[8px] font-bold tracking-wide font-sans">
                                 棚経
                               </span>
                             )}
-                            {item.checkLabels.map((label, i) => <span key={i} className="inline-block text-[10px] print:text-[9px] font-bold font-sans text-black border border-black px-1 leading-tight">{label}</span>)}
+                            {item.checkLabels.map((label, i) => <span key={i} className="reception-table-meta inline-block text-[10px] print:text-[9px] font-bold font-sans text-black border border-black px-1 leading-tight">{label}</span>)}
                             {!item.isHatsubon && !item.isTanagyo && item.checkLabels.length === 0 && (
                               <span className="text-[#AAAAAA] text-[10px]">ー</span>
                             )}
@@ -1183,7 +1264,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f1Display ? (
-                              <span className="text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="reception-table-text text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f1Display}
                               </span>
                             ) : (
@@ -1199,7 +1280,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f2Display ? (
-                              <span className="text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="reception-table-text text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f2Display}
                               </span>
                             ) : (
@@ -1215,7 +1296,7 @@ export const HouseholdReceptionSheetPrintModal: React.FC<HouseholdReceptionSheet
                         <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center align-bottom">
                           <div className="flex flex-col justify-end items-center min-h-[22px]">
                             {f3Display ? (
-                              <span className="text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
+                              <span className="reception-table-text text-xs print:text-[9.5px] font-mono font-bold text-stone-900 mb-0.5 leading-tight">
                                 {f3Display}
                               </span>
                             ) : (

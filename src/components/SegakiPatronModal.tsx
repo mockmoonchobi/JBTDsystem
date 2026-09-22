@@ -1,4 +1,5 @@
 import { TobaReadingPrint } from './TobaReadingPrint';
+import { PrintFontSizeControl } from './PrintFontSizeControl';
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { X, Printer, Search, Download, LayoutGrid, Table, FileText, Info, Layers } from 'lucide-react';
@@ -96,6 +97,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
   const [printOrientation, setPrintOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [showUnderline, setShowUnderline] = useState(true);
   const [showFuriganaRuby, setShowFuriganaRuby] = useState(true);
+  const [fontScale, setFontScale] = useState<number>(1.0);
 
   // Sync initial toba type if prop changes
   useEffect(() => {
@@ -381,10 +383,70 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
             overflow-wrap: break-word !important;
             box-sizing: border-box !important;
           }
+          .segaki-patron-item .segaki-person-name {
+            font-size: calc(12.5px * var(--font-scale, 1)) !important;
+          }
+          .segaki-patron-item .segaki-furigana {
+            font-size: calc(8px * var(--font-scale, 1)) !important;
+          }
+          .segaki-patron-item .segaki-tamegaki {
+            font-size: calc(9.5px * var(--font-scale, 1)) !important;
+          }
+          .segaki-patron-item .segaki-meta {
+            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          }
+          .segaki-print-table th {
+            font-size: calc(10px * var(--font-scale, 1)) !important;
+          }
+          .segaki-print-table td .segaki-table-person {
+            font-size: calc(11px * var(--font-scale, 1)) !important;
+          }
+          .segaki-print-table td .segaki-table-furigana {
+            font-size: calc(8px * var(--font-scale, 1)) !important;
+          }
+          .segaki-print-table td .segaki-table-text {
+            font-size: calc(10px * var(--font-scale, 1)) !important;
+          }
+          .segaki-print-table td .segaki-table-meta {
+            font-size: calc(8.5px * var(--font-scale, 1)) !important;
+          }
+        }
+        .segaki-print-container {
+          --font-scale: ${fontScale};
+        }
+        .segaki-patron-item .segaki-person-name {
+          font-size: calc(14px * var(--font-scale, 1)) !important;
+        }
+        .segaki-patron-item .segaki-furigana {
+          font-size: calc(9px * var(--font-scale, 1)) !important;
+        }
+        .segaki-patron-item .segaki-tamegaki {
+          font-size: calc(11px * var(--font-scale, 1)) !important;
+        }
+        .segaki-patron-item .segaki-meta {
+          font-size: calc(10px * var(--font-scale, 1)) !important;
+        }
+        .segaki-print-table th {
+          font-size: calc(12px * var(--font-scale, 1)) !important;
+        }
+        .segaki-print-table td .segaki-table-person {
+          font-size: calc(12px * var(--font-scale, 1)) !important;
+        }
+        .segaki-print-table td .segaki-table-furigana {
+          font-size: calc(9px * var(--font-scale, 1)) !important;
+        }
+        .segaki-print-table td .segaki-table-text {
+          font-size: calc(12px * var(--font-scale, 1)) !important;
+        }
+        .segaki-print-table td .segaki-table-meta {
+          font-size: calc(10px * var(--font-scale, 1)) !important;
         }
       `}</style>
 
-      <div className="bg-white border border-[#D1CEC7] shadow-2xl w-full max-w-6xl flex flex-col max-h-[95vh] overflow-hidden print:max-h-none print:shadow-none print:border-none print:w-full print:m-0 print:overflow-visible segaki-print-container">
+      <div
+        style={{ '--font-scale': fontScale } as React.CSSProperties}
+        className="bg-white border border-[#D1CEC7] shadow-2xl w-full max-w-6xl flex flex-col max-h-[95vh] overflow-hidden print:max-h-none print:shadow-none print:border-none print:w-full print:m-0 print:overflow-visible segaki-print-container"
+      >
         {/* Top Navigation Bar - Screen only */}
         <div className="bg-[#1A1A1A] px-4 sm:px-6 py-3.5 border-b border-[#D4AF37] flex flex-wrap items-center justify-between gap-3 text-[#F9F7F2] shrink-0 print:hidden">
           <div className="flex items-center space-x-3">
@@ -539,6 +601,13 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
               </div>
             </div>
 
+            {/* Font Size Control */}
+            <PrintFontSizeControl
+              scale={fontScale}
+              onChange={setFontScale}
+              className="border-l border-[#D1CEC7] pl-3"
+            />
+
             {viewMode === 'twocolumn' && (
               <div className="flex items-center space-x-3 text-xs text-[#444444] border-l border-[#D1CEC7] pl-3">
                 <label className="flex items-center space-x-1 cursor-pointer">
@@ -603,7 +672,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
               </p>
             </div>
           ) : viewMode === 'reading' ? (
-            <TobaReadingPrint patrons={filteredPatrons} orientation={printOrientation} />
+            <TobaReadingPrint patrons={filteredPatrons} orientation={printOrientation} fontScale={fontScale} />
           ) : viewMode === 'twocolumn' ? (
             /* 2-Column List View (2段組・五十音順・前揃え振仮名・為書き対応) */
             <div className="space-y-4 print:space-y-3">
@@ -635,12 +704,12 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                             {/* Name + Furigana Left Aligned (前揃え) */}
                             <div className="inline-flex flex-col items-start leading-tight shrink-0">
                               {showFuriganaRuby && patron.furigana ? (
-                                <span className="text-[9px] print:text-[8px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
+                                <span className="segaki-furigana text-[9px] print:text-[8px] text-[#666666] font-sans font-normal leading-none mb-0.5 select-none text-left tracking-normal">
                                   {patron.furigana}
                                 </span>
                               ) : null}
                               <div className="flex items-baseline space-x-0.5">
-                                <span className="font-serif font-bold text-sm sm:text-[14px] print:text-[12.5px] text-[#1A1A1A] tracking-wide">
+                                <span className="segaki-person-name font-serif font-bold text-sm sm:text-[14px] print:text-[12.5px] text-[#1A1A1A] tracking-wide">
                                   {patron.personName}
                                 </span>
                                 <span className="text-xs print:text-[10px] text-[#444444] font-serif">様</span>
@@ -649,14 +718,14 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
 
                             {/* Relationship if Family member */}
                             {!patron.isFamilyHead && (
-                              <span className="text-[10px] print:text-[8.5px] text-[#777777] font-sans whitespace-nowrap">
+                              <span className="segaki-meta text-[10px] print:text-[8.5px] text-[#777777] font-sans whitespace-nowrap">
                                 （{patron.relationship} / {patron.householdHead} 方）
                               </span>
                             )}
 
                             {/* 為書き (Tamegaki) - 空の時は出力しない */}
                             {patron.segakiTamegaki && patron.segakiTamegaki.trim() !== '' ? (
-                              <span className="font-serif font-bold text-[11px] print:text-[9.5px] text-amber-950 print:text-black bg-amber-50 print:bg-transparent border border-amber-300 print:border-black/40 px-1 py-0.2 print:px-1 print:py-0 whitespace-nowrap shadow-2xs">
+                              <span className="segaki-tamegaki font-serif font-bold text-[11px] print:text-[9.5px] text-amber-950 print:text-black bg-amber-50 print:bg-transparent border border-amber-300 print:border-black/40 px-1 py-0.2 print:px-1 print:py-0 whitespace-nowrap shadow-2xs">
                                 為 {patron.segakiTamegaki}
                               </span>
                             ) : null}
@@ -709,11 +778,11 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       {/* 施主氏名 (前揃えふりがな・様) */}
                       <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] break-words">
                         {patron.furigana && (
-                          <div className="text-[9px] print:text-[8px] text-[#777777] font-sans leading-tight">
+                          <div className="segaki-table-furigana text-[9px] print:text-[8px] text-[#777777] font-sans leading-tight">
                             {patron.furigana}
                           </div>
                         )}
-                        <div className="font-bold text-[#1A1A1A] font-serif text-xs print:text-[11px] leading-tight">
+                        <div className="segaki-table-person font-bold text-[#1A1A1A] font-serif text-xs print:text-[11px] leading-tight">
                           {patron.personName} <span className="text-[10px] print:text-[9px] font-normal text-[#555555]">様</span>
                         </div>
                       </td>
@@ -721,7 +790,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       {/* 為書き (空なら空欄) */}
                       <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] font-serif text-xs print:text-[10px] break-words">
                         {patron.segakiTamegaki && patron.segakiTamegaki.trim() !== '' ? (
-                          <span className="font-bold text-amber-950 print:text-black bg-amber-50 print:bg-transparent px-1 py-0.5 print:p-0 border border-amber-200 print:border-none inline-block">
+                          <span className="segaki-table-tamegaki font-bold text-amber-950 print:text-black bg-amber-50 print:bg-transparent px-1 py-0.5 print:p-0 border border-amber-200 print:border-none inline-block">
                             為 {patron.segakiTamegaki}
                           </span>
                         ) : (
@@ -732,13 +801,13 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       {/* 続柄 / 所属世帯 */}
                       <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] text-center break-words">
                         {patron.isFamilyHead ? (
-                          <span className="bg-[#1A1A1A] text-[#D4AF37] print:bg-transparent print:text-black px-1.5 py-0.5 print:p-0 text-[10px] print:text-[9.5px] font-bold inline-block border print:border-black/30">
+                          <span className="segaki-table-meta bg-[#1A1A1A] text-[#D4AF37] print:bg-transparent print:text-black px-1.5 py-0.5 print:p-0 text-[10px] print:text-[9.5px] font-bold inline-block border print:border-black/30">
                             世帯主
                           </span>
                         ) : (
                           <div className="text-xs print:text-[9.5px] leading-tight">
-                            <span className="font-bold text-[#2D2D2D]">{patron.relationship}</span>
-                            <div className="text-[9px] print:text-[8px] text-[#777777]">({patron.householdHead} 方)</div>
+                            <span className="segaki-table-text font-bold text-[#2D2D2D]">{patron.relationship}</span>
+                            <div className="segaki-table-meta text-[9px] print:text-[8px] text-[#777777]">({patron.householdHead} 方)</div>
                           </div>
                         )}
                       </td>
@@ -752,7 +821,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                                 {patron.niibonLabel}
                               </span>
                             )}
-                            <span className="font-serif font-bold text-[#1A1A1A] text-xs print:text-[11px] tracking-wide">
+                            <span className="segaki-table-text font-serif font-bold text-[#1A1A1A] text-xs print:text-[11px] tracking-wide">
                               {patron.latestDharmaName}
                             </span>
                           </div>
@@ -765,10 +834,10 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       <td className="p-2 print:py-1 print:px-1.5 border-r border-[#EBE7DF] font-serif text-xs print:text-[9.5px] text-[#2D2D2D] leading-tight break-words">
                         {patron.latestDeathDate ? (
                           <div>
-                            <div className="font-bold text-[#1A1A1A]">
+                            <div className="segaki-table-text font-bold text-[#1A1A1A]">
                               {formatJapaneseEraDate(patron.latestDeathDate, false)}
                             </div>
-                            <div className="text-[9px] text-[#888888] font-mono">
+                            <div className="segaki-table-meta text-[9px] text-[#888888] font-mono">
                               ({normalizeDateInput(patron.latestDeathDate)})
                             </div>
                           </div>
@@ -780,7 +849,7 @@ export const SegakiPatronModal: React.FC<SegakiPatronModalProps> = ({
                       {/* 俗名（没年月日の後ろに配置、享年は削除） */}
                       <td className="p-2 print:py-1 print:px-1.5 font-serif text-xs print:text-[10px] text-[#2D2D2D] break-words">
                         {patron.latestSecularName ? (
-                          <span className="font-bold text-[#1A1A1A]">{patron.latestSecularName}</span>
+                          <span className="segaki-table-text font-bold text-[#1A1A1A]">{patron.latestSecularName}</span>
                         ) : (
                           <span className="text-[#AAAAAA]">—</span>
                         )}
