@@ -1,4 +1,4 @@
-import { CheckSlot, getCheckSlots, checkKey } from '../utils/householdChecks';
+import { CheckSlot, getCheckSlots, checkKey, matchExactHouseholdCheckSearch } from '../utils/householdChecks';
 import { HouseholdChecks } from './HouseholdChecks';
 import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
 import { showYagoInList } from '../utils/householdYago';
@@ -1106,7 +1106,10 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
         .join(' ')
         .toLowerCase();
 
+      const matchesCheckSearch = matchExactHouseholdCheckSearch(h, searchTerm, hTemple);
+
       const matchesSearch =
+        matchesCheckSearch ||
         (h.yago || '').toLowerCase().includes(term) ||
         head.includes(term) ||
         furi.includes(term) ||

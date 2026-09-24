@@ -19,15 +19,19 @@ import {
   FileText,
   Sparkles,
   ScrollText,
-  Coins
+  Coins,
+  Camera,
+  CheckSquare
 } from 'lucide-react';
 import { getGoogleMapsSearchUrl } from '../../utils/calendarUtils';
 import { sortHouseholdsByGojuon, getKanaRow, getKanaColumn, getHouseholdSponsorInfo, isHouseholdSponsorSegakiToba, normalizeDateInput, formatJapaneseEraDate } from '../../utils/memorialCalculator';
 import { getTobaSlots, getHouseholdTobaApplication, getFamilyMemberTobaApplication } from '../../utils/tobaUtils';
 import { getFeeSlots } from '../../utils/feeUtils';
+import { matchExactHouseholdCheckSearch } from '../../utils/householdChecks';
 import { MobileHouseholdModal } from './MobileHouseholdModal';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
 import { MobileKakochoTextImportModal } from './MobileKakochoTextImportModal';
+import { PhotoLetterModal } from '../PhotoLetterModal';
 
 interface MobileHouseholdViewProps {
   households: Household[];
@@ -77,6 +81,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingHousehold, setEditingHousehold] = useState<Household | null>(null);
   const [aiImportHousehold, setAiImportHousehold] = useState<Household | null>(null);
+  const [photoLetterHousehold, setPhotoLetterHousehold] = useState<Household | null>(null);
 
   // Filtered and sorted households (Default: 五十音順 / Japanese Alphabetical Order)
   const filteredHouseholds = useMemo(() => {
@@ -97,9 +102,12 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         }
       }
 
-      // Search query filter (name, furigana, phone, mobile, address, district)
+      // Search query filter (name, furigana, phone, mobile, address, district, exact check item match)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const householdTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo || temples[0];
+        const matchExactCheck = matchExactHouseholdCheckSearch(h, searchQuery, householdTemple);
+
         const matchName = h.familyHead?.toLowerCase().includes(q) || h.yago?.toLowerCase().includes(q);
         const matchFurigana = h.furigana?.toLowerCase().includes(q);
         const matchPhone = h.phone?.replace(/[-\s]/g, '').includes(q.replace(/[-\s]/g, ''));
@@ -109,7 +117,7 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
         const matchTomb = h.tombNumber?.toLowerCase().includes(q);
         const matchMembers = (h.familyMembers || []).some((m) => m.name.toLowerCase().includes(q));
 
-        if (!matchName && !matchFurigana && !matchPhone && !matchMobile && !matchAddress && !matchDistrict && !matchTomb && !matchMembers) {
+        if (!matchExactCheck && !matchName && !matchFurigana && !matchPhone && !matchMobile && !matchAddress && !matchDistrict && !matchTomb && !matchMembers) {
           return false;
         }
       }
@@ -472,6 +480,25 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                           }
                           return null;
                         })()}
+
+                        {/* Check Items Badges (塔婆申込の右横に表示) */}
+                        {(() => {
+                          const householdTemple = temples.find((t) => (t.id || 'temple-main') === (h.templeId || 'temple-main')) || templeInfo || temples[0];
+                          const checkSlots = [1, 2, 3] as const;
+                          const activeChecks = checkSlots.filter((slot) => h[`check${slot}` as keyof Household] === true);
+                          if (activeChecks.length === 0) return null;
+                          return activeChecks.map((slot) => {
+                            const customLabel = String((householdTemple as any)?.[`checkLabel${slot}`] || '').trim();
+                            const displayName = customLabel || `チェック${slot}`;
+                            return (
+                              <span key={slot} className="px-2 py-0.5 bg-blue-50 text-blue-900 border border-blue-300 text-[11px] sm:text-xs font-bold rounded-2xs flex items-center gap-1">
+                                <CheckSquare className="w-3 h-3 text-blue-700" />
+                                <span>{displayName}</span>
+                              </span>
+                            );
+                          });
+                        })()}
+
                         {/* Fee Badge */}
                         {(() => {
                           const hasFee = (h.fee1Amount !== undefined && h.fee1Amount !== null) ||
@@ -491,15 +518,27 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Right Edit & Expand Icon */}
-                    <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                    {/* Right Edit & Photo Letter & Expand Icon */}
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPhotoLetterHousehold(h);
+                        }}
+                        className="px-2.5 py-1.5 bg-[#FAF7F0] hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-xs cursor-pointer text-xs sm:text-sm font-bold flex items-center gap-1 shadow-2xs transition-colors"
+                        title="墓地写真付きの案内書状を作成・PDF保存"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-amber-800" />
+                        <span className="whitespace-nowrap">写真付書状</span>
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => handleEdit(h, e)}
-                        className="px-3 py-1.5 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37]/60 rounded-xs cursor-pointer text-xs sm:text-sm font-bold flex items-center gap-1 shadow-2xs"
+                        className="px-2.5 sm:px-3 py-1.5 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37]/60 rounded-xs cursor-pointer text-xs sm:text-sm font-bold flex items-center gap-1 shadow-2xs"
                         title="世帯情報を編集"
                       >
-                        <Edit className="w-4 h-4" />
+                        <Edit className="w-3.5 h-3.5" />
                         <span>編集</span>
                       </button>
                       <div className="p-1 text-gray-400">
@@ -796,14 +835,26 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                     )}
 
                     {/* Action buttons footer inside expanded card */}
-                    <div className="pt-2 border-t border-[#E5E0D8] flex items-center gap-2">
+                    <div className="pt-2 border-t border-[#E5E0D8] flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => onOpenAddService(h.id)}
-                        className="flex-1 py-2.5 bg-[#8C2D19] hover:bg-[#732414] text-white rounded-xs font-bold text-sm flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                        className="flex-1 py-2.5 bg-[#8C2D19] hover:bg-[#732414] text-white rounded-xs font-bold text-sm flex items-center justify-center gap-1.5 shadow-xs cursor-pointer min-w-[140px]"
                       >
                         <CalendarIcon className="w-4 h-4" />
                         <span>法事・予定を予約</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPhotoLetterHousehold(h);
+                        }}
+                        className="py-2.5 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xs font-bold text-sm flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+                        title="墓地写真付きの案内書状を作成・PDF保存"
+                      >
+                        <Camera className="w-4 h-4 text-amber-800" />
+                        <span>写真付書状</span>
                       </button>
                       <button
                         type="button"
@@ -854,6 +905,17 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
           setAiImportHousehold(null);
         }}
       />
+
+      {/* Photo Letter Modal (A4横・墓地写真付案内書状・PDF保存) */}
+      {photoLetterHousehold && (
+        <PhotoLetterModal
+          isOpen={!!photoLetterHousehold}
+          onClose={() => setPhotoLetterHousehold(null)}
+          household={photoLetterHousehold}
+          templeInfo={templeInfo || { name: '寺院名' }}
+          temples={temples}
+        />
+      )}
     </div>
   );
 };

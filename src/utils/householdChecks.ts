@@ -21,3 +21,24 @@ export function readHouseholdChecks(headers: string[], row: unknown[]): Pick<Hou
 export function readCheckLabels(headers: string[], row: unknown[]): Pick<TempleProfile, 'checkLabel1'|'checkLabel2'|'checkLabel3'> {
   return Object.fromEntries(CHECK_SLOTS.map((slot, i) => [checkLabelKey(slot), String(row[headers.indexOf(CHECK_LABEL_HEADERS[i])] ?? '').trim()]));
 }
+
+/**
+ * 検索キーワードが寺院設定のチェック項目名（checkLabel1〜3）と完全一致する場合に、
+ * 該当世帯でそのチェック項目がON（true）になっているかを判定します。
+ */
+export function matchExactHouseholdCheckSearch(
+  household: Household,
+  searchTerm: string,
+  temple?: Partial<TempleProfile> | null
+): boolean {
+  const term = searchTerm.trim();
+  if (!term) return false;
+
+  const slots = CHECK_SLOTS.map((slot) => ({
+    slot,
+    name: (temple?.[checkLabelKey(slot)] || '').trim(),
+    isChecked: household[checkKey(slot)] === true,
+  })).filter((s) => s.name.length > 0);
+
+  return slots.some((s) => s.name.toLowerCase() === term.toLowerCase() && s.isChecked);
+}
