@@ -25,7 +25,7 @@ import {
   Sparkles,
   GitBranch
 } from 'lucide-react';
-import { Household, PastRecord, Transaction, MasterOptions, MemorialService, TempleProfile } from '../types';
+import { Household, PastRecord, Transaction, MasterOptions, MemorialService, TempleProfile, TempleInfo } from '../types';
 import { 
   ImportTargetType, 
   ParsedRawTable, 
@@ -54,6 +54,7 @@ interface ExternalDataImportModalProps {
   existingTransactions?: Transaction[];
   masterOptions?: MasterOptions;
   temples?: TempleProfile[];
+  templeInfo?: TempleInfo;
   activeTempleId?: string;
   onImportSuccess: (data: {
     households?: Household[];
@@ -76,6 +77,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   existingTransactions = [],
   masterOptions,
   temples = [],
+  templeInfo,
   activeTempleId = 'temple-main',
   onImportSuccess,
   initialTargetType = 'household',
@@ -363,6 +365,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
           defaultHouseholdType,
           targetTempleId,
           temples,
+          templeInfo,
           linkingDecisions: confirmedDecisions,
         }
       );
@@ -410,6 +413,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
           defaultHouseholdType,
           targetTempleId,
           temples,
+          templeInfo,
           linkingDecisions,
         }
       );
@@ -438,6 +442,7 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
             defaultHouseholdType,
             targetTempleId,
             temples,
+            templeInfo,
             linkingDecisions,
           }
         );
@@ -1155,6 +1160,11 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                     <span className="text-[11px] text-blue-800 font-bold block">登録される出納明細数</span>
                     <span className="text-xl font-bold font-mono text-blue-900">{conversionResult.stats.transactionsCreated}</span>
                     <span className="text-[10px] text-blue-700 block">件</span>
+                    {conversionResult.stats.transactionsArchived > 0 && (
+                      <span className="mt-1 inline-block px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-800 rounded font-medium">
+                        うち過年度アーカイブ: {conversionResult.stats.transactionsArchived}件
+                      </span>
+                    )}
                   </div>
                 )}
 

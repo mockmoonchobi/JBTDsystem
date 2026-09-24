@@ -1707,9 +1707,18 @@ export async function exportToSheets(
     ];
   });
 
-  // 8. Transactions Sheet Rows (出納・会計 & 出納アーカイブ) - Unified with Excel
-  // 本会計年度＋前会計年度を「出納・会計」に、前々年度以前を「出納アーカイブ」に分離
-  const { activeTransactions, archiveTransactions } = partitionTransactionsByTempleFiscalRetention(filteredTransactions, templeInfo, allTemples);
+  // 8. Transactions Sheet Rows (出納・会計 & 出納アーカイブ)
+  // 日常の保存では既存のシート配置（isArchived）を厳密に維持し、勝手なアーカイブ移動は行わない。
+  // 過年度データのアーカイブ化は「会計年度が過ぎた後の初めての履歴整理」でのみ安全に実行される。
+  const activeTransactions: Transaction[] = [];
+  const archiveTransactions: Transaction[] = [];
+  for (const t of filteredTransactions) {
+    if (t.isArchived) {
+      archiveTransactions.push(t);
+    } else {
+      activeTransactions.push(t);
+    }
+  }
 
   const transactionHeaders = [
     '伝票ID',
@@ -3237,7 +3246,8 @@ async function importFromSheetsCore(
       if (!row || row.length === 0 || !row[0]) continue;
 
       const id = String((idIdx !== -1 ? row[idIdx] : row[0]) || `TX-${Date.now()}-${i + 1}`);
-      if (sheetName === archiveTxSheetName && archiveTxSheetName !== txSheetName) actualArchiveIds.add(id);
+      const isArchived = (sheetName === archiveTxSheetName && archiveTxSheetName !== txSheetName);
+      if (isArchived) actualArchiveIds.add(id);
       if (seenTxIds.has(id)) continue;
       seenTxIds.add(id);
 
@@ -3284,6 +3294,7 @@ async function importFromSheetsCore(
         createdTime,
         updatedDate,
         updatedTime,
+        isArchived,
       });
     }
   };
@@ -3706,10 +3717,7 @@ async function importFromSheetsCore(
     memorialServices: finalMemorialServices,
     templeTodos: finalTempleTodos,
     transactions: finalTransactions,
-    needsFiscalRetentionSync: (() => {
-      const expected = new Set(partitionTransactionsByTempleFiscalRetention(finalTransactions, templeInfo, temples).archiveTransactions.map(tx => tx.id));
-      return finalTransactions.some(tx => expected.has(tx.id) !== actualArchiveIds.has(tx.id));
-    })(),
+    needsFiscalRetentionSync: false,
     allNoticeTemplates,
     batchAccountingConfig: parsedBatchConfig,
     masterOptions: mergedMasterOptions,

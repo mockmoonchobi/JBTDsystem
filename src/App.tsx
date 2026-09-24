@@ -5173,6 +5173,7 @@ export default function App() {
         existingTransactions={transactions}
         masterOptions={activeMasterOptions}
         temples={temples}
+        templeInfo={templeInfo}
         activeTempleId={activeTempleId}
         onImportSuccess={handleImportExternalSuccess}
       />

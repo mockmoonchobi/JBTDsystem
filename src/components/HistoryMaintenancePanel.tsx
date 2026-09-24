@@ -8,12 +8,14 @@ import { waitingDevices } from '../utils/historyMaintenancePlan';
 import { ROW_META, type Snapshot } from '../utils/rowSyncPlan';
 import { RECORD_KINDS } from '../utils/purgeLedger';
 import { resolveExportSheetName } from '../utils/sheetsExportUtils';
+import { extractTempleFiscalConfigs, getFiscalYearOfDate, getJapanDateString } from '../utils/fiscalYearUtils';
 
 export function HistoryMaintenancePanel({ enabled, onResume, open, onClose, onCountChange, mergeActive = false }: { mergeActive?: boolean; enabled: boolean; onResume: () => Promise<void>; open: boolean; onClose: () => void; onCountChange: (count: number | null) => void }) {
   const [client, setClient] = useState<HistoryMaintenanceClient>();
   const [view, setView] = useState<HistoryMaintenanceClient['view']>(null);
   const [count, setCount] = useState<number | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [deletedCounts, setDeletedCounts] = useState<Record<string, number>>({});
+  const [archiveCount, setArchiveCount] = useState<number>(0);
   const [unconfirmed, setUnconfirmed] = useState<DeletedRecordEntry[]>([]);
   const lastPurpose = useRef<string | undefined>(undefined);
   const [automatic, setAutomatic] = useState(false);
@@ -41,6 +43,33 @@ export function HistoryMaintenancePanel({ enabled, onResume, open, onClose, onCo
         setCount(snapshot?.['操作・削除履歴'] ? snapshot['操作・削除履歴'].slice(1).filter(r => r.some(v => v !== '' && v != null)).length : null);
         const eligible = new Set(Object.keys(RECORD_KINDS).map(n => resolveExportSheetName(n, Object.keys(snapshot || {}))));
         setDeletedCounts(Object.fromEntries(Object.entries(snapshot || {}).filter(([n]) => eligible.has(n)).map(([n, grid]) => [n, grid.slice(1).filter(r => String(r[grid[0]?.indexOf(ROW_META[0]) ?? -1]) === '1').length]).filter(([, count]) => Number(count) > 0)));
+
+        const txTitle = resolveExportSheetName('出納・会計', Object.keys(snapshot || {}));
+        const txGrid = snapshot?.[txTitle];
+        if (txGrid && txGrid.length > 1) {
+          const { configs, fallback } = extractTempleFiscalConfigs(snapshot!);
+          const txHeader = txGrid[0].map(String);
+          const flagIdx = txHeader.indexOf(ROW_META[0]);
+          const dateIdx = txHeader.findIndex(h => /^(日付|取引日|年月日)$/i.test(h));
+          const templeIdIdx = txHeader.findIndex(h => /^(所属寺院ID|寺院ID)$/i.test(h));
+          const todayStr = getJapanDateString();
+          let arch = 0;
+          if (dateIdx >= 0) {
+            txGrid.slice(1).forEach(row => {
+              if (!row.some(v => v !== '' && v != null)) return;
+              if (flagIdx >= 0 && String(row[flagIdx]) === '1') return;
+              const d = String(row[dateIdx] || '').trim();
+              if (!d) return;
+              const tId = templeIdIdx >= 0 ? String(row[templeIdIdx] || '').trim() : '';
+              const cfg = configs.get(tId) || fallback;
+              const curFY = getFiscalYearOfDate(todayStr, cfg as any);
+              if (getFiscalYearOfDate(d, cfg as any) < curFY - 1) arch++;
+            });
+          }
+          setArchiveCount(arch);
+        } else {
+          setArchiveCount(0);
+        }
         const signature = state ? state.state.phase + ':' + state.state.revision : '';
         if (state?.state.phase === 'running' && previous.current && previous.current !== signature && !left) {
           previous.current = signature;
@@ -136,8 +165,14 @@ export function HistoryMaintenancePanel({ enabled, onResume, open, onClose, onCo
             <p className="mt-2 text-xs text-slate-500">最終同期時の件数です。端末の履歴表示件数とは異なります。</p>
           </div>
           <p className="text-sm leading-6">履歴が2,000件を超えている場合は最新1,000件（今回の整理記録を含む）を残します。削除済みのデータも完全に消去します。使用中の名簿・過去帳・会計は残ります。</p>
+          {archiveCount > 0 && (
+            <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+              <p className="font-bold">過年度会計アーカイブ（自動移行）</p>
+              <p className="mt-1">前々年度以前の出納データ <strong>{archiveCount.toLocaleString()}件</strong> を「出納アーカイブ」へ安全に移動します。</p>
+            </div>
+          )}
           {Object.keys(deletedCounts).length > 0 && <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm"><p className="font-bold">完全削除するデータ（最終同期時）</p><ul className="mt-2">{Object.entries(deletedCounts).map(([name, count]) => <li key={name}>{name}：{count.toLocaleString()}件</li>)}</ul></div>}
-          <p className="mt-2 text-sm leading-6">保管用タブへの移動は行いません。開始後は、端末の確認から整理、連携の再開まで自動で進みます。</p>
+          <p className="mt-2 text-sm leading-6">開始後は、端末の確認から整理、連携の再開まで自動で進みます。</p>
         </>}
         {automatic && <>
           <ol className="my-5 flex gap-3 text-sm font-bold" aria-label="整理の進み具合">

@@ -38,6 +38,7 @@ import {
   parseDisasterEventsFromRows
 } from './disasterMemorialUtils';
 import { UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId, getUnlinkedHouseholdId } from './dankaIdUtils';
+import { getFiscalYearOfDate, getJapanDateString } from './fiscalYearUtils';
 
 export interface ExportToExcelOptions {
   targetTempleId?: string | 'ALL';
@@ -1937,6 +1938,8 @@ export async function importFromExcel(
     const txUDateIdx = findColIdx(tHeaders, ['修正日', '更新日', '修正年月日', '更新年月日', 'updatedDate', 'updatedAt']);
     const txUTimeIdx = findColIdx(tHeaders, ['修正時間', '更新時間', '修正時刻', '更新時刻', 'updatedTime']);
 
+    const isArchivedSheet = (sheetName === archiveTxSheetName && archiveTxSheetName !== txSheetName);
+
     tRows.forEach((row, idx) => {
       const date = normalizeDateInput(dateIdx !== -1 ? row[dateIdx] : '');
       const rawAmount = String((amountIdx !== -1 ? row[amountIdx] : '') || '').replace(/[^0-9-]/g, '');
@@ -1986,6 +1989,16 @@ export async function importFromExcel(
       const updatedDate = normalizeAuditDate(txUDateIdx !== -1 ? row[txUDateIdx] : '') || importAudit.date;
       const updatedTime = normalizeAuditTime(txUTimeIdx !== -1 ? row[txUTimeIdx] : '') || importAudit.time;
 
+      let isArchived = isArchivedSheet;
+      if (!isArchived && (!archiveTxSheetName || archiveTxSheetName === txSheetName) && date) {
+        const templeCfg = parsedTemples.find(t => t.id === templeId) || templeInfo;
+        const todayStr = getJapanDateString();
+        const curFY = getFiscalYearOfDate(todayStr, templeCfg as any);
+        if (getFiscalYearOfDate(date, templeCfg as any) < curFY - 1) {
+          isArchived = true;
+        }
+      }
+
       transactions.push({
         id,
         templeId,
@@ -2003,6 +2016,7 @@ export async function importFromExcel(
         createdTime,
         updatedDate,
         updatedTime,
+        isArchived,
       });
     });
   };

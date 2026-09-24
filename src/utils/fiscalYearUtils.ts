@@ -298,3 +298,60 @@ export function partitionTransactionsByTempleFiscalRetention(
   }
   return { activeTransactions, archiveTransactions };
 }
+
+/**
+ * Extracts fiscal year configuration from snapshot tables (寺院一覧（本寺・兼務） or 寺院情報)
+ */
+export function extractTempleFiscalConfigs(snapshot: Record<string, unknown[][]>): {
+  configs: Map<string, { fiscalYearStartMonth: number; fiscalYearStartDay: number }>;
+  fallback: { fiscalYearStartMonth: number; fiscalYearStartDay: number };
+} {
+  const titles = Object.keys(snapshot);
+  const configs = new Map<string, { fiscalYearStartMonth: number; fiscalYearStartDay: number }>();
+  let fallback = { fiscalYearStartMonth: 4, fiscalYearStartDay: 1 };
+
+  const listTitle = titles.find(t => /寺院一覧/i.test(t));
+  const infoTitle = titles.find(t => /寺院情報/i.test(t));
+
+  const listGrid = listTitle ? snapshot[listTitle] : undefined;
+  if (listGrid && listGrid.length > 1) {
+    const headers = listGrid[0].map(String);
+    const idIdx = headers.findIndex(h => /^(寺院ID|所属寺院ID|ID)$/i.test(h));
+    const startMIdx = headers.findIndex(h => /^(会計年度開始月|年度開始月)$/i.test(h));
+    const startDIdx = headers.findIndex(h => /^(会計年度開始日|年度開始日)$/i.test(h));
+    const isMainIdx = headers.findIndex(h => /^(本寺|区分|本寺・兼務)$/i.test(h));
+
+    listGrid.slice(1).forEach(row => {
+      const id = String(row[idIdx !== -1 ? idIdx : 0] || '').trim();
+      if (!id) return;
+      const m = startMIdx !== -1 ? parseInt(String(row[startMIdx]), 10) : 4;
+      const d = startDIdx !== -1 ? parseInt(String(row[startDIdx]), 10) : 1;
+      const cfg = {
+        fiscalYearStartMonth: !isNaN(m) && m >= 1 && m <= 12 ? m : 4,
+        fiscalYearStartDay: !isNaN(d) && d >= 1 && d <= 31 ? d : 1,
+      };
+      configs.set(id, cfg);
+      const isMain = isMainIdx !== -1 ? String(row[isMainIdx]).includes('本寺') : (id === 'temple-main');
+      if (isMain) fallback = cfg;
+    });
+  }
+
+  const infoGrid = infoTitle ? snapshot[infoTitle] : undefined;
+  if (infoGrid && infoGrid.length > 1 && configs.size === 0) {
+    let m = 4, d = 1;
+    infoGrid.slice(1).forEach(row => {
+      const key = String(row[0] || '').trim();
+      const val = String(row[1] || '').trim();
+      if (key === '会計年度開始月') m = parseInt(val, 10) || 4;
+      if (key === '会計年度開始日') d = parseInt(val, 10) || 1;
+    });
+    fallback = {
+      fiscalYearStartMonth: !isNaN(m) && m >= 1 && m <= 12 ? m : 4,
+      fiscalYearStartDay: !isNaN(d) && d >= 1 && d <= 31 ? d : 1,
+    };
+    configs.set('temple-main', fallback);
+  }
+
+  return { configs, fallback };
+}
+

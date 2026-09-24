@@ -26,7 +26,7 @@ import {
   Tag
 } from 'lucide-react';
 import { getTodayDateString } from '../utils/calendarUtils';
-import { normalizeDateInput } from '../utils/memorialCalculator';
+import { normalizeDateInput, getHouseholdSponsorName } from '../utils/memorialCalculator';
 import { INITIAL_INCOME_CATEGORIES } from '../data/initialData';
 
 interface TanagyoBatchAccountingModalProps {
@@ -298,7 +298,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
         date: h.tanagyoDate || '日程未定',
         timeSlot: h.tanagyoTimeSlot || '未定',
         order: h.tanagyoOrder,
-        familyHead: h.familyHead,
+        familyHead: getHouseholdSponsorName(h) || h.familyHead,
         address: h.tanagyoAddress || h.address || '住所未登録',
         templeId: h.templeId,
         templeName: getCleanTempleName(h.templeId),
@@ -761,7 +761,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
                 <th className="p-2 w-28">担当僧侶</th>
                 <th className="p-2 w-28">訪問日時</th>
                 <th className="p-2 w-12 text-center">順序</th>
-                <th className="p-2 w-36">世帯主名（施主名）</th>
+                <th className="p-2 w-36">施主名</th>
                 <th className="p-2 w-24">所属寺院</th>
                 <th className="p-2 w-28">勘定科目</th>
                 <th className="p-2 min-w-[140px]">住所</th>

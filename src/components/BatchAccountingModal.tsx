@@ -18,7 +18,19 @@ import {
   Check
 } from 'lucide-react';
 import { Household, Transaction, MasterOptions, TempleInfo, TransactionCategory, BatchAccountingData, HouseholdBatchEntry, BatchAccountingConfig } from '../types';
-import { formatCurrency, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions } from '../utils/memorialCalculator';
+import { 
+  formatCurrency, 
+  formatJapaneseEraDate, 
+  normalizeDateInput, 
+  NormalizeDateOptions,
+  getHouseholdSponsorName,
+  getHouseholdSponsorInfo
+} from '../utils/memorialCalculator';
+import { 
+  isHouseholdAppliedForToba,
+  getHouseholdSponsorTobaApplication,
+  isHouseholdSponsorAppliedForToba
+} from '../utils/tobaUtils';
 import { SaveConfirmModal } from './SaveConfirmModal';
 import { 
   getSavedBatchAccountingData, 
@@ -331,9 +343,82 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
 
   const [isSuccessToast, setIsSuccessToast] = useState<string | null>(null);
 
+  // 塔婆判定ヘルパー（世帯主・施主・家族メンバーのいずれかに申込があるかを漏れなく判定）
+  const isHouseholdTobaAppliedForFilter = useCallback((h: Household, filterKey: 'anyToba' | 'segakiOnly' | 'toba1Only' | 'toba2Only' | 'toba3Only'): boolean => {
+    const tobaName1 = (templeInfo?.tobaType1 !== undefined ? templeInfo.tobaType1 : '施餓鬼塔婆').trim() || '施餓鬼塔婆';
+    const tobaName2 = (templeInfo?.tobaType2 || '').trim();
+    const tobaName3 = (templeInfo?.tobaType3 || '').trim();
+
+    // 施餓鬼塔婆の判定（世帯主・指定施主・家族メンバーのいずれかに申込があるか）
+    const isSegaki = Boolean(
+      h.isSegakiToba ||
+      h.toba1Applied ||
+      isHouseholdAppliedForToba(h, '施餓鬼塔婆', templeInfo) ||
+      (tobaName1 && isHouseholdAppliedForToba(h, tobaName1, templeInfo)) ||
+      h.familyMembers?.some(m => 
+        m.isSegakiToba || 
+        m.toba1Applied || 
+        (m.tobaApplications && (m.tobaApplications['施餓鬼塔婆']?.applied || (tobaName1 && m.tobaApplications[tobaName1]?.applied)))
+      )
+    );
+
+    if (filterKey === 'segakiOnly') return isSegaki;
+
+    // 塔婆1（スロット1）の判定
+    const isToba1 = Boolean(
+      h.toba1Applied ||
+      h.isSegakiToba ||
+      (tobaName1 && isHouseholdAppliedForToba(h, tobaName1, templeInfo)) ||
+      isHouseholdAppliedForToba(h, '施餓鬼塔婆', templeInfo) ||
+      h.familyMembers?.some(m => 
+        m.toba1Applied || 
+        m.isSegakiToba || 
+        (m.tobaApplications && ((tobaName1 && m.tobaApplications[tobaName1]?.applied) || m.tobaApplications['施餓鬼塔婆']?.applied))
+      )
+    );
+    if (filterKey === 'toba1Only') return isToba1;
+
+    // 塔婆2（スロット2）の判定
+    const isToba2 = Boolean(
+      h.toba2Applied ||
+      (tobaName2 && isHouseholdAppliedForToba(h, tobaName2, templeInfo)) ||
+      h.familyMembers?.some(m => 
+        m.toba2Applied || 
+        (m.tobaApplications && tobaName2 && m.tobaApplications[tobaName2]?.applied)
+      )
+    );
+    if (filterKey === 'toba2Only') return isToba2;
+
+    // 塔婆3（スロット3）の判定
+    const isToba3 = Boolean(
+      h.toba3Applied ||
+      (tobaName3 && isHouseholdAppliedForToba(h, tobaName3, templeInfo)) ||
+      h.familyMembers?.some(m => 
+        m.toba3Applied || 
+        (m.tobaApplications && tobaName3 && m.tobaApplications[tobaName3]?.applied)
+      )
+    );
+    if (filterKey === 'toba3Only') return isToba3;
+
+    // anyToba: いずれかの塔婆申込があるか（世帯主・指定施主・家族メンバー問わず）
+    const hasAnyApp = Boolean(
+      (h.tobaApplications && Object.values(h.tobaApplications).some(a => a?.applied)) ||
+      h.familyMembers?.some(m => 
+        (m.tobaApplications && Object.values(m.tobaApplications).some(a => a?.applied)) || 
+        m.isSegakiToba || 
+        m.toba1Applied || 
+        m.toba2Applied || 
+        m.toba3Applied
+      )
+    );
+
+    return isSegaki || isToba1 || isToba2 || isToba3 || hasAnyApp;
+  }, [templeInfo]);
+
   // Helper to determine if a household has an explicitly registered individual amount for a column
   const getHouseholdCustomFee = (h: Household, colIndex: 1 | 2 | 3): number | null => {
     const note = colIndex === 1 ? notes1 : colIndex === 2 ? notes2 : notes3;
+    const designatedSponsor = (h.familyMembers || []).find((m) => m.isChiefMourner || m.isSponsor);
 
     // Check if column note corresponds to feeType1
     if (note && templeInfo?.feeType1 && note.includes(templeInfo.feeType1.trim())) {
@@ -342,6 +427,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       }
       if (h.fee1 !== undefined && h.fee1 !== null && Number(h.fee1) > 0) {
         return Number(h.fee1);
+      }
+      if (designatedSponsor?.fee1Amount !== undefined && designatedSponsor.fee1Amount !== null && Number(designatedSponsor.fee1Amount) > 0) {
+        return Number(designatedSponsor.fee1Amount);
+      }
+      if (designatedSponsor?.fee1 !== undefined && designatedSponsor.fee1 !== null && Number(designatedSponsor.fee1) > 0) {
+        return Number(designatedSponsor.fee1);
       }
     }
 
@@ -353,6 +444,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       if (h.fee2 !== undefined && h.fee2 !== null && Number(h.fee2) > 0) {
         return Number(h.fee2);
       }
+      if (designatedSponsor?.fee2Amount !== undefined && designatedSponsor.fee2Amount !== null && Number(designatedSponsor.fee2Amount) > 0) {
+        return Number(designatedSponsor.fee2Amount);
+      }
+      if (designatedSponsor?.fee2 !== undefined && designatedSponsor.fee2 !== null && Number(designatedSponsor.fee2) > 0) {
+        return Number(designatedSponsor.fee2);
+      }
     }
 
     // Check if column note corresponds to feeType3
@@ -362,6 +459,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       }
       if (h.fee3 !== undefined && h.fee3 !== null && Number(h.fee3) > 0) {
         return Number(h.fee3);
+      }
+      if (designatedSponsor?.fee3Amount !== undefined && designatedSponsor.fee3Amount !== null && Number(designatedSponsor.fee3Amount) > 0) {
+        return Number(designatedSponsor.fee3Amount);
+      }
+      if (designatedSponsor?.fee3 !== undefined && designatedSponsor.fee3 !== null && Number(designatedSponsor.fee3) > 0) {
+        return Number(designatedSponsor.fee3);
       }
     }
 
@@ -373,6 +476,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       if (h.fee1 !== undefined && h.fee1 !== null && Number(h.fee1) > 0) {
         return Number(h.fee1);
       }
+      if (designatedSponsor?.fee1Amount !== undefined && designatedSponsor.fee1Amount !== null && Number(designatedSponsor.fee1Amount) > 0) {
+        return Number(designatedSponsor.fee1Amount);
+      }
+      if (designatedSponsor?.fee1 !== undefined && designatedSponsor.fee1 !== null && Number(designatedSponsor.fee1) > 0) {
+        return Number(designatedSponsor.fee1);
+      }
     }
 
     // Fallback: column note includes '墓地' or '管理費' -> maps to fee2
@@ -382,6 +491,12 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       }
       if (h.fee2 !== undefined && h.fee2 !== null && Number(h.fee2) > 0) {
         return Number(h.fee2);
+      }
+      if (designatedSponsor?.fee2Amount !== undefined && designatedSponsor.fee2Amount !== null && Number(designatedSponsor.fee2Amount) > 0) {
+        return Number(designatedSponsor.fee2Amount);
+      }
+      if (designatedSponsor?.fee2 !== undefined && designatedSponsor.fee2 !== null && Number(designatedSponsor.fee2) > 0) {
+        return Number(designatedSponsor.fee2);
       }
     }
 
@@ -625,10 +740,13 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     const query = (searchTerm || '').trim().toLowerCase();
 
     const filtered = households.filter((h) => {
+      const sponsorInfo = getHouseholdSponsorInfo(h);
+
       // 1. Search Query
       if (query) {
-        const nameMatch = (h.familyHead || '').toLowerCase().includes(query);
-        const kanaMatch = (h.furigana || '').toLowerCase().includes(query);
+        const sponsorMatch = (sponsorInfo.sponsorName || '').toLowerCase().includes(query);
+        const headMatch = (h.familyHead || '').toLowerCase().includes(query);
+        const kanaMatch = (sponsorInfo.furigana || '').toLowerCase().includes(query) || (h.furigana || '').toLowerCase().includes(query);
         const idMatch = (h.id || '').toLowerCase().includes(query);
         const typeMatch = (h.householdType || '').toLowerCase().includes(query);
         const statusMatch = (h.status || '').toLowerCase().includes(query);
@@ -640,21 +758,36 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         const segakiMemberMatch = h.familyMembers?.some(m => 
           (m.name || '').toLowerCase().includes(query) ||
           (m.segakiTamegaki || '').toLowerCase().includes(query) ||
-          (m.isSegakiToba && '施餓鬼塔婆'.includes(query))
+          (m.isSegakiToba && '施餓鬼塔婆'.includes(query)) ||
+          ((m.toba1Tamegaki || '').toLowerCase().includes(query)) ||
+          ((m.toba2Tamegaki || '').toLowerCase().includes(query)) ||
+          ((m.toba3Tamegaki || '').toLowerCase().includes(query))
         );
-        const toba1Match = Boolean(templeInfo?.tobaType1 && h.toba1Applied && templeInfo.tobaType1.toLowerCase().includes(query));
-        const toba2Match = Boolean(templeInfo?.tobaType2 && h.toba2Applied && templeInfo.tobaType2.toLowerCase().includes(query));
-        const toba3Match = Boolean(templeInfo?.tobaType3 && h.toba3Applied && templeInfo.tobaType3.toLowerCase().includes(query));
+        const toba1Match = Boolean(
+          (h.toba1Applied || h.familyMembers?.some(m => m.toba1Applied)) &&
+          templeInfo?.tobaType1 &&
+          templeInfo.tobaType1.toLowerCase().includes(query)
+        );
+        const toba2Match = Boolean(
+          (h.toba2Applied || h.familyMembers?.some(m => m.toba2Applied)) &&
+          templeInfo?.tobaType2 &&
+          templeInfo.tobaType2.toLowerCase().includes(query)
+        );
+        const toba3Match = Boolean(
+          (h.toba3Applied || h.familyMembers?.some(m => m.toba3Applied)) &&
+          templeInfo?.tobaType3 &&
+          templeInfo.tobaType3.toLowerCase().includes(query)
+        );
 
-        const matchesQuery = nameMatch || kanaMatch || idMatch || typeMatch || statusMatch || districtMatch || notesMatch || segakiHeadMatch || segakiMemberMatch || toba1Match || toba2Match || toba3Match;
+        const matchesQuery = sponsorMatch || headMatch || kanaMatch || idMatch || typeMatch || statusMatch || districtMatch || notesMatch || segakiHeadMatch || segakiMemberMatch || toba1Match || toba2Match || toba3Match;
         if (!matchesQuery) return false;
       }
 
-      // 2. Kana Index Filter
+      // 2. Kana Index Filter（施主名のふりがなを基準に判定）
       if (selectedKana !== 'すべて') {
         const group = KANA_GROUPS.find((g) => g.label === selectedKana);
         if (group && group.chars.length > 0) {
-          const firstChar = (h.furigana || h.familyHead || '').charAt(0);
+          const firstChar = (sponsorInfo.furigana || sponsorInfo.sponsorName || h.furigana || h.familyHead || '').charAt(0);
           if (!group.chars.includes(firstChar)) {
             return false;
           }
@@ -672,20 +805,11 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         if (!isEntered) return false;
       }
 
-      // 4. 塔婆絞り込みフィルター
+      // 4. 塔婆絞り込みフィルター（世帯主・指定施主・家族メンバーの塔婆申込を漏れなく判定）
       if (tobaFilter !== 'all') {
-        const isSegakiToba = Boolean(h.isSegakiToba || h.familyMembers?.some((m) => m.isSegakiToba));
-        const isToba1 = Boolean(h.toba1Applied);
-        const isToba2 = Boolean(h.toba2Applied);
-        const isToba3 = Boolean(h.toba3Applied);
-        const hasAnyTobaApp = Boolean(h.tobaApplications && Object.keys(h.tobaApplications).length > 0);
-        const hasAnyToba = isSegakiToba || isToba1 || isToba2 || isToba3 || hasAnyTobaApp;
-
-        if (tobaFilter === 'anyToba' && !hasAnyToba) return false;
-        if (tobaFilter === 'segakiOnly' && !isSegakiToba) return false;
-        if (tobaFilter === 'toba1Only' && !isToba1) return false;
-        if (tobaFilter === 'toba2Only' && !isToba2) return false;
-        if (tobaFilter === 'toba3Only' && !isToba3) return false;
+        if (!isHouseholdTobaAppliedForFilter(h, tobaFilter)) {
+          return false;
+        }
       }
 
       // 5. 集金項目絞り込みフィルター（選択された項目のうち、いずれかに金額が入力されている檀家を抽出：OR検索）
@@ -709,13 +833,15 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       return true;
     });
 
-    // 必ず五十音順（ふりがな順、未設定時は世帯主名）にソート
+    // 必ず五十音順（施主のふりがな順、未設定時は施主名）にソート
     return filtered.sort((a, b) => {
-      const furiganaA = (a.furigana || a.familyHead || '').trim();
-      const furiganaB = (b.furigana || b.familyHead || '').trim();
+      const spA = getHouseholdSponsorInfo(a);
+      const spB = getHouseholdSponsorInfo(b);
+      const furiganaA = (spA.furigana || spA.sponsorName || a.familyHead || '').trim();
+      const furiganaB = (spB.furigana || spB.sponsorName || b.familyHead || '').trim();
       return furiganaA.localeCompare(furiganaB, 'ja');
     });
-  }, [households, searchTerm, selectedKana, filterType, tobaFilter, selectedFeeFilters, entries, isCol1Active, isCol2Active, isCol3Active, templeInfo]);
+  }, [households, searchTerm, selectedKana, filterType, tobaFilter, selectedFeeFilters, entries, isCol1Active, isCol2Active, isCol3Active, templeInfo, isHouseholdTobaAppliedForFilter]);
 
   // Calculate Active Summary for all entries
   const generatedRecordsSummary = useMemo(() => {
@@ -805,7 +931,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         templeId: item.household.templeId || templeInfo.id || 'temple-main',
         date: normalizedDate,
         householdId: item.household.id,
-        householdHeadName: item.household.familyHead,
+        householdHeadName: getHouseholdSponsorName(item.household) || item.household.familyHead,
         category: item.category as TransactionCategory,
         type: '収入',
         amount: item.amount,
@@ -1388,6 +1514,10 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                     const hasCustomFee2 = customFee2 !== null;
                     const hasCustomFee3 = customFee3 !== null;
 
+                    const sponsorInfo = getHouseholdSponsorInfo(h);
+                    const sponsorName = sponsorInfo.sponsorName || h.familyHead;
+                    const sponsorFurigana = sponsorInfo.furigana || h.furigana || '　';
+
                     return (
                       <tr 
                         key={h.id}
@@ -1402,10 +1532,18 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                           <div className="flex items-start justify-between gap-1.5">
                             <div>
                               <div className="text-[11px] text-[#777] font-sans leading-none mb-0.5">
-                                {h.furigana || '　'}
+                                {sponsorFurigana}
                               </div>
-                              <div className="font-bold text-sm text-[#1A1A1A] flex items-center gap-1.5">
-                                <span>{h.familyHead}</span>
+                              <div className="font-bold text-sm text-[#1A1A1A] flex items-center flex-wrap gap-1.5">
+                                <span>{sponsorName}</span>
+                                {sponsorInfo.isDistinctFromHead && (
+                                  <span 
+                                    className="text-[10px] font-sans px-1.5 py-0.2 bg-amber-100/80 text-amber-900 border border-amber-300/60 font-normal rounded-xs"
+                                    title={`世帯主: ${h.familyHead}`}
+                                  >
+                                    施主（世帯主: {h.familyHead}）
+                                  </span>
+                                )}
                                 {h.district && (
                                   <span className="text-[10px] font-sans px-1.5 py-0.2 bg-gray-200 text-gray-700 font-normal rounded-xs">
                                     {h.district}
@@ -1429,9 +1567,9 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                               </div>
                             </div>
 
-                            {/* 塔婆バッジ */}
+                            {/* 塔婆バッジ（世帯主・施主・家族メンバーのいずれかに申込があれば表示） */}
                             <div className="flex flex-col items-end gap-1 shrink-0 font-sans">
-                              {(h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba) || h.toba1Applied || h.toba2Applied || h.toba3Applied || (h.tobaApplications && Object.keys(h.tobaApplications).length > 0)) && (
+                              {isHouseholdTobaAppliedForFilter(h, 'anyToba') && (
                                 <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 font-bold rounded-xs flex items-center gap-0.5">
                                   <span>塔婆あり</span>
                                 </span>
@@ -1443,7 +1581,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                               type="button"
                               onClick={() => handleCheckAllItems(h)}
                               disabled={(!isCol1Active || entry.check1) && (!isCol2Active || entry.check2) && (!isCol3Active || entry.check3)}
-                              aria-label={h.familyHead + '様の全項目にチェック'}
+                              aria-label={sponsorName + '様の全項目にチェック'}
                               className="mt-2 rounded border border-amber-400 bg-amber-50 px-2 py-1 text-xs font-sans font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-default"
                             >
                               全項目にチェック
@@ -1738,32 +1876,32 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   {
                     id: 'anyToba',
                     title: '塔婆ありの檀家すべて（いずれかの塔婆対象）',
-                    desc: '施餓鬼塔婆または塔婆1〜3等の申込がある世帯',
-                    count: households.filter(h => h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba) || h.toba1Applied || h.toba2Applied || h.toba3Applied || (h.tobaApplications && Object.keys(h.tobaApplications).length > 0)).length
+                    desc: '施餓鬼塔婆または塔婆1〜3等の申込がある世帯（施主・家族含む）',
+                    count: households.filter(h => isHouseholdTobaAppliedForFilter(h, 'anyToba')).length
                   },
                   {
                     id: 'segakiOnly',
                     title: '施餓鬼塔婆対象の檀家のみ',
-                    desc: '世帯主または家族に施餓鬼塔婆の登録がある世帯',
-                    count: households.filter(h => h.isSegakiToba || h.familyMembers?.some(m => m.isSegakiToba)).length
+                    desc: '施主または家族に施餓鬼塔婆の申込がある世帯',
+                    count: households.filter(h => isHouseholdTobaAppliedForFilter(h, 'segakiOnly')).length
                   },
                   ...(templeInfo?.tobaType1 ? [{
                     id: 'toba1Only',
                     title: `${templeInfo.tobaType1} 対象のみ`,
-                    desc: `寺院設定「${templeInfo.tobaType1}」の申込がある世帯`,
-                    count: households.filter(h => h.toba1Applied).length
+                    desc: `寺院設定「${templeInfo.tobaType1}」の申込がある世帯（施主・家族含む）`,
+                    count: households.filter(h => isHouseholdTobaAppliedForFilter(h, 'toba1Only')).length
                   }] : []),
                   ...(templeInfo?.tobaType2 ? [{
                     id: 'toba2Only',
                     title: `${templeInfo.tobaType2} 対象のみ`,
-                    desc: `寺院設定「${templeInfo.tobaType2}」の申込がある世帯`,
-                    count: households.filter(h => h.toba2Applied).length
+                    desc: `寺院設定「${templeInfo.tobaType2}」の申込がある世帯（施主・家族含む）`,
+                    count: households.filter(h => isHouseholdTobaAppliedForFilter(h, 'toba2Only')).length
                   }] : []),
                   ...(templeInfo?.tobaType3 ? [{
                     id: 'toba3Only',
                     title: `${templeInfo.tobaType3} 対象のみ`,
-                    desc: `寺院設定「${templeInfo.tobaType3}」の申込がある世帯`,
-                    count: households.filter(h => h.toba3Applied).length
+                    desc: `寺院設定「${templeInfo.tobaType3}」の申込がある世帯（施主・家族含む）`,
+                    count: households.filter(h => isHouseholdTobaAppliedForFilter(h, 'toba3Only')).length
                   }] : []),
                 ].map((item) => {
                   const isSelected = tobaFilter === item.id;

@@ -307,6 +307,7 @@ export interface Transaction {
   updatedTime?: string;
   createdAt?: string;
   updatedAt?: string;
+  isArchived?: boolean; // 出納アーカイブシートに保管されているか
 }
 
 export interface TempleAnnualEvent {

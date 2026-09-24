@@ -349,6 +349,57 @@ export class HistoryMaintenanceClient {
     const ledgerStart = before[PURGE_LEDGER]?.length || 0;
     const newReservations = plan.expected[PURGE_LEDGER].slice(ledgerStart);
     if (newReservations.length) requests.push({ updateCells: { start: { sheetId: ledger.sheetId, rowIndex: ledgerStart, columnIndex: 0 }, rows: rows(newReservations), fields: 'userEnteredValue' } });
+
+    // 過年度出納アーカイブ行の追加リクエスト
+    if (plan.archiveAppends && plan.archiveAppends.rows.length > 0) {
+      const archiveTitle = plan.archiveAppends.title;
+      let archiveSheet = properties.find((s: any) => s.title === archiveTitle);
+      const neededRows = plan.expected[archiveTitle].length;
+      if (!archiveSheet) {
+        let sheetId = Math.floor(Math.random() * 1000000000);
+        while (properties.some((s: any) => s.sheetId === sheetId)) sheetId++;
+        archiveSheet = { sheetId, title: archiveTitle };
+        requests.push({
+          addSheet: {
+            properties: {
+              ...archiveSheet,
+              gridProperties: {
+                rowCount: Math.max(1000, neededRows + 100),
+                columnCount: Math.max(16, (plan.expected[archiveTitle][0]?.length) || 16),
+              },
+            },
+          },
+        });
+        requests.push({
+          updateCells: {
+            start: { sheetId: archiveSheet.sheetId, rowIndex: 0, columnIndex: 0 },
+            rows: rows(plan.expected[archiveTitle]),
+            fields: 'userEnteredValue',
+          },
+        });
+      } else {
+        if (archiveSheet.gridProperties?.rowCount < neededRows) {
+          requests.push({
+            updateSheetProperties: {
+              properties: {
+                sheetId: archiveSheet.sheetId,
+                gridProperties: { rowCount: neededRows + 100 },
+              },
+              fields: 'gridProperties.rowCount',
+            },
+          });
+        }
+        const startRow = before[archiveTitle]?.length || 0;
+        requests.push({
+          updateCells: {
+            start: { sheetId: archiveSheet.sheetId, rowIndex: startRow, columnIndex: 0 },
+            rows: rows(plan.archiveAppends.rows),
+            fields: 'userEnteredValue',
+          },
+        });
+      }
+    }
+
     for (const [title, ranges] of Object.entries(plan.ranges)) {
       const sheetId = properties.find((s: any) => s.title === title).sheetId;
       requests.push(...ranges.map(range => ({ deleteDimension: { range: { sheetId, dimension: 'ROWS', ...range } } })));

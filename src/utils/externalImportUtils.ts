@@ -1,9 +1,10 @@
 import { CHECK_SLOTS, checkKey, parseHouseholdCheck } from './householdChecks';
 import * as XLSX from 'xlsx';
-import { Household, PastRecord, Transaction, FamilyMember, MasterOptions, TempleProfile } from '../types';
+import { Household, PastRecord, Transaction, FamilyMember, MasterOptions, TempleProfile, TempleInfo } from '../types';
 import { normalizeDateInput, normalizeFurigana } from './memorialCalculator';
 import { getCurrentAuditFields, normalizeAuditDate, normalizeAuditTime } from './auditUtils';
 import { cleanAndNormalizeHouseholdId, getTemplePrefix, generateNewHouseholdId, UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId, getUnlinkedHouseholdId } from './dankaIdUtils';
+import { getFiscalYearOfDate, getJapanDateString } from './fiscalYearUtils';
 import { 
   LinkingDecision, 
   KakochoItemInput, 
@@ -419,6 +420,7 @@ export function convertTableToData(
     defaultHouseholdType?: string;
     targetTempleId?: string;
     temples?: TempleProfile[];
+    templeInfo?: TempleInfo;
     linkingDecisions?: Record<number, LinkingDecision>;
   }
 ): {
@@ -434,6 +436,7 @@ export function convertTableToData(
     householdsUpdated: number;
     pastRecordsCreated: number;
     transactionsCreated: number;
+    transactionsArchived: number;
     warnings: string[];
   };
 } {
@@ -458,6 +461,7 @@ export function convertTableToData(
   let householdsUpdated = 0;
   let pastRecordsCreated = 0;
   let transactionsCreated = 0;
+  let transactionsArchived = 0;
 
   // Working lists
   // 'replace' mode for household or combined initializes outHouseholds to retain other temples' data
@@ -1047,6 +1051,13 @@ export function convertTableToData(
       }
     });
   } else if (targetType === 'accounting') {
+    const templeConfig = (options.temples || []).find(t => t.id === targetTempleId) ||
+      (options.temples || []).find(t => t.isMain) ||
+      options.templeInfo;
+    const todayStr = getJapanDateString();
+    const curFY = getFiscalYearOfDate(todayStr, templeConfig as any);
+    const priorFY = curFY - 1;
+
     rawRows.forEach((row, rowIdx) => {
       const date = normalizeDateInput(getCell(row, 'date'));
       const category = getCell(row, 'category');
@@ -1084,6 +1095,15 @@ export function convertTableToData(
       const matchedH = findHousehold(headName, undefined, rawHouseholdId);
       if (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId) && !matchedH) throw new Error('檀家ID「' + rawHouseholdId + '」が取込先の名簿にありません。先に名簿を取り込んでください。');
 
+      let isArchived = false;
+      if (date) {
+        const txFY = getFiscalYearOfDate(date, templeConfig as any);
+        if (txFY < priorFY) {
+          isArchived = true;
+          transactionsArchived++;
+        }
+      }
+
       const trans: Transaction = {
         id: `TR-${crypto.randomUUID()}`,
         templeId: targetTempleId,
@@ -1100,6 +1120,7 @@ export function convertTableToData(
         createdTime,
         updatedDate,
         updatedTime,
+        isArchived,
       };
 
       outTransactions.push(trans);
@@ -1121,6 +1142,7 @@ export function convertTableToData(
       householdsUpdated,
       pastRecordsCreated,
       transactionsCreated,
+      transactionsArchived,
       warnings,
     },
   };

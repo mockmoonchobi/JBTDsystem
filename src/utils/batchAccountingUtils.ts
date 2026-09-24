@@ -1,6 +1,6 @@
 import { BatchAccountingConfig, BatchAccountingData, Household, HouseholdBatchEntry, TempleInfo, TempleProfile } from '../types';
 import { safeStorage, loadJsonState, saveJsonState } from './storageUtils';
-import { formatJapaneseEraDate } from './memorialCalculator';
+import { formatJapaneseEraDate, getHouseholdSponsorName, getHouseholdSponsorInfo } from './memorialCalculator';
 
 export const STORAGE_KEY_BATCH_ACCOUNTING = 'temple_batch_accounting_data';
 export const STORAGE_KEY_BATCH_ACCOUNTING_CONFIG = 'temple_batch_accounting_config';
@@ -550,16 +550,18 @@ export function convertBatchAccountingToRows(
       });
     });
 
-    // 読み仮名・世帯主名でソート
+    // 読み仮名・施主名でソート
     enteredHouseholds.sort((a, b) => {
-      const furiganaA = (a.household?.furigana || a.household?.familyHead || a.id).trim();
-      const furiganaB = (b.household?.furigana || b.household?.familyHead || b.id).trim();
+      const spA = a.household ? getHouseholdSponsorInfo(a.household) : null;
+      const spB = b.household ? getHouseholdSponsorInfo(b.household) : null;
+      const furiganaA = (spA?.furigana || spA?.sponsorName || a.household?.furigana || a.household?.familyHead || a.id).trim();
+      const furiganaB = (spB?.furigana || spB?.sponsorName || b.household?.furigana || b.household?.familyHead || b.id).trim();
       return furiganaA.localeCompare(furiganaB, 'ja');
     });
 
     enteredHouseholds.forEach(({ id, household, entry }) => {
       const hTempleId = household?.templeId || targetTempleId;
-      const familyHead = household?.familyHead || '';
+      const sponsorName = (household ? getHouseholdSponsorName(household) : '') || household?.familyHead || '';
       
       const check1 = entry.check1 ? '済' : '未';
       const amount1 = entry.check1 && typeof entry.amount1 === 'number' ? entry.amount1 : (entry.amount1 !== '' && entry.amount1 !== undefined ? Number(entry.amount1) : '');
@@ -577,7 +579,7 @@ export function convertBatchAccountingToRows(
       rows.push([
         id,
         getTempleLabel(hTempleId),
-        familyHead,
+        sponsorName,
         configDate,
         check1,
         amount1,
