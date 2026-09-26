@@ -445,6 +445,26 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
             break-inside: avoid !important;
             overflow: hidden !important;
           }
+          .photo-letter-temple-col {
+            height: 182mm !important;
+            min-height: 182mm !important;
+            max-height: 182mm !important;
+            position: relative !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: flex-end !important;
+            align-items: center !important;
+          }
+          .photo-letter-temple-bottom {
+            position: absolute !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+          }
           img {
             max-width: 100%;
             max-height: 100%;
@@ -531,6 +551,26 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
             background: #ffffff !important;
             z-index: 999999 !important;
             overflow: hidden !important;
+          }
+          .photo-letter-temple-col {
+            height: 182mm !important;
+            min-height: 182mm !important;
+            max-height: 182mm !important;
+            position: relative !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: flex-end !important;
+            align-items: center !important;
+          }
+          .photo-letter-temple-bottom {
+            position: absolute !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
           }
         }
       ` }} />
@@ -836,9 +876,13 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                     {/* ① 右端: 文書タイトル（縦書き） */}
                     <div
                       style={{
-                        height: '100%',
+                        height: '182mm',
+                        minHeight: '182mm',
+                        maxHeight: '182mm',
+                        width: '28mm',
+                        minWidth: '28mm',
                         paddingRight: '4px',
-                        paddingLeft: '16px',
+                        paddingLeft: '12px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'flex-start',
@@ -867,7 +911,9 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                     {/* ② 中央: 縦書き案内本文（文字サイズ動的調整、2ページ目に送らない） */}
                     <div
                       style={{
-                        height: '100%',
+                        height: '182mm',
+                        minHeight: '182mm',
+                        maxHeight: '182mm',
                         flex: '1 1 0%',
                         paddingLeft: '16px',
                         paddingRight: '16px',
@@ -899,9 +945,14 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                     {/* ③ 中左: 縦長写真（175dpi、縦14cm × 横7cm ≒ 70mm × 140mm） */}
                     <div
                       style={{
-                        height: '100%',
-                        paddingLeft: '16px',
-                        paddingRight: '16px',
+                        height: '182mm',
+                        minHeight: '182mm',
+                        maxHeight: '182mm',
+                        width: '76mm',
+                        minWidth: '76mm',
+                        maxWidth: '76mm',
+                        paddingLeft: '14px',
+                        paddingRight: '14px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'center',
@@ -919,6 +970,8 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                           minHeight: '140mm',
                           maxWidth: '70mm',
                           maxHeight: '140mm',
+                          marginTop: 'auto',
+                          marginBottom: 'auto',
                           border: '1px solid #a8a29e',
                           backgroundColor: '#f5f5f4',
                           overflow: 'hidden',
@@ -946,10 +999,15 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
 
                     {/* ④ 最左端: 寺院名 ＋ QRコード（縦書き・下揃え） */}
                     <div
+                      className="photo-letter-temple-col"
                       style={{
-                        height: '100%',
-                        paddingLeft: '8px',
-                        paddingRight: '16px',
+                        height: '182mm',
+                        minHeight: '182mm',
+                        maxHeight: '182mm',
+                        width: '32mm',
+                        minWidth: '32mm',
+                        maxWidth: '32mm',
+                        position: 'relative',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'flex-end',
@@ -957,16 +1015,24 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                         flexShrink: 0,
                         writingMode: 'horizontal-tb',
                         boxSizing: 'border-box',
+                        paddingLeft: '6px',
+                        paddingRight: '12px',
                       }}
                     >
                       <div
+                        className="photo-letter-temple-bottom"
                         style={{
+                          position: 'absolute',
+                          bottom: '0',
+                          left: '0',
+                          right: '0',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
                           justifyContent: 'flex-end',
-                          gap: '12px',
-                          paddingBottom: '2px',
+                          gap: '10px',
+                          paddingBottom: '0px',
+                          width: '100%',
                         }}
                       >
                         {/* 山号・寺院名 */}
@@ -993,12 +1059,12 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                               alignItems: 'center',
                               justifyContent: 'center',
                               flexShrink: 0,
-                              paddingTop: '4px',
+                              paddingTop: '2px',
                             }}
                           >
                             <QRCodeSVG
                               value={currentTemple?.website || currentTemple?.websiteUrl || 'https://temple-portal.jp'}
-                              size={46}
+                              size={44}
                               fgColor="#8B0000"
                               bgColor="transparent"
                               level="M"
