@@ -137,6 +137,38 @@
     margin: 0 !important;
   }
 
+  /* When Photo Letter Modal is active during print, completely hide root application to prevent blank pages */
+  body.photo-letter-open > #root,
+  body.photo-letter-open header,
+  body.photo-letter-open nav,
+  body.photo-letter-open aside,
+  body.photo-letter-open footer,
+  body.photo-letter-open main {
+    display: none !important;
+  }
+
+  body.photo-letter-open {
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    overflow: visible !important;
+  }
+
+  .photo-letter-portal {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
   .segaki-modal-portal {
     position: static !important;
     display: block !important;
@@ -153,7 +185,7 @@
   }
 
   /* Reset modal overlays during printing so they start on page 1 cleanly */
-  .fixed.inset-0:not(.segaki-modal-portal) {
+  .fixed.inset-0:not(.segaki-modal-portal):not(.photo-letter-portal) {
     position: static !important;
     background: #ffffff !important;
     padding: 0 !important;
