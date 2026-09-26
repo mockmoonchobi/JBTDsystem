@@ -10,9 +10,8 @@ import {
   AlertCircle,
   FileText,
   Type,
-  Image as ImageIcon,
-  CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  ZoomIn
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Household, TempleInfo, TempleProfile } from '../types';
@@ -44,7 +43,7 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isCameraStarting, setIsCameraStarting] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null); // ダウンサイジング済みBase64 (175dpi, 482x965)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null); // 175dpi Base64 (482x965)
   
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -61,6 +60,9 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
   // 文字サイズ調整（自動 または 任意サイズ指定）
   const [fontSizeMode, setFontSizeMode] = useState<'auto' | 'custom'>('auto');
   const [customFontSize, setCustomFontSize] = useState<number>(11.2);
+
+  // プレビュー表示倍率（画面上のみ）
+  const [previewZoom, setPreviewZoom] = useState<number>(0.68);
 
   // 所属寺院情報（兼務寺院対応）
   const currentTemple: TempleInfo = useMemo(() => {
@@ -135,7 +137,7 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
 
     let stream: MediaStream | null = null;
 
-    // ① スマホの背面カメラ（環境カメラ）を優先して試行
+    // ① スマホ背面カメラを優先
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -146,16 +148,16 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
         audio: false,
       });
     } catch (e1) {
-      console.warn('Camera attempt 1 (ideal environment) failed:', e1);
-      // ② 解像度制約を緩めて背面カメラを試行
+      console.warn('Camera attempt 1 failed:', e1);
+      // ② 制約を緩めて再試行
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' },
           audio: false,
         });
       } catch (e2) {
-        console.warn('Camera attempt 2 (facingMode environment) failed:', e2);
-        // ③ 任意のカメラ（前面または汎用）で試行
+        console.warn('Camera attempt 2 failed:', e2);
+        // ③ 汎用カメラで再試行
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             video: true,
@@ -166,7 +168,7 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
           const errName = e3?.name || '';
           let msg = 'カメラの起動に失敗しました。下の「標準カメラで撮影」ボタンをご利用ください。';
           if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
-            msg = 'カメラのアクセス許可が保留されているか、ブラウザの権限制御により制限されています。下の「標準カメラで撮影」ボタンから撮影できます。';
+            msg = 'カメラのアクセス許可が保留されているか、プレビュー環境の権限により制限されています。下の「標準カメラで撮影」ボタンから撮影できます。';
           } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
             msg = 'カメラデバイスが見つかりませんでした。下の「写真ファイルを選択」をご利用ください。';
           }
@@ -257,20 +259,17 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     let cropY = 0;
 
     if (srcRatio > TARGET_RATIO) {
-      // 元画像の方が横長：左右を切り落として中央の 1:2 枠を抽出
       cropWidth = srcHeight * TARGET_RATIO;
       cropHeight = srcHeight;
       cropX = (srcWidth - cropWidth) / 2;
       cropY = 0;
     } else {
-      // 元画像の方が縦長：上下を切り落として中央の 1:2 枠を抽出
       cropWidth = srcWidth;
       cropHeight = srcWidth / TARGET_RATIO;
       cropX = 0;
       cropY = (srcHeight - cropHeight) / 2;
     }
 
-    // Canvas 上で高品質リサイズ描画
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(
@@ -285,19 +284,16 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
       TARGET_HEIGHT
     );
 
-    // JPEG 85% で Base64 生成（約100〜150KB程度の軽量サイズ）
     const downsizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
     setCapturedImage(downsizedDataUrl);
     stopCameraStream();
   };
 
-  // リアルタイム映像からの撮影実行
   const handleCaptureFromVideo = () => {
     if (!videoRef.current) return;
     processAndDownsizeImage(videoRef.current);
   };
 
-  // ファイル選択・標準カメラからの画像読み込み＆ダウンサイジング
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -314,7 +310,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     e.target.value = '';
   };
 
-  // テンプレート変更ハンドラ
   const handleTemplateChange = (templateId: string) => {
     setSelectedTemplateId(templateId);
     const found = a4Templates.find((t) => t.id === templateId);
@@ -324,7 +319,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     }
   };
 
-  // 本文の置換処理
   const sponsorName = getHouseholdSponsorName(household) || household.familyHead;
   const personalizedMessage = useMemo(() => {
     return applyNoticeTemplate(
@@ -338,7 +332,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     );
   }, [customContent, household, currentTemple, sponsorName]);
 
-  // 文字数に応じたフォントサイズの微小自動調整（2ページ目に送らないよう計算）
   const autoFontSizePt = useMemo(() => {
     const len = personalizedMessage.length;
     if (len <= 200) return 12.5;
@@ -348,10 +341,8 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     return 8.2;
   }, [personalizedMessage]);
 
-  // 実効フォントサイズ
   const effectiveFontSizePt = fontSizeMode === 'auto' ? autoFontSizePt : customFontSize;
 
-  // 実効行間
   const effectiveLineHeight = useMemo(() => {
     if (effectiveFontSizePt >= 13) return 1.75;
     if (effectiveFontSizePt >= 11) return 1.65;
@@ -360,9 +351,8 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     return 1.40;
   }, [effectiveFontSizePt]);
 
-  // A4横・単一ページ固定の印刷処理
+  // A4横・単一ページ固定の印刷処理（プレビューと1:1完全一致）
   const handlePrint = () => {
-    // 既存のプリント用iframeがあれば削除
     const existingFrame = document.getElementById('photo-letter-print-frame');
     if (existingFrame) {
       existingFrame.remove();
@@ -374,7 +364,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
       return;
     }
 
-    // 単独のiframeを作成して余白・背景印刷・サイズを完全隔離出力
     const iframe = document.createElement('iframe');
     iframe.id = 'photo-letter-print-frame';
     iframe.style.position = 'fixed';
@@ -392,6 +381,11 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
       return;
     }
 
+    // ページのスタイルシートとフォント定義を収集
+    const headStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map((el) => el.outerHTML)
+      .join('\n');
+
     doc.open();
     doc.write(`
       <!DOCTYPE html>
@@ -402,27 +396,30 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;700&display=swap" rel="stylesheet">
+        ${headStyles}
         <style>
           @page {
-            size: A4 landscape;
-            margin: 0;
+            size: A4 landscape !important;
+            margin: 0 !important;
           }
-          * {
-            box-sizing: border-box;
+          *, *::before, *::after {
+            box-sizing: border-box !important;
             margin: 0;
             padding: 0;
           }
           html, body {
-            width: 297mm;
-            height: 210mm;
-            max-width: 297mm;
-            max-height: 210mm;
-            background: #ffffff;
-            color: #1a1a1a;
-            font-family: "Noto Serif JP", "Shippori Mincho", "Yu Mincho", serif;
+            width: 297mm !important;
+            height: 210mm !important;
+            max-width: 297mm !important;
+            max-height: 210mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            color: #1a1a1a !important;
+            font-family: "Noto Serif JP", "Shippori Mincho", "Yu Mincho", serif !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
-            overflow: hidden;
+            overflow: hidden !important;
           }
           #photo-letter-print-root {
             width: 297mm !important;
@@ -431,7 +428,7 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
             max-height: 210mm !important;
             min-width: 297mm !important;
             min-height: 210mm !important;
-            padding: 12mm 16mm !important;
+            padding: 14mm 18mm !important;
             display: flex !important;
             flex-direction: row-reverse !important;
             justify-content: space-between !important;
@@ -439,6 +436,8 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
             box-sizing: border-box !important;
             transform: none !important;
             margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
             background: #ffffff !important;
             page-break-after: avoid !important;
             break-after: avoid !important;
@@ -460,7 +459,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
     `);
     doc.close();
 
-    // 読み込み完了後にプリントダイアログ起動
     setTimeout(() => {
       try {
         iframe.contentWindow?.focus();
@@ -469,7 +467,7 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
         console.warn('Iframe print error, falling back to window.print():', err);
         window.print();
       }
-    }, 400);
+    }, 450);
   };
 
   if (!isOpen) return null;
@@ -498,8 +496,19 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
           .photo-letter-screen-ui {
             display: none !important;
           }
+          .photo-letter-preview-scaler {
+            transform: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
+            width: 297mm !important;
+            height: 210mm !important;
+          }
           #photo-letter-print-root {
             display: flex !important;
+            flex-direction: row-reverse !important;
+            justify-content: space-between !important;
+            align-items: stretch !important;
             position: fixed !important;
             top: 0 !important;
             left: 0 !important;
@@ -507,10 +516,11 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
             height: 210mm !important;
             max-width: 297mm !important;
             max-height: 210mm !important;
+            min-width: 297mm !important;
+            min-height: 210mm !important;
             margin: 0 !important;
-            padding: 12mm 16mm !important;
+            padding: 14mm 18mm !important;
             transform: none !important;
-            margin-bottom: 0 !important;
             box-shadow: none !important;
             border: none !important;
             page-break-after: avoid !important;
@@ -610,7 +620,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
 
               {/* 撮影・画像選択アクションボタン */}
               <div className="mt-4 flex flex-col sm:flex-row flex-wrap items-center justify-center gap-2.5 w-full max-w-md">
-                {/* リアルタイム映像が起動している場合のシャッターボタン */}
                 {cameraActive && (
                   <button
                     type="button"
@@ -622,7 +631,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                   </button>
                 )}
 
-                {/* 端末の標準カメラを直接起動するボタン (スマホで確実に動作) */}
                 <button
                   type="button"
                   onClick={() => nativeCameraInputRef.current?.click()}
@@ -632,7 +640,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                   <Camera className="w-4 h-4 text-stone-900" />
                   <span>標準カメラで撮影</span>
                 </button>
-                {/* 標準カメラ直結用 input */}
                 <input
                   ref={nativeCameraInputRef}
                   type="file"
@@ -642,7 +649,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                   className="hidden"
                 />
 
-                {/* 写真ファイル・アルバム選択 */}
                 <button
                   type="button"
                   onClick={() => galleryInputRef.current?.click()}
@@ -651,7 +657,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                   <Upload className="w-3.5 h-3.5" />
                   <span>写真を選択</span>
                 </button>
-                {/* 写真選択用 input */}
                 <input
                   ref={galleryInputRef}
                   type="file"
@@ -660,7 +665,6 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                   className="hidden"
                 />
 
-                {/* カメラ再試行ボタン */}
                 {!cameraActive && (
                   <button
                     type="button"
@@ -677,8 +681,8 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
           ) : (
             /* STEP 2: 撮影済み・A4書状プレビュー ＆ オプション設定 */
             <div className="space-y-3">
-              {/* コントロールパネル（テンプレート選択・文字サイズ調整・QR有無・再撮影） */}
-              <div className="photo-letter-screen-ui bg-white p-3 border border-[#D1CEC7] rounded-xs flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
+              {/* コントロールパネル（テンプレート選択・文字サイズ・QR・表示倍率・再撮影） */}
+              <div className="photo-letter-screen-ui bg-white p-3 border border-[#D1CEC7] rounded-xs flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-2xs">
                 {/* 案内文テンプレート選択 */}
                 <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
                   <FileText className="w-4 h-4 text-[#8C2D19] shrink-0" />
@@ -751,6 +755,22 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
                   </span>
                 </div>
 
+                {/* プレビュー表示倍率 */}
+                <div className="flex items-center gap-1 bg-[#FAF7F0] border border-[#D1CEC7] px-2 py-1 rounded-xs">
+                  <ZoomIn className="w-3.5 h-3.5 text-stone-600 shrink-0" />
+                  <span className="font-bold text-stone-700 shrink-0">表示:</span>
+                  <select
+                    value={previewZoom}
+                    onChange={(e) => setPreviewZoom(parseFloat(e.target.value))}
+                    className="bg-white border border-[#D1CEC7] rounded-xs px-1.5 py-0.5 text-xs text-stone-800"
+                  >
+                    <option value={0.55}>55%</option>
+                    <option value={0.68}>68%（標準）</option>
+                    <option value={0.80}>80%</option>
+                    <option value={1.00}>100%（実寸）</option>
+                  </select>
+                </div>
+
                 {/* 寺院HP QRコード有無 */}
                 <label className="flex items-center gap-1.5 cursor-pointer text-stone-700 font-bold select-none">
                   <input
@@ -779,127 +799,213 @@ export const PhotoLetterModal: React.FC<PhotoLetterModalProps> = ({
 
               {/* 実寸A4横プレビュー（比率 297 : 210） */}
               <div className="photo-letter-screen-ui bg-stone-300 p-2 sm:p-4 rounded-xs overflow-x-auto flex justify-center">
+                {/* スケーラー：画面表示時のみ縮小表示し、印刷時はスケーラーを無効化 */}
                 <div
-                  id="photo-letter-print-root"
-                  className="bg-white shadow-xl relative border border-stone-300 flex flex-row-reverse justify-between items-stretch box-border select-none"
+                  className="photo-letter-preview-scaler"
                   style={{
-                    width: '297mm',
-                    height: '210mm',
-                    minWidth: '297mm',
-                    minHeight: '210mm',
-                    padding: '12mm 16mm',
-                    transform: 'scale(0.68)',
+                    transform: `scale(${previewZoom})`,
                     transformOrigin: 'top center',
-                    marginBottom: '-65mm',
-                    writingMode: 'horizontal-tb',
-                    fontFamily: '"Noto Serif JP", "Shippori Mincho", "Yu Mincho", serif',
+                    marginBottom: `${(210 * (previewZoom - 1))}mm`,
+                    boxSizing: 'border-box',
                   }}
                 >
-                  {/* ① 右端: 文書タイトル（縦書き） */}
                   <div
-                    className="h-full pr-1 pl-4 flex flex-col justify-start items-center shrink-0"
+                    id="photo-letter-print-root"
                     style={{
-                      writingMode: 'vertical-rl',
-                      textOrientation: 'upright',
+                      width: '297mm',
+                      height: '210mm',
+                      minWidth: '297mm',
+                      minHeight: '210mm',
+                      maxWidth: '297mm',
+                      maxHeight: '210mm',
+                      padding: '14mm 18mm',
+                      display: 'flex',
+                      flexDirection: 'row-reverse',
+                      justifyContent: 'space-between',
+                      alignItems: 'stretch',
+                      boxSizing: 'border-box',
+                      backgroundColor: '#ffffff',
+                      color: '#1a1a1a',
+                      fontFamily: '"Noto Serif JP", "Shippori Mincho", "Yu Mincho", serif',
+                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                      border: '1px solid #d6d3d1',
+                      overflow: 'hidden',
+                      margin: 0,
                     }}
                   >
+                    {/* ① 右端: 文書タイトル（縦書き） */}
                     <div
-                      className="font-bold tracking-widest text-stone-950 whitespace-nowrap"
                       style={{
-                        fontSize: `${(effectiveFontSizePt * 1.35).toFixed(1)}pt`,
-                        lineHeight: '1.2',
-                        letterSpacing: '0.22em',
-                        maxHeight: '170mm',
-                      }}
-                    >
-                      {customTitle || '年回忌法要のご案内'}
-                    </div>
-                  </div>
-
-                  {/* ② 中央: 縦書き案内本文（文字サイズ動的調整、2ページ目に送らない） */}
-                  <div
-                    className="h-full flex-1 px-4 overflow-hidden text-stone-900"
-                    style={{
-                      writingMode: 'vertical-rl',
-                      textOrientation: 'upright',
-                      letterSpacing: '0.05em',
-                      maxHeight: '170mm',
-                    }}
-                  >
-                    <VerticalNoticeContent
-                      text={personalizedMessage}
-                      household={household}
-                      templeInfo={currentTemple}
-                      variant="a4"
-                      fontSize={`${effectiveFontSizePt}pt`}
-                      style={{
-                        lineHeight: `${effectiveLineHeight}`,
-                        maxHeight: '165mm',
-                      }}
-                    />
-                  </div>
-
-                  {/* ③ 中左: 縦長写真（175dpi、縦14cm × 横7cm ≒ 70mm × 140mm） */}
-                  <div
-                    className="h-full px-4 flex flex-col justify-center items-center shrink-0"
-                    style={{
-                      writingMode: 'horizontal-tb',
-                    }}
-                  >
-                    <div
-                      className="border border-stone-400 bg-stone-100 overflow-hidden shadow-sm flex items-center justify-center"
-                      style={{
-                        width: '70mm',
-                        height: '140mm',
-                        minWidth: '70mm',
-                        minHeight: '140mm',
+                        height: '100%',
+                        paddingRight: '4px',
+                        paddingLeft: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'flex-start',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                        writingMode: 'vertical-rl',
+                        textOrientation: 'upright',
                         boxSizing: 'border-box',
                       }}
                     >
-                      {capturedImage && (
-                        <img
-                          src={capturedImage}
-                          alt="墓地写真"
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* ④ 最左端: 寺院名 ＋ QRコード（縦書き・下揃え） */}
-                  <div
-                    className="h-full pl-2 pr-4 flex flex-col justify-end items-center shrink-0"
-                    style={{
-                      writingMode: 'horizontal-tb',
-                    }}
-                  >
-                    <div className="flex flex-col items-center justify-end gap-3">
-                      {/* 山号・寺院名 */}
                       <div
-                        className="font-bold text-stone-950 whitespace-nowrap"
                         style={{
-                          writingMode: 'vertical-rl',
-                          textOrientation: 'upright',
-                          fontSize: `${(effectiveFontSizePt * 1.35).toFixed(1)}pt`,
+                          fontWeight: 'bold',
                           letterSpacing: '0.22em',
+                          color: '#0c0a09',
+                          whiteSpace: 'nowrap',
+                          fontSize: `${(effectiveFontSizePt * 1.35).toFixed(1)}pt`,
                           lineHeight: '1.2',
+                          maxHeight: '180mm',
                         }}
                       >
-                        {currentTemple.mountainName ? `${currentTemple.mountainName}　${currentTemple.name}` : currentTemple.name}
+                        {customTitle || '年回忌法要のご案内'}
                       </div>
+                    </div>
 
-                      {/* 寺院HP QRコード（濃紅） */}
-                      {showQrCode && (
-                        <div className="flex items-center justify-center shrink-0 pt-1">
-                          <QRCodeSVG
-                            value={currentTemple?.website || currentTemple?.websiteUrl || 'https://temple-portal.jp'}
-                            size={44}
-                            fgColor="#8B0000"
-                            bgColor="transparent"
-                            level="M"
+                    {/* ② 中央: 縦書き案内本文（文字サイズ動的調整、2ページ目に送らない） */}
+                    <div
+                      style={{
+                        height: '100%',
+                        flex: '1 1 0%',
+                        paddingLeft: '16px',
+                        paddingRight: '16px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'flex-start',
+                        writingMode: 'vertical-rl',
+                        textOrientation: 'upright',
+                        letterSpacing: '0.05em',
+                        boxSizing: 'border-box',
+                        color: '#1c1917',
+                      }}
+                    >
+                      <VerticalNoticeContent
+                        text={personalizedMessage}
+                        household={household}
+                        templeInfo={currentTemple}
+                        variant="a4"
+                        fontSize={`${effectiveFontSizePt}pt`}
+                        style={{
+                          lineHeight: `${effectiveLineHeight}`,
+                          maxHeight: '180mm',
+                          height: '100%',
+                        }}
+                      />
+                    </div>
+
+                    {/* ③ 中左: 縦長写真（175dpi、縦14cm × 横7cm ≒ 70mm × 140mm） */}
+                    <div
+                      style={{
+                        height: '100%',
+                        paddingLeft: '16px',
+                        paddingRight: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                        writingMode: 'horizontal-tb',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '70mm',
+                          height: '140mm',
+                          minWidth: '70mm',
+                          minHeight: '140mm',
+                          maxWidth: '70mm',
+                          maxHeight: '140mm',
+                          border: '1px solid #a8a29e',
+                          backgroundColor: '#f5f5f4',
+                          overflow: 'hidden',
+                          boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        {capturedImage && (
+                          <img
+                            src={capturedImage}
+                            alt="墓地写真"
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
                           />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ④ 最左端: 寺院名 ＋ QRコード（縦書き・下揃え） */}
+                    <div
+                      style={{
+                        height: '100%',
+                        paddingLeft: '8px',
+                        paddingRight: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'flex-end',
+                        alignItems: 'center',
+                        flexShrink: 0,
+                        writingMode: 'horizontal-tb',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: '12px',
+                          paddingBottom: '2px',
+                        }}
+                      >
+                        {/* 山号・寺院名 */}
+                        <div
+                          style={{
+                            writingMode: 'vertical-rl',
+                            textOrientation: 'upright',
+                            fontSize: `${(effectiveFontSizePt * 1.35).toFixed(1)}pt`,
+                            letterSpacing: '0.22em',
+                            lineHeight: '1.2',
+                            fontWeight: 'bold',
+                            color: '#0c0a09',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {currentTemple.mountainName ? `${currentTemple.mountainName}　${currentTemple.name}` : currentTemple.name}
                         </div>
-                      )}
+
+                        {/* 寺院HP QRコード（濃紅） */}
+                        {showQrCode && (
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                              paddingTop: '4px',
+                            }}
+                          >
+                            <QRCodeSVG
+                              value={currentTemple?.website || currentTemple?.websiteUrl || 'https://temple-portal.jp'}
+                              size={46}
+                              fgColor="#8B0000"
+                              bgColor="transparent"
+                              level="M"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
