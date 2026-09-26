@@ -316,7 +316,7 @@ export const TanagyoPatronMapModal: React.FC<TanagyoPatronMapModalProps> = ({
   // 寺院座標の取得
   useEffect(() => {
     if (!isOpen) return;
-    const addr = templeInfo.address || '東京都港区芝公園4-7-35';
+    const addr = templeInfo.address || '東京都港区芝公園4-7-●●';
     geocodeAddressWithGSI(addr).then((coord) => {
       if (coord) setTempleCoord(coord);
     });

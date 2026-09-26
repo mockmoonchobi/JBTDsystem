@@ -5,8 +5,8 @@ import { TempleInfo, Household, TempleProfile } from '../types';
  *
  * トリガー条件（いずれか1つでも該当すれば true）:
  * １・寺院情報の寺院名と住所が本寺、兼務寺どちらか一方でもチュートリアルデータと一致すること
- *    - 本寺チュートリアル: 寺院名「圓福寺」、住所「東京都港区芝公園4-7-35」
- *    - 兼務寺チュートリアル: 寺院名「宝蔵寺」、住所「東京都品川区西五反田5-12-8」
+ *    - 本寺チュートリアル: 寺院名「圓福寺」、住所「東京都港区芝公園4-7-●●」（または「東京都港区芝公園4-7-35」）
+ *    - 兼務寺チュートリアル: 寺院名「宝蔵寺」、住所「東京都品川区西五反田5-12-●●」（または「東京都品川区西五反田5-12-8」）
  * ２・檀家名簿の檀家IDの頭が「DA」あるいは「D1」でかつ、電話番号に「●●●●」のレコードが混入していること
  */
 export function isTutorialDataRemaining(
@@ -19,8 +19,18 @@ export function isTutorialDataRemaining(
     if (!t) return false;
     const name = (t.name || '').trim();
     const address = (t.address || '').trim();
-    const isMainMatch = name === '圓福寺' && address === '東京都港区芝公園4-7-35';
-    const isSubMatch = name === '宝蔵寺' && address === '東京都品川区西五反田5-12-8';
+    const isMainMatch = name === '圓福寺' && (
+      address === '東京都港区芝公園4-7-●●' ||
+      address === '東京都港区芝公園4-7-35' ||
+      address === '東京都港区芝公園4-7-⚫️' ||
+      address === '東京都港区芝公園4-7-⚫⚫'
+    );
+    const isSubMatch = name === '宝蔵寺' && (
+      address === '東京都品川区西五反田5-12-●●' ||
+      address === '東京都品川区西五反田5-12-8' ||
+      address === '東京都品川区西五反田5-12-⚫️' ||
+      address === '東京都品川区西五反田5-12-⚫⚫'
+    );
     return isMainMatch || isSubMatch;
   };
 

@@ -64,7 +64,9 @@ export function hasOnlyHouseholdEdits(base: MergeBaseline | null | undefined, lo
     removed.every(id=>logs.some((e:any)=>e.id===id && e.entityType==='household' && ['delete','batch_delete'].includes(e.actionType)));
 }
 export function hasOnlyIndependentPendingChanges(base: MergeBaseline | null | undefined, local: Dataset): boolean {
-  return hasOnlyNewAccounting(base, local) || hasOnlyHouseholdDeletions(base, local) || hasOnlyHouseholdEdits(base, local);
+  if (!base?.local) return true;
+  return hasOnlyNewAccounting(base, local) || hasOnlyHouseholdDeletions(base, local) || hasOnlyHouseholdEdits(base, local) ||
+    stableMergeValue(base.local) !== stableMergeValue(local);
 }
 export const mergeTableLabels: Record<string, string> = {
   households: '檀家', pastRecords: '過去帳', transactions: '会計', memorialServices: '法事予約',

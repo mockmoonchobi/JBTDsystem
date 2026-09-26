@@ -334,7 +334,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
     familyHead: '山田太郎',
     furigana: 'ヤマダ タロウ',
     postalCode: '105-0011',
-    address: '東京都港区芝公園4-7-35',
+    address: '東京都港区芝公園4-7-●●',
     phone: '03-1234-5678',
     householdType: '檀家',
     district: '中央地区',
@@ -357,7 +357,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
     id: templeInfo?.id || 'temple-preview',
     name: templeInfo?.name || '光明寺',
     mountainName: templeInfo?.mountainName || '補陀落山',
-    address: templeInfo?.address || '東京都港区芝公園4-7-35',
+    address: templeInfo?.address || '東京都港区芝公園4-7-●●',
     phone: templeInfo?.phone || '03-3432-1234',
     postalCode: templeInfo?.postalCode || '105-0011',
     chiefPriest: templeInfo?.chiefPriest || '住職 山田光徳',
@@ -388,7 +388,7 @@ export const PostcardTemplateModal: React.FC<PostcardTemplateModalProps> = ({
   const effectivePt = parseFloat(typography.fontSize) || 12;
 
   const postalDigits = formatVerticalDigitsAndHyphens(templeInfo?.postalCode || '105-0011');
-  const addrText = formatVerticalAddress(templeInfo?.address || '東京都港区芝公園4-7-35');
+  const addrText = formatVerticalAddress(templeInfo?.address || '東京都港区芝公園4-7-●●');
   const phoneDigits = formatVerticalDigitsAndHyphens(templeInfo?.phone || '03-3432-1234');
   const shouldIncludePhone = Boolean(templeInfo?.phone);
 

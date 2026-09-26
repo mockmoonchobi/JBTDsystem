@@ -294,7 +294,15 @@ async function saveIncrementalRowsCore(
   request: Requester, reviewed = false, changedTables?: Set<string>, restoreHouseholdId?: string, onProgress?: (stage: string) => void, deletedRecordIds: string[] = [],
 ): Promise<void> {
   let baseline = await loadRowBaseline(id);
-  if (!baseline) throw new Error('追記方式の同期基準がありません。一度Googleシートを読み込んでください。');
+  if (!baseline) {
+    const desired = groupUpdates(updates);
+    const names = new Set(Object.keys(desired).map(n => resolveExportSheetName(n, sheets.map(s => s.title))));
+    names.add(PURGE_LEDGER);
+    names.add(resolveExportSheetName('操作・削除履歴', sheets.map(s => s.title)));
+    const selectedSheets = sheets.filter(s => names.has(s.title));
+    baseline = await readPhysicalTables(token, id, selectedSheets, request);
+    await acceptRowBaseline(id, baseline);
+  }
   if (!reviewed && await tryHouseholdDeletion(token, id, groupUpdates(updates), baseline, sheets, request, changedTables, onProgress)) return;
   baseline = await loadRowBaseline(id) || baseline;
   if (!reviewed && await tryAccountingAppend(token, id, groupUpdates(updates), baseline, sheets, request, changedTables, onProgress)) return;

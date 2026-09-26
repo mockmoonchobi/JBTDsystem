@@ -86,12 +86,8 @@ function* rowSyncPlanSteps(
     if (!sheet) throw new Error('出力先がありません: ' + name);
     let raw = current[title] || [];
     const base = baseline[title];
-    if (base === undefined && raw.some(r => trimRow(r).length)) throw new Error('同期基準がありません。Googleシートを再読込してください: ' + title);
-    const recordRebase = !reviewed && !!base &&
-      !changed(activeGrid(base)[0] || [], activeGrid(raw)[0] || []);
-    if (base && fingerprint(base) !== fingerprint(raw) && !recordRebase) {
-      throw new Error('他の操作による変更を検出しました。再連携で確認してください: ' + title);
-    }
+    const effectiveBase = base || raw;
+    const recordRebase = !changed(activeGrid(effectiveBase)[0] || [], activeGrid(raw)[0] || []);
     const headers = target[0]?.map(cell);
     if (!headers?.length) throw new Error('出力見出しがありません。');
     let oldHeaders = raw[0]?.map(cell) || [];
@@ -148,12 +144,17 @@ function* rowSyncPlanSteps(
       incoming.add(id);
       const previous = existing.get(id);
       const original = baselineRows.get(id);
-      if (recordRebase && previous && original) {
-        // Apply only this terminal's changed fields, never its stale snapshot.
-        row = row.map((v,c) => changed([original[c]], [v]) ? v : previous.row[c] ?? '');
+      if (recordRebase && previous) {
+        if (original) {
+          // Apply only this terminal's changed fields, never its stale snapshot.
+          row = row.map((v,c) => changed([original[c]], [v]) ? v : previous.row[c] ?? '');
+        } else {
+          // Unseen/added row with matching remote ID: merge changed fields against remote row
+          row = row.map((v,c) => changed([previous.row[c]], [v]) ? v : previous.row[c] ?? '');
+        }
       }
-      if (recordRebase && previous && !original && changed(previous.row.slice(0,width),row)) throw new Error('新規IDが既に使用されています: ' + title + ' / ' + id);
-      const keepDeleted = !(name === '檀家名簿' && restoreHouseholdId === id) && recordRebase && !!original && cell(previous?.row[width]) === '1';
+      const isDeletedInRemote = cell(previous?.row[width]) === '1';
+      const keepDeleted = !reviewed && !(name === '檀家名簿' && restoreHouseholdId === id) && isDeletedInRemote;
       if ((name === '寺院一覧（本寺・兼務）' || name === '寺院情報') && /^temple-sub-K/i.test(id)) {
         const prefix = encodedTemplePrefix(id);
         const otherIds = [...existing.keys(), ...target.slice(1).map(r => cell(r[0]))];
@@ -165,16 +166,17 @@ function* rowSyncPlanSteps(
       const otherAccounting = name === '出納・会計' ? '出納アーカイブ' : name === '出納アーカイブ' ? '出納・会計' : '';
       const fiscalMove = otherAccounting && activeGrid(current[resolveExportSheetName(otherAccounting, titles)] || []).slice(1).some(r => cell(r[0]) === id) &&
         !(desired[otherAccounting] || []).slice(1).some(r => cell(r[0]) === id);
-      const retainDeleted = (keepDeleted && !fiscalMove) || reviewed && deletedRecordIds.includes(RECORD_KINDS[name] + ':' + id);
+      let retainDeleted = (keepDeleted && !fiscalMove) || reviewed && deletedRecordIds.includes(RECORD_KINDS[name] + ':' + id);
       if (retainDeleted && !previous) throw new Error('削除済み行が見つかりません: ' + id);
-      if (!retainDeleted && name === '檀家名簿' && previous && cell(previous.row[width]) === '1' && restoreHouseholdId !== id) {
-        throw new Error('削除済みの檀家IDは再利用できません。名簿への復帰は削除した端末の確認画面から行ってください: ' + id);
-      }
-      if (!retainDeleted && previous && cell(previous.row[width]) === '1' && !reviewed && !positional && !fiscalMove) {
-        // Another tab may have deleted this unchanged accounting row while we deleted a different one.
-        // Keep the authoritative tombstone; actual edits or explicit restoration still require review.
-        if (otherAccounting && !accountingEditProof.has(id) && !changed(previous.row.slice(0, width), row)) continue;
-        throw new Error('削除済みIDの再登録を検出しました。再連携で確認してください: ' + title + ' / ' + id);
+      if (!retainDeleted && previous && cell(previous.row[width]) === '1' && !fiscalMove) {
+        if (restoreHouseholdId === id) {
+          // Explicit restoration
+        } else if (reviewed) {
+          throw new Error('削除済みの檀家IDは再利用できません。名簿への復帰は削除した端末の確認画面から行ってください: ' + id);
+        } else {
+          // Normal mode: keep authoritative tombstone; incoming edits are merged into tombstone row
+          retainDeleted = true;
+        }
       }
       const compareRow = (r: unknown[]) => name === '案内文テンプレート' ? r.filter((_, c) => headers[c] !== '最終更新日時') : r;
       if (!retainDeleted && previous && cell(previous.row[width]) !== '1' && !changed(compareRow(previous.row.slice(0, width)), compareRow(row))) continue;

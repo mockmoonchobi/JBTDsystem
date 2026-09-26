@@ -1741,7 +1741,7 @@ const TempleSenderVerticalBlock: React.FC<{
   }
 
   const postalDigits = formatVerticalDigitsAndHyphens(templeInfo.postalCode || '105-0011');
-  const addrText = formatVerticalAddress(templeInfo.address || '東京都港区芝公園4-7-35');
+  const addrText = formatVerticalAddress(templeInfo.address || '東京都港区芝公園4-7-●●');
   const phoneDigits = formatVerticalDigitsAndHyphens(templeInfo.phone || '03-3432-1234');
   const shouldIncludePhone = Boolean(templeInfo.phone);
 

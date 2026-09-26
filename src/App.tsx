@@ -1757,12 +1757,14 @@ export default function App() {
       // Ordinary reconnect delivers local operations before pulling. It never
       // escalates unrelated edits into a workbook merge or peer maintenance.
       if (!isCleanImport && !discardPendingLocalChanges) {
-        const base = await readMergeBaseline(sheetId);
+        let base = await readMergeBaseline(sheetId);
         const local = getSheetsPayload({...syncStateRef.current, deletedRecords:loadDeletedRecordsLog()});
         const audit = await currentPageAudit();
-        const dirty = base && stableMergeValue(withoutSharedHistory(base.local)) !== stableMergeValue(withoutSharedHistory(local));
-        if (!base)
-          throw new Error('保存の基準を確認できません。端末の変更を保持しています。Googleシートから初期化して読み込むか、接続先を確認してください。');
+        if (!base) {
+          base = { version: 1, sheetId, local, remote: local };
+          await acknowledgeSheets(sheetId, local, local);
+        }
+        const dirty = stableMergeValue(withoutSharedHistory(base.local)) !== stableMergeValue(withoutSharedHistory(local));
         if (dirty || audit.length) {
           setMergeProgress('端末の変更を保存しています');
           await exportToSheets(token,sheetId,local.templeInfo,local.households,local.pastRecords,
@@ -1789,7 +1791,7 @@ export default function App() {
       if (changedDuringImport(before, now, true, auditRevisionBefore, getLocalAuditRevision(), launcherRead && isStartupLauncherOpenRef.current)) throw new Error('読み込み中に端末のデータが変更されました。変更を保護するため読み込みを中止しました。');
       setMergeProgress('端末の表示と同期基準を更新しています');
       applyRemoteSheetsDataRef.current(remoteData, true);
-      setHouseholdReviews(remoteData.householdReviews || []);
+      setHouseholdReviews([]);
       saveJsonState('temple_google_sheet_info', sheet);
       const accepted = getSheetsPayload(syncStateRef.current);
       await acknowledgeSheets(sheetId, accepted, getSheetsPayload(remoteData));

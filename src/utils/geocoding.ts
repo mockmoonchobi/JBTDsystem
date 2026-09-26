@@ -12,7 +12,9 @@ export interface LatLng {
 const PRESET_COORDINATES: Record<string, LatLng> = {
   // 寺院
   '東京都港区芝公園4-7-35': { lat: 35.6581, lng: 139.7482 }, // 圓福寺（芝公園）
+  '東京都港区芝公園4-7-●●': { lat: 35.6581, lng: 139.7482 },
   '東京都品川区西五反田5-12-8': { lat: 35.6267, lng: 139.7153 }, // 宝蔵寺（西五反田）
+  '東京都品川区西五反田5-12-●●': { lat: 35.6267, lng: 139.7153 },
   
   // 港区
   '東京都港区芝公園4-7-1': { lat: 35.6578, lng: 139.7485 },
@@ -88,11 +90,15 @@ const PRESET_COORDINATES: Record<string, LatLng> = {
   '東京都武蔵野市吉祥寺本町2-8-4': { lat: 35.7045, lng: 139.5788 },
 };
 
-// 丁目・番地は数字、号が「⚫️」のダミー住所パターンも静的プリセットに自動追加展開（初回即時表示対応）
+// 丁目・番地は数字、号が「⚫️」や「●●」のダミー住所パターンも静的プリセットに自動追加展開（初回即時表示対応）
 for (const [k, v] of Object.entries(PRESET_COORDINATES)) {
   const masked = k.replace(/(\d+)-(\d+)-(\d+)$/, '$1-$2-⚫️');
   if (masked !== k) {
     PRESET_COORDINATES[masked] = v;
+  }
+  const maskedDoubleCircle = k.replace(/(\d+)-(\d+)-(\d+)$/, '$1-$2-●●');
+  if (maskedDoubleCircle !== k) {
+    PRESET_COORDINATES[maskedDoubleCircle] = v;
   }
 }
 
