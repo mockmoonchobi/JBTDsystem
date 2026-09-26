@@ -438,26 +438,26 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                             </div>
                             <div className="flex items-baseline gap-2">
                               <h3 className="text-xl font-black font-serif text-[#1A1A1A]">
-                                {sp.sponsorName || '（施主未登録）'}{h.yago?.trim() && <span className="ml-2 text-[0.75em] font-normal" title="屋号">{h.yago.trim()}</span>} <span className="text-base font-normal text-gray-500">家</span>
+                                {sp.sponsorName || '（施主未登録）'}{h.yago?.trim() && <span className="ml-2 text-[0.75em] font-normal" title="屋号">{h.yago.trim()}</span>}
                               </h3>
-                              {h.tombNumber && (
-                                <span className="text-xs sm:text-sm font-bold text-gray-600 bg-stone-100 px-2.5 py-0.5 rounded-2xs border border-stone-200">
-                                  墓: {h.tombNumber}
-                                </span>
-                              )}
                             </div>
                           </>
                         );
                       })()}
 
-                      {/* Badges: Type, District, Status */}
+                      {/* Badges: Officer (役員), Classification (区分), Tomb (墓地), Status, Toba, Check Items, Fee */}
                       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                        <span className="px-2.5 py-1 bg-[#FAF0E6] text-[#8C2D19] text-xs sm:text-sm font-bold rounded-2xs border border-[#8C2D19]/30">
-                          {h.householdType || '一般檀家'}
-                        </span>
                         {h.district && (
                           <span className="px-2.5 py-1 bg-stone-100 text-stone-700 text-xs sm:text-sm font-bold rounded-2xs border border-stone-200">
                             {h.district}
+                          </span>
+                        )}
+                        <span className="px-2.5 py-1 bg-[#FAF0E6] text-[#8C2D19] text-xs sm:text-sm font-bold rounded-2xs border border-[#8C2D19]/30">
+                          {h.householdType || '一般檀家'}
+                        </span>
+                        {h.tombNumber && (
+                          <span className="px-2.5 py-1 bg-stone-100 text-stone-700 text-xs sm:text-sm font-bold rounded-2xs border border-stone-200">
+                            墓地: {h.tombNumber}
                           </span>
                         )}
                         {h.status && (
@@ -518,30 +518,32 @@ export const MobileHouseholdView: React.FC<MobileHouseholdViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Right Edit & Photo Letter & Expand Icon */}
-                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPhotoLetterHousehold(h);
-                        }}
-                        className="px-2.5 py-1.5 bg-[#FAF7F0] hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-xs cursor-pointer text-xs sm:text-sm font-bold flex items-center gap-1 shadow-2xs transition-colors"
-                        title="墓地写真付きの案内書状を作成・PDF保存"
-                      >
-                        <Camera className="w-3.5 h-3.5 text-amber-800" />
-                        <span className="whitespace-nowrap">写真付書状</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleEdit(h, e)}
-                        className="px-2.5 sm:px-3 py-1.5 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37]/60 rounded-xs cursor-pointer text-xs sm:text-sm font-bold flex items-center gap-1 shadow-2xs"
-                        title="世帯情報を編集"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                        <span>編集</span>
-                      </button>
-                      <div className="p-1 text-gray-400">
+                    {/* Right Edit & Photo Letter (編集 on top, 写真付書状 below) & Expand Icon */}
+                    <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => handleEdit(h, e)}
+                          className="px-2.5 py-1 bg-[#FAF7F0] hover:bg-[#F0ECE1] text-[#8C2D19] border border-[#D4AF37]/60 rounded-xs cursor-pointer text-xs font-bold flex items-center justify-center gap-1 shadow-2xs"
+                          title="世帯情報を編集"
+                        >
+                          <Edit className="w-3.5 h-3.5 text-[#8C2D19]" />
+                          <span>編集</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPhotoLetterHousehold(h);
+                          }}
+                          className="px-2 py-1 bg-[#FAF7F0] hover:bg-amber-100 text-amber-900 border border-amber-300/80 rounded-xs cursor-pointer text-xs font-bold flex items-center justify-center gap-1 shadow-2xs transition-colors"
+                          title="墓地写真付きの案内書状を作成・PDF保存"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-amber-800" />
+                          <span className="whitespace-nowrap">写真付書状</span>
+                        </button>
+                      </div>
+                      <div className="p-1 text-gray-400 self-center">
                         {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                       </div>
                     </div>
