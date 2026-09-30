@@ -204,6 +204,25 @@ export function compareNamesWithVariants(
 }
 
 /**
+ * Fast comparison when both clean and variant-normalized strings are already known.
+ */
+export function compareNormalizedNames(
+  cleanA: string,
+  varA: string,
+  cleanB: string,
+  varB: string
+): { matched: boolean; isExact: boolean; isVariant: boolean } {
+  if (!cleanA || !cleanB) return { matched: false, isExact: false, isVariant: false };
+  if (cleanA === cleanB) {
+    return { matched: true, isExact: true, isVariant: false };
+  }
+  if (varA === varB) {
+    return { matched: true, isExact: false, isVariant: true };
+  }
+  return { matched: false, isExact: false, isVariant: false };
+}
+
+/**
  * Extracts surname from a full name (e.g. "山田 太郎" -> "山田", "萩原宏一" -> "萩原")
  */
 export function extractSurname(fullName: string): string {
@@ -222,6 +241,23 @@ export function extractSurname(fullName: string): string {
   if (normalized.length === 3) return normalized.slice(0, 2); // e.g. "山田花" -> "山田"
   if (normalized.length >= 4) return normalized.slice(0, 2); // e.g. "萩原宏一" -> "萩原"
   return normalized.slice(0, 2);
+}
+
+/**
+ * Extracts given name from a full name (e.g. "山田 太郎" -> "太郎", "萩原宏一" -> "宏一")
+ */
+export function extractGivenName(fullName: string): string {
+  const clean = String(fullName || '').trim();
+  if (!clean) return '';
+  const spaceParts = clean.split(/[\s　]+/);
+  if (spaceParts.length >= 2) {
+    return spaceParts.slice(1).join('').trim();
+  }
+  const normalized = normalizeNameForMatching(clean);
+  if (normalized.length <= 2) return '';
+  if (normalized.length === 3) return normalized.slice(2); // e.g. "山田花" -> "花"
+  if (normalized.length >= 4) return normalized.slice(2); // e.g. "萩原宏一" -> "宏一"
+  return '';
 }
 
 /**
@@ -322,7 +358,10 @@ export interface LineageSponsorInfo {
   name: string;
   relationship?: string;
   isChiefMourner?: boolean;
-  source: 'familyHead' | 'familyMember' | 'notes';
+  source: 'familyHead' | 'familyMember' | 'notes' | 'confirmed_spirit_sponsor';
+  cleanName?: string;
+  varName?: string;
+  associatedDharmaName?: string;
 }
 
 export interface LineageHouseholdState {
@@ -330,13 +369,21 @@ export interface LineageHouseholdState {
   knownLineageNames: Set<string>; // 施主名、歴代先代精霊の俗名、家族名
   sponsors: LineageSponsorInfo[];
   notesHints: string[]; // 名簿備考欄から抽出された人名
+  notesHintsNormalized?: { name: string; cleanName: string; varName: string }[];
+  confirmedSurnames?: Set<string>; // 確定された精霊・施主の名字（異体字正規化後）
   linkedSpirits: {
     dharmaName: string;
     secularName: string;
     deathDate: string;
     deathYear?: number;
     householdHeadName: string;
+    cleanSecular?: string;
+    varSecular?: string;
   }[];
+  cleanHead?: string;
+  varHead?: string;
+  householdSurname?: string;
+  normHouseholdSurname?: string;
 }
 
 /**
@@ -351,6 +398,10 @@ export function buildInitialLineageMap(
 
   existingHouseholds.forEach((h) => {
     const cleanHead = normalizeNameForMatching(h.familyHead);
+    const varHead = normalizeKanjiVariants(cleanHead);
+    const hSurname = extractSurname(h.familyHead);
+    const normHouseholdSurname = normalizeKanjiVariants(hSurname);
+
     const knownSet = new Set<string>();
     if (cleanHead) knownSet.add(cleanHead);
 
@@ -360,6 +411,8 @@ export function buildInitialLineageMap(
         name: h.familyHead,
         isChiefMourner: true,
         source: 'familyHead',
+        cleanName: cleanHead,
+        varName: varHead,
       });
     }
 
@@ -368,6 +421,7 @@ export function buildInitialLineageMap(
       h.familyMembers.forEach((m) => {
         if (!m.name) return;
         const cleanMem = normalizeNameForMatching(m.name);
+        const varMem = normalizeKanjiVariants(cleanMem);
         if (cleanMem) {
           knownSet.add(cleanMem);
           sponsors.push({
@@ -375,21 +429,31 @@ export function buildInitialLineageMap(
             relationship: m.relationship,
             isChiefMourner: !!(m.isChiefMourner || m.isSponsor),
             source: 'familyMember',
+            cleanName: cleanMem,
+            varName: varMem,
           });
         }
       });
     }
 
     // 2. Extract hints from household notes
-    const hSurname = extractSurname(h.familyHead);
     const notesHints = extractPersonHintsFromRemarks(h.notes, hSurname);
+    const notesHintsNormalized: { name: string; cleanName: string; varName: string }[] = [];
     notesHints.forEach((nh) => {
       const cleanNh = normalizeNameForMatching(nh);
+      const varNh = normalizeKanjiVariants(cleanNh);
       if (cleanNh) {
         knownSet.add(cleanNh);
         sponsors.push({
           name: nh,
           source: 'notes',
+          cleanName: cleanNh,
+          varName: varNh,
+        });
+        notesHintsNormalized.push({
+          name: nh,
+          cleanName: cleanNh,
+          varName: varNh,
         });
       }
     });
@@ -399,7 +463,12 @@ export function buildInitialLineageMap(
       knownLineageNames: knownSet,
       sponsors,
       notesHints,
+      notesHintsNormalized,
       linkedSpirits: [],
+      cleanHead,
+      varHead,
+      householdSurname: hSurname,
+      normHouseholdSurname,
     });
   });
 
@@ -410,6 +479,7 @@ export function buildInitialLineageMap(
     if (!state) return;
 
     const cleanSecular = normalizeNameForMatching(pr.secularName);
+    const varSecular = normalizeKanjiVariants(cleanSecular);
     if (cleanSecular) {
       state.knownLineageNames.add(cleanSecular);
     }
@@ -421,6 +491,8 @@ export function buildInitialLineageMap(
       deathDate: pr.deathDate || '',
       deathYear: year,
       householdHeadName: pr.householdHeadName || '',
+      cleanSecular,
+      varSecular,
     });
   });
 
@@ -428,31 +500,12 @@ export function buildInitialLineageMap(
 }
 
 /**
- * Analyzes a single past record item against the current household lineage state.
- * Finds candidate households, ranks them, and identifies the best recommended match.
+ * Pre-computes surname frequencies for the target temple to efficiently detect unique surname households.
  */
-export function evaluateItemMatch(
-  item: KakochoItemInput,
+export function buildTempleSurnameCounts(
   lineageMap: Map<string, LineageHouseholdState>,
-  targetTempleId: string,
-  maxYearsBack = 80
-): CandidateHouseholdMatch[] {
-  const candidates: CandidateHouseholdMatch[] = [];
-
-  const rawHeadName = item.householdHeadName || '';
-  const currentHeadName = item.currentHeadName || '';
-  const secularName = item.secularName || '';
-  const rawId = item.rawHouseholdId ? String(item.rawHouseholdId).trim() : '';
-
-  const itemDeathYear = item.deathYear;
-  const currentYear = new Date().getFullYear();
-
-  // Extract hints from past record notes/remarks
-  const itemSurname = extractSurname(rawHeadName || currentHeadName || secularName);
-  const combinedItemNotes = `${item.notes || ''} ${item.specialRemarks || ''}`.trim();
-  const itemRemarksHints = extractPersonHintsFromRemarks(combinedItemNotes, itemSurname);
-
-  // Build a surname count map for the target temple to detect unique surname households
+  targetTempleId: string
+): Map<string, number> {
   const templeSurnameCounts = new Map<string, number>();
   for (const [, state] of lineageMap.entries()) {
     const h = state.household;
@@ -463,7 +516,111 @@ export function evaluateItemMatch(
       }
     }
   }
+  return templeSurnameCounts;
+}
+
+/**
+ * Pre-computes full name frequencies for the target temple to detect identical-name households (同姓同名の檀家).
+ */
+export function buildTempleFullNameCounts(
+  lineageMap: Map<string, LineageHouseholdState>,
+  targetTempleId: string
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [, state] of lineageMap.entries()) {
+    const h = state.household;
+    if (!targetTempleId || (h.templeId || 'temple-main') === targetTempleId) {
+      const cleanHead = state.cleanHead || normalizeNameForMatching(h.familyHead);
+      const varHead = state.varHead || normalizeKanjiVariants(cleanHead);
+      if (varHead && varHead.length >= 2) {
+        counts.set(varHead, (counts.get(varHead) || 0) + 1);
+      }
+    }
+  }
+  return counts;
+}
+
+// Helper to convert katakana to hiragana and strip whitespace for Japanese alphabetical sorting (五十音順)
+export function toHiraganaKey(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/[\u30a1-\u30f6]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0x60))
+    .replace(/[\s　]/g, '');
+}
+
+/**
+ * Analyzes a single past record item against the current household lineage state.
+ * Finds candidate households, ranks them, and identifies the best recommended match.
+ */
+export function evaluateItemMatch(
+  item: KakochoItemInput,
+  lineageMap: Map<string, LineageHouseholdState>,
+  targetTempleId: string,
+  maxYearsBack = 80,
+  cachedTempleSurnameCounts?: Map<string, number>,
+  cachedTempleFullNameCounts?: Map<string, number>
+): CandidateHouseholdMatch[] {
+  const bestCandidateByHousehold = new Map<string, CandidateHouseholdMatch>();
+
+  const addCandidate = (cand: CandidateHouseholdMatch) => {
+    const existing = bestCandidateByHousehold.get(cand.household.id);
+    if (!existing || cand.confidenceScore > existing.confidenceScore) {
+      bestCandidateByHousehold.set(cand.household.id, cand);
+    }
+  };
+
+  const rawHeadName = item.householdHeadName || '';
+  const currentHeadName = item.currentHeadName || '';
+  const secularName = item.secularName || '';
+  const rawId = item.rawHouseholdId ? String(item.rawHouseholdId).trim() : '';
+
+  const itemDeathYear = item.deathYear;
+  const currentYear = new Date().getFullYear();
+
+  // Extract hints from past record notes/remarks
+  const itemSponsorName = rawHeadName || currentHeadName;
+  const sponsorSurname = extractSurname(itemSponsorName);
+  const normSponsorSurname = normalizeKanjiVariants(sponsorSurname);
+
+  const secularSurname = extractSurname(secularName);
+  const normSecularSurname = normalizeKanjiVariants(secularSurname);
+
+  // General item surname (prefer sponsor, fallback secular) for notes extraction and unique count
+  const itemSurname = sponsorSurname || secularSurname;
   const normItemSurname = normalizeKanjiVariants(itemSurname);
+  const combinedItemNotes = `${item.notes || ''} ${item.specialRemarks || ''}`.trim();
+  const itemRemarksHints = extractPersonHintsFromRemarks(combinedItemNotes, itemSurname);
+
+  // Sponsor name extraction for partial match in household notes
+  const sponsorFullName = currentHeadName || rawHeadName;
+  const sponsorGivenName = extractGivenName(sponsorFullName);
+  const cleanSponsorSurname = normalizeNameForMatching(sponsorSurname);
+  const varSponsorSurname = normalizeKanjiVariants(cleanSponsorSurname);
+  const cleanSponsorGivenName = normalizeNameForMatching(sponsorGivenName);
+  const varSponsorGivenName = normalizeKanjiVariants(cleanSponsorGivenName);
+
+  // Pre-normalize names for item once to avoid repeating regex and variant mappings in inner loops
+  const cleanCurrentHead = normalizeNameForMatching(currentHeadName);
+  const varCurrentHead = normalizeKanjiVariants(cleanCurrentHead);
+  const cleanRawHead = normalizeNameForMatching(rawHeadName);
+  const varRawHead = normalizeKanjiVariants(cleanRawHead);
+  const searchHeadName = rawHeadName || currentHeadName;
+  const cleanSearchHead = normalizeNameForMatching(searchHeadName);
+  const varSearchHead = normalizeKanjiVariants(cleanSearchHead);
+  const cleanSecular = normalizeNameForMatching(secularName);
+  const varSecular = normalizeKanjiVariants(cleanSecular);
+  const normalizedItemHints = itemRemarksHints.map((hint) => {
+    const cleanHint = normalizeNameForMatching(hint);
+    return {
+      hint,
+      cleanHint,
+      varHint: normalizeKanjiVariants(cleanHint),
+    };
+  });
+
+  // Surname count and full name count maps for the target temple
+  const templeSurnameCounts = cachedTempleSurnameCounts || buildTempleSurnameCounts(lineageMap, targetTempleId);
+  const templeFullNameCounts = cachedTempleFullNameCounts || buildTempleFullNameCounts(lineageMap, targetTempleId);
   const isUniqueSurnameInTemple = normItemSurname.length >= 2 && (templeSurnameCounts.get(normItemSurname) || 0) === 1;
 
   // 1. Check direct ID match
@@ -472,7 +629,7 @@ export function evaluateItemMatch(
       const h = state.household;
       const isSameTemple = (h.templeId || 'temple-main') === targetTempleId;
       if (h.id === rawId || h.id.replace(/[^0-9]/g, '') === rawId.replace(/[^0-9]/g, '')) {
-        candidates.push({
+        addCandidate({
           household: h,
           matchType: 'exact_id',
           confidenceScore: isSameTemple ? 100 : 95,
@@ -489,15 +646,18 @@ export function evaluateItemMatch(
     const h = state.household;
     const isSameTemple = (h.templeId || 'temple-main') === targetTempleId;
     const templeMultiplier = isSameTemple ? 1.0 : 0.85;
-    const hSurname = extractSurname(h.familyHead);
+    const hSurname = state.householdSurname || extractSurname(h.familyHead);
+    const normHSurname = state.normHouseholdSurname || normalizeKanjiVariants(hSurname);
+    const cleanHHead = state.cleanHead || normalizeNameForMatching(h.familyHead);
+    const varHHead = state.varHead || normalizeKanjiVariants(cleanHHead);
 
     // A. Match current施主名 / 世帯主名 (currentHeadName)
     if (currentHeadName) {
       // (1) Check against household familyHead
-      const matchRes = compareNamesWithVariants(currentHeadName, h.familyHead);
+      const matchRes = compareNormalizedNames(cleanCurrentHead, varCurrentHead, cleanHHead, varHHead);
       if (matchRes.matched) {
         const baseScore = matchRes.isExact ? 98 : 97;
-        candidates.push({
+        addCandidate({
           household: h,
           matchType: 'exact_current_head',
           confidenceScore: Math.round(baseScore * templeMultiplier),
@@ -515,7 +675,9 @@ export function evaluateItemMatch(
       let matchedSponsor: LineageSponsorInfo | undefined;
       let sponsorIsVariant = false;
       for (const sp of state.sponsors) {
-        const spComp = compareNamesWithVariants(currentHeadName, sp.name);
+        const spClean = sp.cleanName || normalizeNameForMatching(sp.name);
+        const spVar = sp.varName || normalizeKanjiVariants(spClean);
+        const spComp = compareNormalizedNames(cleanCurrentHead, varCurrentHead, spClean, spVar);
         if (spComp.matched) {
           matchedSponsor = sp;
           sponsorIsVariant = spComp.isVariant;
@@ -524,16 +686,26 @@ export function evaluateItemMatch(
       }
 
       if (matchedSponsor) {
+        const isConfirmedSpiritSponsor = matchedSponsor.source === 'confirmed_spirit_sponsor';
         const isChief = matchedSponsor.isChiefMourner;
-        const baseScore = isChief ? (sponsorIsVariant ? 96 : 97) : (sponsorIsVariant ? 90 : 91);
-        candidates.push({
+        const baseScore = isConfirmedSpiritSponsor
+          ? (sponsorIsVariant ? 95 : 96)
+          : isChief
+          ? (sponsorIsVariant ? 96 : 97)
+          : (sponsorIsVariant ? 90 : 91);
+
+        addCandidate({
           household: h,
           matchType: 'exact_sponsor_member',
           confidenceScore: Math.round(baseScore * templeMultiplier),
-          title: isChief
+          title: isConfirmedSpiritSponsor
+            ? (sponsorIsVariant ? '確定精霊の施主名と一致（異体字・家系連動）' : '確定精霊の施主名と一致（家系連動・96%）')
+            : isChief
             ? (sponsorIsVariant ? '現施主名と名簿の指定施主名が一致（異体字）' : '現施主名と名簿の指定施主名が一致')
             : (sponsorIsVariant ? '現施主名と名簿の家族名が一致（異体字）' : '現施主名と名簿の家族名が一致'),
-          explanation: `ファイル記載の現施主名「${currentHeadName}」様が、名簿の家族情報「${matchedSponsor.name}」様${matchedSponsor.relationship ? `（${matchedSponsor.relationship}）` : ''}${isChief ? '【施主】' : ''}と${sponsorIsVariant ? '異体字を含めて' : ''}一致しました。`,
+          explanation: isConfirmedSpiritSponsor
+            ? `ファイル記載の現施主名「${currentHeadName}」様が、この檀家に先に確定された精霊（${matchedSponsor.associatedDharmaName || '過去帳'}）の施主名「${matchedSponsor.name}」様と${sponsorIsVariant ? '異体字を含めて' : ''}一致しました（家系連動・芋づる式照合）。`
+            : `ファイル記載の現施主名「${currentHeadName}」様が、名簿の家族情報「${matchedSponsor.name}」様${matchedSponsor.relationship ? `（${matchedSponsor.relationship}）` : ''}${isChief ? '【施主】' : ''}と${sponsorIsVariant ? '異体字を含めて' : ''}一致しました。`,
           matchedName: matchedSponsor.name,
           isVariantMatch: sponsorIsVariant,
         });
@@ -544,13 +716,13 @@ export function evaluateItemMatch(
     // B. Match 当時の施主名・世帯主名 (householdHeadName)
     if (rawHeadName) {
       // (1) Check against household familyHead
-      const matchRes = compareNamesWithVariants(rawHeadName, h.familyHead);
+      const matchRes = compareNormalizedNames(cleanRawHead, varRawHead, cleanHHead, varHHead);
       if (matchRes.matched) {
         const yearsAgo = itemDeathYear ? currentYear - itemDeathYear : 0;
         const isRecent = !itemDeathYear || yearsAgo <= 35;
         const baseScore = isRecent ? (matchRes.isExact ? 95 : 94) : Math.max(70, (matchRes.isExact ? 95 : 94) - Math.floor(yearsAgo / 4));
 
-        candidates.push({
+        addCandidate({
           household: h,
           matchType: 'exact_current_head',
           confidenceScore: Math.round(baseScore * templeMultiplier),
@@ -573,7 +745,9 @@ export function evaluateItemMatch(
       let matchedSponsor: LineageSponsorInfo | undefined;
       let sponsorIsVariant = false;
       for (const sp of state.sponsors) {
-        const spComp = compareNamesWithVariants(rawHeadName, sp.name);
+        const spClean = sp.cleanName || normalizeNameForMatching(sp.name);
+        const spVar = sp.varName || normalizeKanjiVariants(spClean);
+        const spComp = compareNormalizedNames(cleanRawHead, varRawHead, spClean, spVar);
         if (spComp.matched) {
           matchedSponsor = sp;
           sponsorIsVariant = spComp.isVariant;
@@ -582,16 +756,26 @@ export function evaluateItemMatch(
       }
 
       if (matchedSponsor) {
+        const isConfirmedSpiritSponsor = matchedSponsor.source === 'confirmed_spirit_sponsor';
         const isChief = matchedSponsor.isChiefMourner;
-        const baseScore = isChief ? (sponsorIsVariant ? 94 : 95) : (sponsorIsVariant ? 88 : 89);
-        candidates.push({
+        const baseScore = isConfirmedSpiritSponsor
+          ? (sponsorIsVariant ? 94 : 95)
+          : isChief
+          ? (sponsorIsVariant ? 94 : 95)
+          : (sponsorIsVariant ? 88 : 89);
+
+        addCandidate({
           household: h,
           matchType: 'exact_sponsor_member',
           confidenceScore: Math.round(baseScore * templeMultiplier),
-          title: isChief
+          title: isConfirmedSpiritSponsor
+            ? (sponsorIsVariant ? '確定精霊の施主名と一致（異体字・家系連動）' : '確定精霊の施主名と一致（家系連動・95%）')
+            : isChief
             ? (sponsorIsVariant ? '当時の施主名と名簿の指定施主名が一致（異体字）' : '当時の施主名と名簿の指定施主名が一致')
             : (sponsorIsVariant ? '当時の施主名と名簿の家族名が一致（異体字）' : '当時の施主名と名簿の家族名が一致'),
-          explanation: `当時の施主名「${rawHeadName}」様が、名簿の家族・施主情報「${matchedSponsor.name}」様${matchedSponsor.relationship ? `（${matchedSponsor.relationship}）` : ''}${isChief ? '【施主】' : ''}と${sponsorIsVariant ? '異体字を含めて' : ''}一致しました。`,
+          explanation: isConfirmedSpiritSponsor
+            ? `当時の施主名「${rawHeadName}」様が、この檀家に先に確定された精霊（${matchedSponsor.associatedDharmaName || '過去帳'}）の施主名「${matchedSponsor.name}」様と${sponsorIsVariant ? '異体字を含めて' : ''}一致しました（家系連動・芋づる式照合）。`
+            : `当時の施主名「${rawHeadName}」様が、名簿の家族・施主情報「${matchedSponsor.name}」様${matchedSponsor.relationship ? `（${matchedSponsor.relationship}）` : ''}${isChief ? '【施主】' : ''}と${sponsorIsVariant ? '異体字を含めて' : ''}一致しました。`,
           matchedName: matchedSponsor.name,
           isVariantMatch: sponsorIsVariant,
         });
@@ -600,18 +784,17 @@ export function evaluateItemMatch(
     }
 
     // C. Past Record Remarks Hints Matching (過去帳備考欄から抽出した関係者名ヒントの照合)
-    // 例: 施主名「萩原宏一」続柄「母」備考欄「光紀妻」 -> ヒント「光紀」「萩原光紀」
-    if (itemRemarksHints.length > 0) {
+    if (normalizedItemHints.length > 0) {
       let matchedHintName: string | undefined;
       let matchedTargetName: string | undefined;
       let isHintVariant = false;
       let hintMatchType: 'head' | 'sponsor' | 'ancestor' = 'head';
 
-      for (const hint of itemRemarksHints) {
+      for (const hintObj of normalizedItemHints) {
         // (1) Check against household familyHead
-        const headComp = compareNamesWithVariants(hint, h.familyHead);
+        const headComp = compareNormalizedNames(hintObj.cleanHint, hintObj.varHint, cleanHHead, varHHead);
         if (headComp.matched) {
-          matchedHintName = hint;
+          matchedHintName = hintObj.hint;
           matchedTargetName = h.familyHead;
           isHintVariant = headComp.isVariant;
           hintMatchType = 'head';
@@ -620,9 +803,11 @@ export function evaluateItemMatch(
 
         // (2) Check against sponsors / family members
         for (const sp of state.sponsors) {
-          const spComp = compareNamesWithVariants(hint, sp.name);
+          const spClean = sp.cleanName || normalizeNameForMatching(sp.name);
+          const spVar = sp.varName || normalizeKanjiVariants(spClean);
+          const spComp = compareNormalizedNames(hintObj.cleanHint, hintObj.varHint, spClean, spVar);
           if (spComp.matched) {
-            matchedHintName = hint;
+            matchedHintName = hintObj.hint;
             matchedTargetName = sp.name;
             isHintVariant = spComp.isVariant;
             hintMatchType = 'sponsor';
@@ -633,9 +818,11 @@ export function evaluateItemMatch(
 
         // (3) Check against linked ancestor spirits' secular names
         for (const spirit of state.linkedSpirits) {
-          const ancComp = compareNamesWithVariants(hint, spirit.secularName);
+          const spSecularClean = spirit.cleanSecular || normalizeNameForMatching(spirit.secularName);
+          const spSecularVar = spirit.varSecular || normalizeKanjiVariants(spSecularClean);
+          const ancComp = compareNormalizedNames(hintObj.cleanHint, hintObj.varHint, spSecularClean, spSecularVar);
           if (ancComp.matched) {
-            matchedHintName = hint;
+            matchedHintName = hintObj.hint;
             matchedTargetName = `${spirit.secularName}（先代精霊: ${spirit.dharmaName || '俗名'}）`;
             isHintVariant = ancComp.isVariant;
             hintMatchType = 'ancestor';
@@ -652,7 +839,7 @@ export function evaluateItemMatch(
             ? (isHintVariant ? 90 : 91)
             : (isHintVariant ? 89 : 90);
 
-        candidates.push({
+        addCandidate({
           household: h,
           matchType: 'remarks_hint_match',
           confidenceScore: Math.round(baseScore * templeMultiplier),
@@ -669,14 +856,14 @@ export function evaluateItemMatch(
     }
 
     // D. Lineage / Ancestor Secular Name Match (家系・先代精霊の俗名照合)
-    // If the past record's householdHeadName or currentHeadName matches a secularName of a previously linked spirit of this household
-    const searchHeadName = rawHeadName || currentHeadName;
     if (searchHeadName) {
       let matchedAncestor: (typeof state.linkedSpirits)[0] | undefined;
       let matchedIsVariant = false;
 
       for (const spirit of state.linkedSpirits) {
-        const comp = compareNamesWithVariants(spirit.secularName, searchHeadName);
+        const spSecularClean = spirit.cleanSecular || normalizeNameForMatching(spirit.secularName);
+        const spSecularVar = spirit.varSecular || normalizeKanjiVariants(spSecularClean);
+        const comp = compareNormalizedNames(spSecularClean, spSecularVar, cleanSearchHead, varSearchHead);
         if (comp.matched) {
           if (itemDeathYear && spirit.deathYear) {
             const diff = Math.abs(spirit.deathYear - itemDeathYear);
@@ -699,7 +886,7 @@ export function evaluateItemMatch(
           : undefined;
         const baseScore = matchedIsVariant ? 89 : 90;
 
-        candidates.push({
+        addCandidate({
           household: h,
           matchType: 'ancestor_secular_name',
           confidenceScore: Math.round(baseScore * templeMultiplier),
@@ -717,9 +904,9 @@ export function evaluateItemMatch(
     }
 
     // E. Tomb location & Surname match (異体字名字も考慮)
-    const surnameComp = compareNamesWithVariants(itemSurname, hSurname);
+    const surnameComp = compareNormalizedNames(itemSurname, normItemSurname, hSurname, normHSurname);
     if (item.burialLocation && h.tombNumber && item.burialLocation === h.tombNumber && surnameComp.matched) {
-      candidates.push({
+      addCandidate({
         household: h,
         matchType: 'same_surname_same_tomb',
         confidenceScore: Math.round((surnameComp.isExact ? 75 : 74) * templeMultiplier),
@@ -731,48 +918,195 @@ export function evaluateItemMatch(
       continue;
     }
 
-    // F. Same Surname match (同姓候補 - 異体字名字も考慮)
-    if (surnameComp.matched && itemSurname.length >= 2) {
+    // F. Same Surname match (同姓候補 - 施主の姓、俗名の姓、確定精霊の名字を考慮)
+    const isConfirmedSurnameMatch = Boolean(state.confirmedSurnames && normItemSurname && state.confirmedSurnames.has(normItemSurname));
+
+    // 1) 過去帳の施主の姓と名簿の世帯主姓の照合
+    const sponsorSurnameComp = sponsorSurname && sponsorSurname.length >= 2
+      ? compareNormalizedNames(sponsorSurname, normSponsorSurname, hSurname, normHSurname)
+      : { matched: false, isExact: false, isVariant: false };
+
+    // 2) 過去帳の俗名の姓と名簿の世帯主姓の照合（ユーザー要望: 45%重視）
+    const secularSurnameComp = secularSurname && secularSurname.length >= 2
+      ? compareNormalizedNames(secularSurname, normSecularSurname, hSurname, normHSurname)
+      : { matched: false, isExact: false, isVariant: false };
+
+    const isSameSurnameMatched = sponsorSurnameComp.matched || secularSurnameComp.matched || isConfirmedSurnameMatch;
+
+    if (isSameSurnameMatched) {
       // Check if address partially matches
       const hAddrClean = (h.address || '').replace(/[\s　]/g, '');
       const notesClean = (item.notes || '').replace(/[\s　]/g, '');
       const addrMatch = notesClean && hAddrClean && (notesClean.includes(hAddrClean) || hAddrClean.includes(notesClean));
 
-      // 同姓の候補が寺院名簿内に1件しかない場合は適合度75%とする
       let baseScore: number;
       let matchTitle: string;
       let matchExplanation: string;
 
-      if (isUniqueSurnameInTemple && isSameTemple) {
-        baseScore = surnameComp.isExact ? 75 : 74;
-        matchTitle = surnameComp.isVariant
+      if (isConfirmedSurnameMatch && !sponsorSurnameComp.matched && !secularSurnameComp.matched) {
+        // 先にこの檀家に確定された精霊・施主の名字と一致（家系連動・同姓と同じ45%）
+        baseScore = 45;
+        matchTitle = '確定精霊・施主と同姓（家系連動・45%）';
+        matchExplanation = `この檀家に先に確定された精霊・施主の名字「${itemSurname}」と同姓です（家系連動）。`;
+      } else if (isUniqueSurnameInTemple && isSameTemple) {
+        baseScore = (sponsorSurnameComp.isExact || secularSurnameComp.isExact) ? 75 : 74;
+        matchTitle = (sponsorSurnameComp.isVariant || secularSurnameComp.isVariant)
           ? '同姓檀家候補（名簿内唯一の同姓・75%・異体字）'
           : '同姓檀家候補（名簿内唯一の同姓・75%）';
-        matchExplanation = `同姓「${hSurname}」様${surnameComp.isVariant ? '（異体字）' : ''}の檀家が寺院名簿内に1件のみ存在するため、適合度75%として判定しました。`;
+        matchExplanation = `同姓「${hSurname}」様${(sponsorSurnameComp.isVariant || secularSurnameComp.isVariant) ? '（異体字）' : ''}の檀家が寺院名簿内に1件のみ存在するため、適合度75%として判定しました。`;
       } else if (addrMatch) {
-        baseScore = surnameComp.isExact ? 65 : 64;
-        matchTitle = surnameComp.isVariant ? '同姓（異体字）・住所類似候補' : '同姓・住所類似候補';
-        matchExplanation = `同姓「${hSurname}」様${surnameComp.isVariant ? '（異体字）' : ''}かつ住所情報に関連が見られます。`;
+        baseScore = (sponsorSurnameComp.isExact || secularSurnameComp.isExact) ? 65 : 64;
+        matchTitle = (sponsorSurnameComp.isVariant || secularSurnameComp.isVariant) ? '同姓（異体字）・住所類似候補' : '同姓・住所類似候補';
+        matchExplanation = `同姓「${hSurname}」様${(sponsorSurnameComp.isVariant || secularSurnameComp.isVariant) ? '（異体字）' : ''}かつ住所情報に関連が見られます。`;
       } else {
-        baseScore = surnameComp.isExact ? 45 : 44;
-        matchTitle = surnameComp.isVariant ? '同姓檀家候補（異体字）' : '同姓檀家候補';
-        matchExplanation = `同姓「${hSurname}」様${surnameComp.isVariant ? '（異体字）' : ''}の檀家様です。`;
+        baseScore = (sponsorSurnameComp.isExact || secularSurnameComp.isExact) ? 45 : 44;
+        const isVariant = sponsorSurnameComp.isVariant || secularSurnameComp.isVariant;
+        if (sponsorSurnameComp.matched && secularSurnameComp.matched) {
+          matchTitle = isVariant ? '同姓檀家候補（施主・俗名ともに同姓・異体字・45%）' : '同姓檀家候補（施主・俗名ともに同姓・45%）';
+          matchExplanation = `施主姓「${sponsorSurname}」および俗名姓「${secularSurname}」様${isVariant ? '（異体字）' : ''}が名簿の世帯主姓「${hSurname}」と一致しました（適合度45%）。`;
+        } else if (secularSurnameComp.matched) {
+          matchTitle = isVariant ? '俗名同姓檀家候補（俗名の姓一致・異体字・45%）' : '俗名同姓檀家候補（俗名の姓一致・45%）';
+          matchExplanation = `故人の俗名「${secularName}」の姓「${secularSurname}」様${isVariant ? '（異体字）' : ''}と、名簿の世帯主姓「${hSurname}」が一致しました（適合度45%）。`;
+        } else {
+          matchTitle = isVariant ? '同姓檀家候補（異体字・45%）' : '同姓檀家候補（45%）';
+          matchExplanation = `施主の姓「${sponsorSurname}」様${isVariant ? '（異体字）' : ''}の檀家様です（適合度45%）。`;
+        }
       }
 
-      candidates.push({
+      addCandidate({
         household: h,
         matchType: addrMatch ? 'same_surname_same_address' : 'same_surname',
         confidenceScore: Math.round(baseScore * templeMultiplier),
         title: matchTitle,
         explanation: matchExplanation,
-        matchedName: h.familyHead,
-        isVariantMatch: surnameComp.isVariant,
+        matchedName: isConfirmedSurnameMatch && !sponsorSurnameComp.matched && !secularSurnameComp.matched ? itemSurname : h.familyHead,
+        isVariantMatch: sponsorSurnameComp.isVariant || secularSurnameComp.isVariant,
       });
+    }
+
+    // G. Household notes partial match with sponsor surname or given name (+10%)
+    // 名簿の備考欄の姓あるいは名が、施主の姓あるいは名の片方が一致する場合は10%程度確率を上げる
+    if (h.notes && sponsorFullName) {
+      const cleanHNotes = normalizeNameForMatching(h.notes);
+      const varHNotes = normalizeKanjiVariants(cleanHNotes);
+
+      let matchedPart: 'surname' | 'givenName' | undefined;
+      let matchedVal = '';
+
+      if (cleanSponsorSurname.length >= 2 && (cleanHNotes.includes(cleanSponsorSurname) || varHNotes.includes(varSponsorSurname))) {
+        matchedPart = 'surname';
+        matchedVal = sponsorSurname;
+      } else if (cleanSponsorGivenName.length >= 2 && (cleanHNotes.includes(cleanSponsorGivenName) || varHNotes.includes(varSponsorGivenName))) {
+        matchedPart = 'givenName';
+        matchedVal = sponsorGivenName;
+      }
+
+      if (matchedPart && matchedVal) {
+        const existingCand = bestCandidateByHousehold.get(h.id);
+        if (existingCand) {
+          // If already matched a rule, boost score by +10% (up to 95%)
+          if (existingCand.confidenceScore < 90) {
+            existingCand.confidenceScore = Math.min(95, existingCand.confidenceScore + 10);
+            existingCand.title += '（名簿備考欄一致+10%）';
+            existingCand.explanation += ` 名簿備考欄「${h.notes}」と施主の${matchedPart === 'surname' ? '姓' : '名'}「${matchedVal}」が一致（+10%）。`;
+          }
+        } else {
+          // If no previous match (would be 0%), give 12% match
+          addCandidate({
+            household: h,
+            matchType: 'remarks_hint_match',
+            confidenceScore: Math.round(12 * templeMultiplier),
+            title: `名簿備考欄と施主の${matchedPart === 'surname' ? '姓' : '名'}が一致（+10%）`,
+            explanation: `名簿備考欄「${h.notes}」に、施主名「${sponsorFullName}」様の${matchedPart === 'surname' ? '姓' : '名'}「${matchedVal}」が含まれています。`,
+            matchedName: matchedVal,
+          });
+        }
+      }
     }
   }
 
-  // Sort candidates by confidence score descending
-  return candidates.sort((a, b) => b.confidenceScore - a.confidenceScore);
+  // 2.5 Handle identical full names in temple or across candidates (同姓同名の檀家は両家とも50%にする)
+  const candidateList = Array.from(bestCandidateByHousehold.values());
+  const matchedNameCounts = new Map<string, number>();
+
+  for (const cand of candidateList) {
+    if (cand.confidenceScore > 50 && cand.matchType !== 'exact_id') {
+      const cleanMatched = normalizeNameForMatching(cand.matchedName || cand.household.familyHead);
+      const varMatched = normalizeKanjiVariants(cleanMatched);
+      if (varMatched && varMatched.length >= 2) {
+        matchedNameCounts.set(varMatched, (matchedNameCounts.get(varMatched) || 0) + 1);
+      }
+    }
+  }
+
+  for (const cand of candidateList) {
+    if (cand.confidenceScore > 50 && cand.matchType !== 'exact_id') {
+      const cleanHead = normalizeNameForMatching(cand.household.familyHead);
+      const varHead = normalizeKanjiVariants(cleanHead);
+      const cleanMatched = normalizeNameForMatching(cand.matchedName || cand.household.familyHead);
+      const varMatched = normalizeKanjiVariants(cleanMatched);
+
+      const isTempleDuplicate = (templeFullNameCounts.get(varHead) || 0) > 1;
+      const isCandidateDuplicate = (matchedNameCounts.get(varMatched) || 0) > 1;
+
+      if (isTempleDuplicate || isCandidateDuplicate) {
+        cand.confidenceScore = 50;
+        const nameToDisplay = cand.matchedName || cand.household.familyHead;
+        cand.title = '同姓同名檀家（両家50%）';
+        cand.explanation = `寺院名簿内に同姓同名「${nameToDisplay}」様の檀家が複数世帯存在するため、両家とも適合度50%として判定しました。`;
+      }
+    }
+  }
+
+  // 3. Ensure candidate count is NEVER 0 by including all households from lineageMap.
+  // Unmatched households are included with 0% confidence, sorted in 五十音順 (Japanese alphabetical order).
+  for (const [, state] of lineageMap.entries()) {
+    const h = state.household;
+    if (!bestCandidateByHousehold.has(h.id)) {
+      const isSameTemple = !targetTempleId || (h.templeId || 'temple-main') === targetTempleId;
+      if (isSameTemple) {
+        bestCandidateByHousehold.set(h.id, {
+          household: h,
+          matchType: 'none',
+          confidenceScore: 0,
+          title: '照合一致なし（全檀家・五十音順）',
+          explanation: '自動照合の条件には一致しませんでしたが、五十音順候補として全檀家を表示しています。',
+          matchedName: h.familyHead,
+        });
+      }
+    }
+  }
+
+  // Fallback: If no same-temple households existed at all in lineageMap, include all households from lineageMap
+  if (bestCandidateByHousehold.size === 0) {
+    for (const [, state] of lineageMap.entries()) {
+      const h = state.household;
+      if (!bestCandidateByHousehold.has(h.id)) {
+        bestCandidateByHousehold.set(h.id, {
+          household: h,
+          matchType: 'none',
+          confidenceScore: 0,
+          title: '照合一致なし（全檀家・五十音順）',
+          explanation: '自動照合の条件には一致しませんでしたが、五十音順候補として全檀家を表示しています。',
+          matchedName: h.familyHead,
+        });
+      }
+    }
+  }
+
+  const candidates = Array.from(bestCandidateByHousehold.values());
+
+  // Sort candidates by confidence score descending, and for identical scores sort in 五十音順 (Japanese alphabetical order)
+  return candidates.sort((a, b) => {
+    if (b.confidenceScore !== a.confidenceScore) {
+      return b.confidenceScore - a.confidenceScore;
+    }
+    const keyA = toHiraganaKey(a.household.furigana || '') || a.household.familyHead || '';
+    const keyB = toHiraganaKey(b.household.furigana || '') || b.household.familyHead || '';
+    const comp = keyA.localeCompare(keyB, 'ja', { numeric: true });
+    if (comp !== 0) return comp;
+    return (a.household.id || '').localeCompare(b.household.id || '', 'ja', { numeric: true });
+  });
 }
 
 /**
@@ -793,14 +1127,43 @@ export function registerConfirmedSpiritToLineage(
   if (!state) return;
 
   const cleanSecular = normalizeNameForMatching(spirit.secularName);
+  const varSecular = normalizeKanjiVariants(cleanSecular);
   if (cleanSecular) {
     state.knownLineageNames.add(cleanSecular);
   }
 
   const cleanHead = normalizeNameForMatching(spirit.householdHeadName);
+  const varHead = normalizeKanjiVariants(cleanHead);
   if (cleanHead) {
     state.knownLineageNames.add(cleanHead);
+
+    // Register this spirit's sponsor as a confirmed lineage sponsor
+    state.sponsors.push({
+      name: spirit.householdHeadName,
+      relationship: '確定精霊の施主',
+      isChiefMourner: true,
+      source: 'confirmed_spirit_sponsor',
+      cleanName: cleanHead,
+      varName: varHead,
+      associatedDharmaName: spirit.dharmaName,
+    });
   }
 
-  state.linkedSpirits.push(spirit);
+  if (!state.confirmedSurnames) {
+    state.confirmedSurnames = new Set<string>();
+  }
+  const headSurname = extractSurname(spirit.householdHeadName);
+  if (headSurname) {
+    state.confirmedSurnames.add(normalizeKanjiVariants(normalizeNameForMatching(headSurname)));
+  }
+  const secularSurname = extractSurname(spirit.secularName);
+  if (secularSurname) {
+    state.confirmedSurnames.add(normalizeKanjiVariants(normalizeNameForMatching(secularSurname)));
+  }
+
+  state.linkedSpirits.push({
+    ...spirit,
+    cleanSecular,
+    varSecular,
+  });
 }

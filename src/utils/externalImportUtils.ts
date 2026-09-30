@@ -14,6 +14,17 @@ import {
   registerConfirmedSpiritToLineage,
   normalizeNameForMatching
 } from './kakochoLineageMatching';
+import { 
+  HouseholdIdConflict, 
+  HouseholdConflictResolution, 
+  HouseholdCandidateInfo, 
+  HouseholdConflictResolutionAction, 
+  HouseholdSecondaryDecision, 
+  detectHouseholdIdConflicts, 
+  createDefaultResolutions 
+} from './householdConflictUtils';
+
+export * from './householdConflictUtils';
 
 export type ImportTargetType = 'household' | 'past_record' | 'combined' | 'accounting';
 
@@ -344,38 +355,57 @@ export function extractKakochoItems(
     headerIndexMap[h] = idx;
   });
 
-  const getCell = (row: (string | number | undefined)[], fieldKey: string): string => {
+  const getIdx = (fieldKey: string): number => {
     const colName = mapping[fieldKey];
-    if (!colName) return '';
-    const colIdx = headerIndexMap[colName];
-    if (colIdx === undefined || colIdx === -1) return '';
-    const cellVal = row[colIdx];
-    const value = cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
-    return value;
+    if (!colName) return -1;
+    const idx = headerIndexMap[colName];
+    return idx !== undefined ? idx : -1;
+  };
+
+  const colDharma = getIdx('dharmaName');
+  const colSecular = getIdx('secularName');
+  const colDeathDate = getIdx('deathDate');
+  const colAge = getIdx('ageAtDeath');
+  const colHead = getIdx('householdHeadName');
+  const colCurrentHead = getIdx('currentHeadName');
+  const colHouseholdId = getIdx('householdId') !== -1 ? getIdx('householdId') : getIdx('id');
+  const colRel = getIdx('relationship');
+  const colBurial = getIdx('burialLocation') !== -1 ? getIdx('burialLocation') : getIdx('tombNumber');
+  const colNiibon = getIdx('niibon');
+  const colNotes = getIdx('notes');
+  const colCDate = getIdx('createdDate');
+  const colCTime = getIdx('createdTime');
+  const colUDate = getIdx('updatedDate');
+  const colUTime = getIdx('updatedTime');
+
+  const getVal = (row: (string | number | undefined)[], idx: number): string => {
+    if (idx === -1) return '';
+    const cellVal = row[idx];
+    return cellVal !== undefined && cellVal !== null ? String(cellVal).trim() : '';
   };
 
   const items: KakochoItemInput[] = [];
 
   rawRows.forEach((row, rowIdx) => {
-    const dharmaName = getCell(row, 'dharmaName');
-    const secularName = getCell(row, 'secularName');
-    const rawDeathDate = getCell(row, 'deathDate');
+    const dharmaName = getVal(row, colDharma);
+    const secularName = getVal(row, colSecular);
+    const rawDeathDate = getVal(row, colDeathDate);
 
     if (!dharmaName && !secularName) return;
 
     const { normalizedDate, timestamp, year } = parseDeathDateToTimestampAndYear(rawDeathDate);
-    const ageAtDeath = cleanAge(getCell(row, 'ageAtDeath'));
-    const householdHeadName = getCell(row, 'householdHeadName');
-    const currentHeadName = getCell(row, 'currentHeadName');
-    const rawHouseholdId = getCell(row, 'householdId') || getCell(row, 'id');
-    const relationship = getCell(row, 'relationship') || '';
-    const burialLocation = getCell(row, 'burialLocation') || getCell(row, 'tombNumber');
-    const niibon = getCell(row, 'niibon');
-    const notes = getCell(row, 'notes');
-    const createdDate = getCell(row, 'createdDate');
-    const createdTime = getCell(row, 'createdTime');
-    const updatedDate = getCell(row, 'updatedDate');
-    const updatedTime = getCell(row, 'updatedTime');
+    const ageAtDeath = cleanAge(getVal(row, colAge));
+    const householdHeadName = getVal(row, colHead);
+    const currentHeadName = getVal(row, colCurrentHead);
+    const rawHouseholdId = getVal(row, colHouseholdId);
+    const relationship = getVal(row, colRel);
+    const burialLocation = getVal(row, colBurial);
+    const niibon = getVal(row, colNiibon);
+    const notes = getVal(row, colNotes);
+    const createdDate = getVal(row, colCDate);
+    const createdTime = getVal(row, colCTime);
+    const updatedDate = getVal(row, colUDate);
+    const updatedTime = getVal(row, colUTime);
 
     items.push({
       index: items.length,
@@ -422,6 +452,7 @@ export function convertTableToData(
     temples?: TempleProfile[];
     templeInfo?: TempleInfo;
     linkingDecisions?: Record<number, LinkingDecision>;
+    householdConflictResolutions?: Record<string, HouseholdConflictResolution>;
   }
 ): {
   households: Household[];
@@ -437,6 +468,8 @@ export function convertTableToData(
     pastRecordsCreated: number;
     transactionsCreated: number;
     transactionsArchived: number;
+    conflictsResolved?: number;
+    familyMembersAdded?: number;
     warnings: string[];
   };
 } {
@@ -462,6 +495,8 @@ export function convertTableToData(
   let pastRecordsCreated = 0;
   let transactionsCreated = 0;
   let transactionsArchived = 0;
+  let conflictsResolvedCount = 0;
+  let familyMembersAddedCount = 0;
 
   // Working lists
   // 'replace' mode for household or combined initializes outHouseholds to retain other temples' data
@@ -583,6 +618,52 @@ export function convertTableToData(
 
   if (targetType === 'household') {
     const importedIdSources = new Map<string, {row: number; name: string; originalId: string}>();
+    const pendingFamilyMembers = new Map<string, FamilyMember[]>();
+
+    // Apply pre-actions on existing households if existing household was made secondary
+    if (options.householdConflictResolutions) {
+      for (const res of Object.values(options.householdConflictResolutions)) {
+        if (res.primaryCandidateId.startsWith('file-row-')) {
+          const exCandidateId = `existing-${res.conflictId}`;
+          const exDec = res.secondaryDecisions[exCandidateId];
+          if (exDec) {
+            const exHIdx = outHouseholds.findIndex(h => h.id === res.conflictId);
+            if (exHIdx !== -1) {
+              const exH = outHouseholds[exHIdx];
+              if (exDec.action === 'new_id') {
+                const newExId = exDec.customNewId || getNextAvailableId();
+                exH.id = newExId;
+                exH.qrToken = `QR-${newExId}-${Date.now().toString(36).toUpperCase()}`;
+                conflictsResolvedCount++;
+              } else if (exDec.action === 'add_as_family') {
+                const exMember: FamilyMember = {
+                  id: `FM-${Date.now().toString(36)}-ex-${Math.random().toString(36).substring(2, 6)}`,
+                  householdId: res.conflictId,
+                  name: exH.familyHead,
+                  furigana: exH.furigana,
+                  relationship: exDec.relationship || '先代',
+                  phone: exH.phone || exH.mobile,
+                  address: exH.address,
+                  notes: exH.notes,
+                  createdDate: exH.createdDate,
+                  createdTime: exH.createdTime,
+                  updatedDate: importAudit.date,
+                  updatedTime: importAudit.time,
+                };
+                if (!pendingFamilyMembers.has(res.conflictId)) {
+                  pendingFamilyMembers.set(res.conflictId, []);
+                }
+                pendingFamilyMembers.get(res.conflictId)!.push(exMember);
+                outHouseholds.splice(exHIdx, 1);
+                familyMembersAddedCount++;
+                conflictsResolvedCount++;
+              }
+            }
+          }
+        }
+      }
+    }
+
     rawRows.forEach((row, rowIdx) => {
       const headName = getCell(row, 'familyHead');
       if (!headName) {
@@ -689,6 +770,55 @@ export function convertTableToData(
       } else {
         // Create new with standardized temple-specific 5-digit ID (no -2/-3 suffix)
         let id = rawId ? normalizeToTempleId(rawId) : '';
+
+        // Conflict resolution check
+        const candidateKey = `file-row-${rowIdx}`;
+        const resolution = id && options.householdConflictResolutions ? options.householdConflictResolutions[id] : undefined;
+        if (resolution) {
+          const isPrimary = resolution.primaryCandidateId === candidateKey;
+          if (!isPrimary) {
+            const decision = resolution.secondaryDecisions[candidateKey];
+            if (decision) {
+              if (decision.action === 'skip') {
+                warnings.push(`行 ${rowIdx + 2}: 檀家「${headName}」（ID: ${id}）は解決設定に基づき取り込みをスキップしました。`);
+                conflictsResolvedCount++;
+                return;
+              } else if (decision.action === 'add_as_family') {
+                const member: FamilyMember = {
+                  id: `FM-${Date.now().toString(36)}-${rowIdx}-${Math.random().toString(36).substring(2, 6)}`,
+                  householdId: resolution.conflictId,
+                  name: headName,
+                  furigana: furigana || '',
+                  relationship: decision.relationship || '親族',
+                  phone: phone || mobile || '',
+                  address: address || '',
+                  notes: notes || '',
+                  createdDate,
+                  createdTime,
+                  updatedDate,
+                  updatedTime,
+                };
+                const primaryH = outHouseholds.find(h => h.id === resolution.conflictId);
+                if (primaryH) {
+                  if (!primaryH.familyMembers) primaryH.familyMembers = [];
+                  primaryH.familyMembers.push(member);
+                } else {
+                  if (!pendingFamilyMembers.has(resolution.conflictId)) {
+                    pendingFamilyMembers.set(resolution.conflictId, []);
+                  }
+                  pendingFamilyMembers.get(resolution.conflictId)!.push(member);
+                }
+                familyMembersAddedCount++;
+                conflictsResolvedCount++;
+                return;
+              } else if (decision.action === 'new_id') {
+                id = decision.customNewId || getNextAvailableId();
+                conflictsResolvedCount++;
+              }
+            }
+          }
+        }
+
         const duplicate = id && outHouseholds.find(h => h.id === id);
         if (duplicate) {
           const originalId = String(row[headerIndexMap[mapping.id]] ?? '').trim();
@@ -703,6 +833,7 @@ export function convertTableToData(
           id = getNextAvailableId();
         }
 
+        const bufferedMembers = pendingFamilyMembers.get(id) || [];
         const newH: Household = {
           id,
           templeId: targetTempleId,
@@ -737,17 +868,27 @@ export function convertTableToData(
           tanagyoNotes: tanagyoNotes || undefined,
           notes,
           qrToken: `QR-${id}-${Date.now().toString(36).toUpperCase()}`,
-          familyMembers: [],
+          familyMembers: [...bufferedMembers],
           createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
           createdDate,
           createdTime,
           updatedDate,
           updatedTime,
         };
+        pendingFamilyMembers.delete(id);
         outHouseholds.push(newH);
         importedIdSources.set(id, {row:rowIdx+2, name:headName, originalId:String(row[headerIndexMap[mapping.id]] ?? '').trim()});
         importedHouseholds.push(newH);
         householdsCreated++;
+      }
+    });
+
+    // Flush any pending family members to their primary households
+    pendingFamilyMembers.forEach((members, primaryHId) => {
+      const primaryH = outHouseholds.find(h => h.id === primaryHId);
+      if (primaryH) {
+        if (!primaryH.familyMembers) primaryH.familyMembers = [];
+        primaryH.familyMembers.push(...members);
       }
     });
   } else if (targetType === 'past_record') {
@@ -894,12 +1035,58 @@ export function convertTableToData(
       pastRecordsCreated++;
     });
   } else if (targetType === 'combined') {
+    const pendingFamilyMembersCombined = new Map<string, FamilyMember[]>();
+
+    // Pre-process existing households if any was made secondary by conflict resolution
+    if (options.householdConflictResolutions) {
+      for (const res of Object.values(options.householdConflictResolutions)) {
+        if (res.primaryCandidateId.startsWith('file-row-')) {
+          const exCandidateId = `existing-${res.conflictId}`;
+          const exDec = res.secondaryDecisions[exCandidateId];
+          if (exDec) {
+            const exHIdx = outHouseholds.findIndex(hh => hh.id === res.conflictId);
+            if (exHIdx !== -1) {
+              const exH = outHouseholds[exHIdx];
+              if (exDec.action === 'new_id') {
+                const newExId = exDec.customNewId || getNextAvailableId();
+                exH.id = newExId;
+                exH.qrToken = `QR-${newExId}-${Date.now().toString(36).toUpperCase()}`;
+                conflictsResolvedCount++;
+              } else if (exDec.action === 'add_as_family') {
+                const exMember: FamilyMember = {
+                  id: `FM-${Date.now().toString(36)}-ex-${Math.random().toString(36).substring(2, 6)}`,
+                  householdId: res.conflictId,
+                  name: exH.familyHead,
+                  furigana: exH.furigana,
+                  relationship: exDec.relationship || '先代',
+                  phone: exH.phone || exH.mobile,
+                  address: exH.address,
+                  notes: exH.notes,
+                  createdDate: exH.createdDate,
+                  createdTime: exH.createdTime,
+                  updatedDate: importAudit.date,
+                  updatedTime: importAudit.time,
+                };
+                if (!pendingFamilyMembersCombined.has(res.conflictId)) {
+                  pendingFamilyMembersCombined.set(res.conflictId, []);
+                }
+                pendingFamilyMembersCombined.get(res.conflictId)!.push(exMember);
+                outHouseholds.splice(exHIdx, 1);
+                familyMembersAddedCount++;
+                conflictsResolvedCount++;
+              }
+            }
+          }
+        }
+      }
+    }
+
     // 1 row contains both Household and PastRecord
     rawRows.forEach((row, rowIdx) => {
       const headName = getCell(row, 'familyHead');
       const dharmaName = getCell(row, 'dharmaName');
       const secularName = getCell(row, 'secularName');
-      const rawHouseholdId = getCell(row, 'householdId') || getCell(row, 'id');
+      let rawHouseholdId = getCell(row, 'householdId') || getCell(row, 'id');
 
       if (!headName && !dharmaName && !secularName && !rawHouseholdId) {
         warnings.push(`行 ${rowIdx + 2}: 檀家名・戒名ともに空のためスキップしました。`);
@@ -950,8 +1137,61 @@ export function convertTableToData(
         candidateHead !== '不明' && 
         candidateHead !== 'なし';
 
-      let h = hasValidHead ? findHousehold(candidateHead, address, rawHouseholdId) : undefined;
-      if (!h && hasValidHead) {
+      let isSecondaryFamily = false;
+      let primaryConflictId = '';
+
+      if (hasValidHead && rawHouseholdId) {
+        const normId = normalizeToTempleId(rawHouseholdId);
+        const resolution = normId && options.householdConflictResolutions ? options.householdConflictResolutions[normId] : undefined;
+        const candidateKey = `file-row-${rowIdx}`;
+        if (resolution) {
+          const isPrimary = resolution.primaryCandidateId === candidateKey;
+          if (!isPrimary) {
+            const decision = resolution.secondaryDecisions[candidateKey];
+            if (decision) {
+              if (decision.action === 'skip') {
+                warnings.push(`行 ${rowIdx + 2}: 檀家「${candidateHead}」（ID: ${normId}）は解決設定に基づき取り込みをスキップしました。`);
+                conflictsResolvedCount++;
+                return;
+              } else if (decision.action === 'add_as_family') {
+                isSecondaryFamily = true;
+                primaryConflictId = resolution.conflictId;
+                const member: FamilyMember = {
+                  id: `FM-${Date.now().toString(36)}-${rowIdx}-${Math.random().toString(36).substring(2, 6)}`,
+                  householdId: resolution.conflictId,
+                  name: candidateHead,
+                  furigana: furigana || '',
+                  relationship: decision.relationship || '親族',
+                  phone: phone || '',
+                  address: address || '',
+                  createdDate,
+                  createdTime,
+                  updatedDate,
+                  updatedTime,
+                };
+                const primaryH = outHouseholds.find(hh => hh.id === resolution.conflictId);
+                if (primaryH) {
+                  if (!primaryH.familyMembers) primaryH.familyMembers = [];
+                  primaryH.familyMembers.push(member);
+                } else {
+                  if (!pendingFamilyMembersCombined.has(resolution.conflictId)) {
+                    pendingFamilyMembersCombined.set(resolution.conflictId, []);
+                  }
+                  pendingFamilyMembersCombined.get(resolution.conflictId)!.push(member);
+                }
+                familyMembersAddedCount++;
+                conflictsResolvedCount++;
+              } else if (decision.action === 'new_id') {
+                rawHouseholdId = decision.customNewId || getNextAvailableId();
+                conflictsResolvedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      let h = (hasValidHead && !isSecondaryFamily) ? findHousehold(candidateHead, address, rawHouseholdId) : undefined;
+      if (!h && hasValidHead && !isSecondaryFamily) {
         let id = (rawHouseholdId && !isUnlinkedHouseholdId(rawHouseholdId)) ? normalizeToTempleId(rawHouseholdId) : '';
         if (id && outHouseholds.some(hh => hh.id === id)) {
           id = getNextAvailableId();
@@ -959,6 +1199,7 @@ export function convertTableToData(
           id = getNextAvailableId();
         }
 
+        const bufferedMembers = pendingFamilyMembersCombined.get(id) || [];
         h = {
           id,
           templeId: targetTempleId,
@@ -983,13 +1224,14 @@ export function convertTableToData(
           fee2: fee2Amount,
           fee3: fee3Amount,
           qrToken: `QR-${id}-${Date.now().toString(36).toUpperCase()}`,
-          familyMembers: [],
+          familyMembers: [...bufferedMembers],
           createdAt: `${createdDate.replace(/\//g, '-')}T${createdTime}`,
           createdDate,
           createdTime,
           updatedDate,
           updatedTime,
         };
+        pendingFamilyMembersCombined.delete(id);
         outHouseholds.push(h);
         importedHouseholds.push(h);
         householdsCreated++;
@@ -1028,11 +1270,13 @@ export function convertTableToData(
       // If deceased info exists, create PastRecord
       if (dharmaName || secularName) {
         const unlinkedId = getUnlinkedHouseholdId(targetTempleId, options.temples);
-        const isRealH = h && outHouseholds.some(hh => hh.id === h!.id);
+        const resolvedHouseholdId = isSecondaryFamily
+          ? primaryConflictId
+          : (h && outHouseholds.some(hh => hh.id === h!.id) ? h!.id : (primaryConflictId || unlinkedId));
         const pastRec: PastRecord = {
           id: `P-${Date.now().toString(36)}-${rowIdx}-${Math.floor(Math.random() * 9000 + 1000)}`,
           templeId: targetTempleId,
-          householdId: isRealH ? h!.id : unlinkedId,
+          householdId: resolvedHouseholdId,
           householdHeadName: h ? h.familyHead : (candidateHead || ''),
           dharmaName: dharmaName || '',
           secularName: secularName || '',
@@ -1048,6 +1292,15 @@ export function convertTableToData(
         outPastRecords.push(pastRec);
         importedPastRecords.push(pastRec);
         pastRecordsCreated++;
+      }
+    });
+
+    // Flush any pending family members in combined mode
+    pendingFamilyMembersCombined.forEach((members, primaryHId) => {
+      const primaryH = outHouseholds.find(hh => hh.id === primaryHId);
+      if (primaryH) {
+        if (!primaryH.familyMembers) primaryH.familyMembers = [];
+        primaryH.familyMembers.push(...members);
       }
     });
   } else if (targetType === 'accounting') {
@@ -1143,6 +1396,8 @@ export function convertTableToData(
       pastRecordsCreated,
       transactionsCreated,
       transactionsArchived,
+      conflictsResolved: conflictsResolvedCount,
+      familyMembersAdded: familyMembersAddedCount,
       warnings,
     },
   };

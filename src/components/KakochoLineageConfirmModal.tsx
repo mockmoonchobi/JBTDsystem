@@ -25,6 +25,8 @@ import {
   LinkingDecision, 
   buildInitialLineageMap,
   evaluateItemMatch,
+  buildTempleSurnameCounts,
+  buildTempleFullNameCounts,
   registerConfirmedSpiritToLineage,
   sortKakochoItemsDescending,
   LineageHouseholdState,
@@ -58,9 +60,17 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [decisions, setDecisions] = useState<Record<number, LinkingDecision>>({});
-  const [lineageMap, setLineageMap] = useState<Map<string, LineageHouseholdState>>(() => {
-    return buildInitialLineageMap(existingHouseholds, existingPastRecords, targetTempleId);
+  const [lineageMap, setLineageMap] = useState<Map<string, LineageHouseholdState>>(() => new Map());
+  const [candidatesCache, setCandidatesCache] = useState<Map<number, CandidateHouseholdMatch[]>>(() => new Map());
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(true);
+  const [analysisProgress, setAnalysisProgress] = useState({
+    current: 0,
+    total: 0,
+    matchedCount: 0,
+    unlinkedCount: 0,
+    percent: 0,
   });
+  const abortAnalysisRef = useRef<boolean>(false);
 
   // Search filter for manual household selection
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,6 +79,9 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
 
   // Table row refs to restore / scroll to the actively inspected item
   const rowRefs = useRef<Record<number, HTMLTableRowElement | null>>({});
+
+  // Chained lineage boost notification
+  const [chainedNotification, setChainedNotification] = useState<{ message: string; timestamp: number } | null>(null);
 
   // Auto-scroll to current item when switching to table mode
   useEffect(() => {
@@ -83,34 +96,61 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
     }
   }, [viewMode, currentIndex]);
 
-  // Memoized candidate evaluation cache: avoids heavy re-calculation on every mode switch or render
-  const itemCandidatesCache = useMemo(() => {
-    const cache = new Map<number, CandidateHouseholdMatch[]>();
-    for (const item of sortedItems) {
-      cache.set(item.rowIdx, evaluateItemMatch(item, lineageMap, targetTempleId, 80));
-    }
-    return cache;
-  }, [sortedItems, lineageMap, targetTempleId]);
-
-  // Initialize state when modal opens
+  // Progressive background analysis in micro-chunks so UI never freezes and progress bar updates smoothly
   useEffect(() => {
-    if (isOpen) {
-      setCurrentIndex(0);
-      setIsSearchingHousehold(false);
-      setSearchQuery('');
-      setViewMode('card');
+    if (!isOpen || sortedItems.length === 0) {
+      setIsAnalyzing(false);
+      return;
+    }
 
-      const initialMap = buildInitialLineageMap(existingHouseholds, existingPastRecords, targetTempleId);
-      setLineageMap(initialMap);
+    let isMounted = true;
+    abortAnalysisRef.current = false;
+    setIsAnalyzing(true);
+    setCurrentIndex(0);
+    setIsSearchingHousehold(false);
+    setSearchQuery('');
+    setViewMode('card');
 
-      // Pre-analyze items to build default suggestions (ONLY if confidence >= 80%)
-      const initialDecisions: Record<number, LinkingDecision> = {};
-      
-      sortedItems.forEach((item) => {
-        const candidates = evaluateItemMatch(item, initialMap, targetTempleId, 80);
+    setAnalysisProgress({
+      current: 0,
+      total: sortedItems.length,
+      matchedCount: 0,
+      unlinkedCount: 0,
+      percent: 0,
+    });
+
+    const initialMap = buildInitialLineageMap(existingHouseholds, existingPastRecords, targetTempleId);
+    setLineageMap(initialMap);
+
+    // Pre-calculate temple surname and full name counts once (runs in ~1ms)
+    const cachedSurnameCounts = buildTempleSurnameCounts(initialMap, targetTempleId);
+    const cachedFullNameCounts = buildTempleFullNameCounts(initialMap, targetTempleId);
+
+    const initialDecisions: Record<number, LinkingDecision> = {};
+    const newCandidatesCache = new Map<number, CandidateHouseholdMatch[]>();
+
+    let matched = 0;
+    let unlinked = 0;
+    const TARGET_CHUNK_TIME_MS = 16;
+    const MIN_CHUNK_ITEMS = 15;
+    const MAX_CHUNK_ITEMS = 80;
+    let currentIdx = 0;
+
+    const processNextChunk = () => {
+      if (!isMounted || abortAnalysisRef.current) return;
+
+      const chunkStartTime = performance.now();
+      let processedInChunk = 0;
+
+      while (
+        currentIdx < sortedItems.length &&
+        (processedInChunk < MIN_CHUNK_ITEMS || (performance.now() - chunkStartTime < TARGET_CHUNK_TIME_MS && processedInChunk < MAX_CHUNK_ITEMS))
+      ) {
+        const item = sortedItems[currentIdx];
+        const candidates = evaluateItemMatch(item, initialMap, targetTempleId, 80, cachedSurnameCounts, cachedFullNameCounts);
+        newCandidatesCache.set(item.rowIdx, candidates);
+
         const top = candidates[0];
-
-        // 80%以上のみ初期推奨として自動設定
         if (top && top.confidenceScore >= 80) {
           initialDecisions[item.rowIdx] = {
             action: 'link_existing',
@@ -126,37 +166,53 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
             deathYear: item.deathYear,
             householdHeadName: item.householdHeadName,
           });
+          matched++;
         } else {
-          // 80%未満は自動で新規檀家を作らず、檀家不明（未紐づけ）をデフォルトとする
           initialDecisions[item.rowIdx] = {
             action: 'skip_unlinked',
             confirmedByUser: false,
             notes: '推奨候補なし（檀家不明）',
           };
+          unlinked++;
         }
-      });
 
-      setDecisions(initialDecisions);
-    }
+        currentIdx++;
+        processedInChunk++;
+      }
+
+      const progressPercent = Math.min(100, Math.floor((currentIdx / sortedItems.length) * 100));
+
+      if (isMounted) {
+        setAnalysisProgress({
+          current: currentIdx,
+          total: sortedItems.length,
+          matchedCount: matched,
+          unlinkedCount: unlinked,
+          percent: progressPercent,
+        });
+      }
+
+      if (currentIdx < sortedItems.length) {
+        // Yield execution to browser event loop with a 4ms timer so DOM renders smoothly at 60 FPS
+        setTimeout(processNextChunk, 4);
+      } else {
+        if (isMounted) {
+          setCandidatesCache(newCandidatesCache);
+          setDecisions(initialDecisions);
+          setLineageMap(new Map(initialMap));
+          setIsAnalyzing(false);
+        }
+      }
+    };
+
+    const timer = setTimeout(processNextChunk, 20);
+
+    return () => {
+      isMounted = false;
+      abortAnalysisRef.current = true;
+      clearTimeout(timer);
+    };
   }, [isOpen, sortedItems, existingHouseholds, existingPastRecords, targetTempleId]);
-
-  if (!isOpen || sortedItems.length === 0) return null;
-
-  const currentItem: KakochoItemInput | undefined = sortedItems[currentIndex];
-
-  // Candidates for current item retrieved directly from the memoized cache
-  const currentCandidates: CandidateHouseholdMatch[] = currentItem
-    ? itemCandidatesCache.get(currentItem.rowIdx) || []
-    : [];
-
-  // Top recommended is strictly confidenceScore >= 80%
-  const topCandidate = currentCandidates[0];
-  const topRecommended = topCandidate && topCandidate.confidenceScore >= 80 ? topCandidate : undefined;
-  
-  // Other candidates: if top is recommended (>=80%), slice(1), otherwise all candidates
-  const otherCandidates = topRecommended ? currentCandidates.slice(1, 9) : currentCandidates.slice(0, 8);
-
-  const currentDecision = currentItem ? decisions[currentItem.rowIdx] : undefined;
 
   // Filter existing households for manual search
   const filteredHouseholdsForSearch = useMemo(() => {
@@ -192,16 +248,72 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
         confirmedByUser: true,
       };
 
-      // Register confirmed spirit to dynamic lineage map
+      // 1. Register confirmed spirit & its sponsor to dynamic lineage map
       const nextMap = new Map(lineageMap);
       registerConfirmedSpiritToLineage(nextMap, targetHousehold.id, {
         dharmaName: item.dharmaName,
         secularName: item.secularName,
         deathDate: item.deathDate,
         deathYear: item.deathYear,
-        householdHeadName: item.householdHeadName,
+        householdHeadName: item.householdHeadName || item.currentHeadName || '',
       });
       setLineageMap(nextMap);
+
+      // 2. Recalculate candidates for unconfirmed spirits with confidence < 80% (芋づる式照合再計算)
+      const cachedSurnameCounts = buildTempleSurnameCounts(nextMap, targetTempleId);
+      const cachedFullNameCounts = buildTempleFullNameCounts(nextMap, targetTempleId);
+      const nextCandidatesCache = new Map(candidatesCache);
+      let chainedBoostCount = 0;
+
+      const nextDecisions: Record<number, LinkingDecision> = {
+        ...decisions,
+        [item.rowIdx]: dec,
+      };
+
+      sortedItems.forEach((otherItem) => {
+        if (otherItem.rowIdx === item.rowIdx) return;
+        if (nextDecisions[otherItem.rowIdx]?.confirmedByUser) return;
+
+        const currentCands = candidatesCache.get(otherItem.rowIdx) || [];
+        const currentTop = currentCands[0];
+        const currentScore = currentTop ? currentTop.confidenceScore : 0;
+
+        // User requested: "８０％以下の精霊に関しては、確定後再計算をしてください。"
+        if (currentScore < 80) {
+          const recomputedCandidates = evaluateItemMatch(
+            otherItem,
+            nextMap,
+            targetTempleId,
+            80,
+            cachedSurnameCounts,
+            cachedFullNameCounts
+          );
+          nextCandidatesCache.set(otherItem.rowIdx, recomputedCandidates);
+
+          const newTop = recomputedCandidates[0];
+          if (newTop && newTop.confidenceScore >= 80) {
+            chainedBoostCount++;
+            nextDecisions[otherItem.rowIdx] = {
+              action: 'link_existing',
+              targetHouseholdId: newTop.household.id,
+              targetHouseholdName: newTop.household.familyHead,
+              confirmedByUser: false,
+              notes: `${newTop.title}（適合度${newTop.confidenceScore}%・家系連動）`,
+            };
+          }
+        }
+      });
+
+      setCandidatesCache(nextCandidatesCache);
+      setDecisions(nextDecisions);
+
+      if (chainedBoostCount > 0) {
+        const confirmedName = item.householdHeadName || item.currentHeadName || targetHousehold.familyHead;
+        setChainedNotification({
+          message: `確定した施主「${confirmedName}」様に基づき、過去の精霊 ${chainedBoostCount}件の照合確率が80%以上に上昇しました（家系連動・芋づる式反映）`,
+          timestamp: Date.now(),
+        });
+      }
     } else if (action === 'create_new_household') {
       const head = newHeadName || item.householdHeadName || item.currentHeadName || item.secularName || '（世帯主未設定）';
       dec = {
@@ -209,18 +321,21 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
         newHouseholdHeadName: head,
         confirmedByUser: true,
       };
+      setDecisions((prev) => ({
+        ...prev,
+        [item.rowIdx]: dec,
+      }));
     } else {
       dec = {
         action: 'skip_unlinked',
         confirmedByUser: true,
         notes: '檀家不明（未紐づけ）',
       };
+      setDecisions((prev) => ({
+        ...prev,
+        [item.rowIdx]: dec,
+      }));
     }
-
-    setDecisions((prev) => ({
-      ...prev,
-      [item.rowIdx]: dec,
-    }));
 
     setIsSearchingHousehold(false);
     setSearchQuery('');
@@ -234,11 +349,13 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
   const handleAcceptAllRecommendations = () => {
     const nextDecisions = { ...decisions };
     const nextMap = new Map(lineageMap);
+    const cachedSurnameCounts = buildTempleSurnameCounts(nextMap, targetTempleId);
+    const cachedFullNameCounts = buildTempleFullNameCounts(nextMap, targetTempleId);
 
     sortedItems.forEach((item) => {
       if (nextDecisions[item.rowIdx]?.confirmedByUser) return;
 
-      const candidates = evaluateItemMatch(item, nextMap, targetTempleId, 80);
+      const candidates = candidatesCache.get(item.rowIdx) || evaluateItemMatch(item, nextMap, targetTempleId, 80, cachedSurnameCounts, cachedFullNameCounts);
       const top = candidates[0];
 
       // 80%以上のみ既存檀家に紐づけ
@@ -361,6 +478,19 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
         label: '40-59%',
       };
     }
+    if (score === 0) {
+      return {
+        card: 'bg-white border border-stone-200 hover:border-amber-400/60 hover:bg-stone-50/80',
+        badge: 'bg-stone-100 text-stone-600 border border-stone-300 font-bold',
+        pill: 'bg-stone-50 text-stone-700 border border-stone-200',
+        text: 'text-stone-700',
+        subtext: 'text-stone-500',
+        border: 'border-stone-200',
+        button: 'bg-stone-700 hover:bg-stone-900 text-white',
+        dot: 'bg-stone-400',
+        label: '0%',
+      };
+    }
     return {
       card: 'bg-white border border-stone-200 hover:border-stone-300 hover:bg-stone-50',
       badge: 'bg-stone-100 text-stone-500 border border-stone-200',
@@ -377,6 +507,132 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
   // Counts
   const confirmedCount = Object.values(decisions).filter((d) => d.confirmedByUser).length;
   const totalCount = sortedItems.length;
+
+  if (!isOpen || sortedItems.length === 0) return null;
+
+  if (isAnalyzing) {
+    return (
+      <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 no-print">
+        <div className="bg-[#FAF9F5] border-2 border-[#D4AF37] shadow-2xl w-full max-w-lg rounded-none overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          
+          {/* Header */}
+          <div className="bg-[#1A1A1A] border-b border-[#D4AF37] px-6 py-4 flex items-center justify-between text-[#F9F7F2]">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-[#D4AF37] text-[#1A1A1A] flex items-center justify-center font-bold font-serif shadow">
+                <Sparkles className="w-5 h-5 animate-spin" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold font-serif tracking-wider text-[#F9F7F2]">
+                  精霊・檀家データの自動照合
+                </h2>
+                <p className="text-xs text-[#D4AF37]/90 font-sans">
+                  数千件の過去帳と檀家名簿・家系譜を高速解析しています
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                abortAnalysisRef.current = true;
+                onClose();
+              }}
+              className="text-[#999999] hover:text-[#FFFFFF] p-1 transition-colors"
+              title="中止して閉じる"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5 bg-[#FAF9F5]">
+            
+            {/* Percentage & Status Label */}
+            <div className="flex items-end justify-between">
+              <div>
+                <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-[#D4AF37]" />
+                  照合処理の進捗状況
+                </span>
+                <span className="text-xs text-gray-500 font-mono mt-0.5 block">
+                  {analysisProgress.current.toLocaleString()} / {analysisProgress.total.toLocaleString()} 件完了
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-3xl font-extrabold font-mono text-gray-900 tracking-tight">
+                  {analysisProgress.percent}
+                </span>
+                <span className="text-sm font-bold text-[#D4AF37] ml-0.5">%</span>
+              </div>
+            </div>
+
+            {/* Progress Bar Track */}
+            <div className="w-full bg-stone-200 border border-stone-300 h-4 p-0.5 rounded-none overflow-hidden relative shadow-inner">
+              <div
+                className="h-full bg-gradient-to-r from-amber-600 via-[#D4AF37] to-amber-400 transition-all duration-150 ease-out relative"
+                style={{ width: `${Math.max(2, analysisProgress.percent)}%` }}
+              >
+                <div className="absolute inset-0 bg-white/20 animate-pulse" />
+              </div>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="bg-white border border-stone-300 p-3 text-center shadow-2xs">
+                <span className="text-[11px] text-gray-500 block mb-0.5 font-medium">
+                  自動照合（推奨候補あり）
+                </span>
+                <span className="text-lg font-bold font-mono text-emerald-700">
+                  {analysisProgress.matchedCount.toLocaleString()} <span className="text-xs font-normal">件</span>
+                </span>
+              </div>
+              <div className="bg-white border border-stone-300 p-3 text-center shadow-2xs">
+                <span className="text-[11px] text-gray-500 block mb-0.5 font-medium">
+                  檀家未定（要確認）
+                </span>
+                <span className="text-lg font-bold font-mono text-stone-700">
+                  {analysisProgress.unlinkedCount.toLocaleString()} <span className="text-xs font-normal">件</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Explanation Note */}
+            <div className="bg-amber-50/90 border border-amber-200/90 p-3 text-[11px] text-amber-900 leading-relaxed flex items-start gap-2">
+              <Info className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                没年・施主名・俗名・家族名、および備考欄の関係者ヒントを多角的に照合しています。
+                処理が完了すると、自動的に照合確認画面に切り替わります。
+              </div>
+            </div>
+
+            {/* Abort button */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  abortAnalysisRef.current = true;
+                  onClose();
+                }}
+                className="px-4 py-1.5 text-xs text-stone-600 hover:text-stone-900 hover:bg-stone-100 border border-stone-300 transition-colors"
+              >
+                照合を中断して閉じる
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
+  const currentItem: KakochoItemInput | undefined = sortedItems[currentIndex];
+  const currentCandidates: CandidateHouseholdMatch[] = currentItem
+    ? candidatesCache.get(currentItem.rowIdx) || []
+    : [];
+  const topCandidate = currentCandidates[0];
+  const topRecommended = topCandidate && topCandidate.confidenceScore >= 80 ? topCandidate : undefined;
+  const otherCandidates = topRecommended ? currentCandidates.slice(1) : currentCandidates;
+  const currentDecision = currentItem ? decisions[currentItem.rowIdx] : undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 animate-in fade-in duration-150">
@@ -479,6 +735,28 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
             </button>
           </div>
         </div>
+
+        {/* Chained Lineage Notification Banner */}
+        {chainedNotification && (
+          <div className="bg-gradient-to-r from-emerald-800 to-green-900 text-white px-4 py-2 flex items-center justify-between text-xs sm:text-sm animate-in fade-in duration-200 shrink-0 shadow-inner border-b border-emerald-700">
+            <div className="flex items-center space-x-2.5">
+              <span className="p-1 rounded bg-white/20 text-amber-300 font-bold shrink-0">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <span className="font-bold tracking-wide leading-tight">
+                {chainedNotification.message}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setChainedNotification(null)}
+              className="text-white/80 hover:text-white p-1 rounded hover:bg-white/10 cursor-pointer shrink-0 ml-2"
+              title="通知を閉じる"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* Content Body */}
         {viewMode === 'card' && currentItem ? (
@@ -730,26 +1008,34 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                   <div className="text-xs sm:text-sm font-bold text-stone-700 flex items-center justify-between shrink-0">
                     <span className="flex items-center gap-1">
                       <Users className="w-4 h-4 text-stone-500" />
-                      その他の候補（適合度％別色分け・同姓・類似住所・他寺院）:
+                      {topRecommended
+                        ? `その他の候補（全${otherCandidates.length}件・同一確率は五十音順）:`
+                        : `全檀家候補一覧（全${otherCandidates.length}件・同一確率は五十音順）:`}
                     </span>
                     <span className="text-xs text-stone-500 font-normal">
-                      クリックして紐づけ先を変更
+                      クリックして紐づけ先を指定
                     </span>
                   </div>
 
                   {otherCandidates.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto pr-0.5 max-h-[210px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto pr-0.5 max-h-[220px] sm:max-h-[260px]">
                       {otherCandidates.map((cand, cIdx) => {
                         const style = getConfidenceScoreStyle(cand.confidenceScore);
+                        const isSelected = currentDecision?.action === 'link_existing' && currentDecision.targetHouseholdId === cand.household.id;
                         return (
                           <div
-                            key={cIdx}
-                            className={`border rounded-lg p-2.5 transition-all flex flex-col justify-between gap-1.5 text-xs sm:text-sm ${style.card}`}
+                            key={cand.household.id || cIdx}
+                            className={`border rounded-lg p-2.5 transition-all flex flex-col justify-between gap-1.5 text-xs sm:text-sm ${style.card} ${
+                              isSelected ? 'ring-2 ring-emerald-500 shadow-xs' : ''
+                            }`}
                           >
                             <div className="flex items-start justify-between gap-1.5">
                               <div className="truncate">
                                 <div className="font-bold text-stone-900 truncate flex items-center gap-1.5 text-sm">
                                   <span>{cand.household.familyHead} 様</span>
+                                  {cand.household.furigana && (
+                                    <span className="text-xs text-stone-500 font-normal">（{cand.household.furigana}）</span>
+                                  )}
                                   <span className="font-mono text-stone-600 text-xs">({cand.household.id})</span>
                                 </div>
                                 <div className="text-xs text-stone-600 truncate mt-0.5">
@@ -757,9 +1043,16 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                                 </div>
                               </div>
 
-                              <span className={`text-xs px-2 py-0.5 rounded border shrink-0 font-bold ${style.badge}`}>
-                                {cand.confidenceScore}%
-                              </span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {isSelected && (
+                                  <span className="text-[11px] px-1.5 py-0.5 bg-emerald-600 text-white rounded font-bold">
+                                    指定中
+                                  </span>
+                                )}
+                                <span className={`text-xs px-2 py-0.5 rounded border font-bold ${style.badge}`}>
+                                  {cand.confidenceScore}%
+                                </span>
+                              </div>
                             </div>
 
                             <div className="flex items-center justify-between pt-1 border-t border-stone-200/60">
@@ -769,9 +1062,13 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                               <button
                                 type="button"
                                 onClick={() => applyDecision(currentItem, 'link_existing', cand.household)}
-                                className="px-2.5 py-1 rounded bg-white hover:bg-stone-100 text-stone-900 font-bold border border-stone-300 text-xs shadow-2xs shrink-0 cursor-pointer"
+                                className={`px-2.5 py-1 rounded font-bold border text-xs shadow-2xs shrink-0 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                                    : 'bg-white hover:bg-stone-100 text-stone-900 border-stone-300'
+                                }`}
                               >
-                                この檀家に指定
+                                {isSelected ? '指定中' : 'この檀家に指定'}
                               </button>
                             </div>
                           </div>
@@ -780,7 +1077,7 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                     </div>
                   ) : (
                     <div className="bg-stone-50 border border-stone-200 rounded-lg p-3 text-center text-xs text-stone-500">
-                      その他の候補はありません
+                      登録されている檀家がありません
                     </div>
                   )}
                 </div>
@@ -903,7 +1200,7 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                   {sortedItems.map((item, idx) => {
                     const dec = decisions[item.rowIdx];
                     // Fast cache lookup: zero re-calculation
-                    const candidates = itemCandidatesCache.get(item.rowIdx) || [];
+                    const candidates = candidatesCache.get(item.rowIdx) || [];
                     const top = candidates[0];
                     const isTopRecommended = top && top.confidenceScore >= 80;
 
@@ -978,7 +1275,7 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                                 </span>
                               );
                             })()
-                          ) : top ? (
+                          ) : top && top.confidenceScore > 0 ? (
                             (() => {
                               const scoreStyle = getConfidenceScoreStyle(top.confidenceScore);
                               return (
@@ -989,7 +1286,7 @@ export const KakochoLineageConfirmModal: React.FC<KakochoLineageConfirmModalProp
                               );
                             })()
                           ) : (
-                            <span className="text-stone-400 text-xs italic">檀家不明</span>
+                            <span className="text-stone-400 text-xs italic">檀家不明（全檀家から選択可）</span>
                           )}
                         </td>
                         <td className="p-2.5 text-center">

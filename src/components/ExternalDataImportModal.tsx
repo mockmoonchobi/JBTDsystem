@@ -38,13 +38,17 @@ import {
   PAST_RECORD_MAPPING_FIELDS,
   COMBINED_MAPPING_FIELDS,
   ACCOUNTING_MAPPING_FIELDS,
-  ColumnMappingField
+  ColumnMappingField,
+  detectHouseholdIdConflicts,
+  HouseholdIdConflict,
+  HouseholdConflictResolution
 } from '../utils/externalImportUtils';
 import { normalizeDateInput, normalizeFurigana } from '../utils/memorialCalculator';
 import { mergeMasterOptionsWithData, detectNewMasterOptions, mergeSelectedMasterOptions } from '../utils/masterOptionsUtils';
 import { LinkingDecision, KakochoItemInput } from '../utils/kakochoLineageMatching';
 import { UNLINKED_HOUSEHOLD_ID, isUnlinkedHouseholdId } from '../utils/dankaIdUtils';
 import { KakochoLineageConfirmModal } from './KakochoLineageConfirmModal';
+import { HouseholdIdConflictModal } from './HouseholdIdConflictModal';
 
 interface ExternalDataImportModalProps {
   isOpen: boolean;
@@ -128,8 +132,14 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
   const [showLineageModal, setShowLineageModal] = useState(false);
   const [kakochoItems, setKakochoItems] = useState<KakochoItemInput[]>([]);
 
+  // Household ID Conflict state
+  const [idConflicts, setIdConflicts] = useState<HouseholdIdConflict[]>([]);
+  const [householdConflictResolutions, setHouseholdConflictResolutions] = useState<Record<string, HouseholdConflictResolution>>({});
+  const [showConflictModal, setShowConflictModal] = useState(false);
+
   // Preview / Conversion Result
   const [conversionResult, setConversionResult] = useState<ReturnType<typeof convertTableToData> | null>(null);
+  const [isConvertingForPreview, setIsConvertingForPreview] = useState(false);
 
   // Detect newly introduced master options from conversionResult (ONLY from newly imported data)
   const newMasterDiff = useMemo(() => {
@@ -184,6 +194,9 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     setLinkingDecisions({});
     setShowLineageModal(false);
     setKakochoItems([]);
+    setIdConflicts([]);
+    setHouseholdConflictResolutions({});
+    setShowConflictModal(false);
     setConversionResult(null);
     setErrorMessage(null);
     setPreviewSearch('');
@@ -212,6 +225,9 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       setLinkingDecisions({});
       setShowLineageModal(false);
       setKakochoItems([]);
+      setIdConflicts([]);
+      setHouseholdConflictResolutions({});
+      setShowConflictModal(false);
       setConversionResult(null);
       setErrorMessage(null);
       setPreviewSearch('');
@@ -228,8 +244,6 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       case 'accounting': return ACCOUNTING_MAPPING_FIELDS;
     }
   }, [targetType]);
-
-  if (!isOpen) return null;
 
   // Handle File Selection
   const handleFile = async (selectedFile: File) => {
@@ -335,6 +349,57 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     }
   };
 
+  // Detected ID conflicts based on current table and mapping
+  const detectedIdConflicts = useMemo(() => {
+    if (!rawTable) return [];
+    if (targetType !== 'household' && targetType !== 'combined') return [];
+    if (!columnMapping.id && !columnMapping.householdId) return [];
+    return detectHouseholdIdConflicts(
+      rawTable.headers,
+      rawTable.rawRows,
+      columnMapping,
+      {
+        existingHouseholds,
+        targetTempleId,
+        temples,
+        conflictMode,
+      }
+    );
+  }, [rawTable, targetType, columnMapping, existingHouseholds, targetTempleId, temples, conflictMode]);
+
+  // Callback when Household ID Conflict decisions are confirmed by user
+  const handleHouseholdConflictsConfirmed = async (confirmedResolutions: Record<string, HouseholdConflictResolution>) => {
+    setHouseholdConflictResolutions(confirmedResolutions);
+    setShowConflictModal(false);
+
+    if (!rawTable) return;
+
+    try {
+      const res = await convertForImport(
+        targetType,
+        rawTable.headers,
+        rawTable.rawRows,
+        columnMapping,
+        {
+          existingHouseholds,
+          conflictMode,
+          autoCreateHouseholdForKakocho,
+          defaultHouseholdType,
+          targetTempleId,
+          temples,
+          templeInfo: typeof templeInfo !== 'undefined' ? templeInfo : undefined,
+          linkingDecisions,
+          householdConflictResolutions: confirmedResolutions,
+        }
+      );
+      setConversionResult(res);
+      setStep(3);
+    } catch (err: any) {
+      setConversionResult(null);
+      alert(`データ変換中にエラーが発生しました: ${err.message || err}`);
+    }
+  };
+
   // Open Kakocho Lineage Confirmation Window
   const handleOpenLineageConfirmModal = () => {
     if (!rawTable) return;
@@ -353,6 +418,8 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     if (!rawTable) return;
 
     try {
+      if (typeof setIsConvertingForPreview !== 'undefined') setIsConvertingForPreview(true);
+      if (typeof setTimeout !== 'undefined') await new Promise(r => setTimeout(r, 20));
       const res = await convertForImport(
         targetType,
         rawTable.headers,
@@ -365,8 +432,9 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
           defaultHouseholdType,
           targetTempleId,
           temples,
-          templeInfo,
+          templeInfo: typeof templeInfo !== 'undefined' ? templeInfo : undefined,
           linkingDecisions: confirmedDecisions,
+          householdConflictResolutions,
         }
       );
       setConversionResult(res);
@@ -374,6 +442,8 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     } catch (err: any) {
       setConversionResult(null);
       alert(`データ変換中にエラーが発生しました: ${err.message || err}`);
+    } finally {
+      if (typeof setIsConvertingForPreview !== 'undefined') setIsConvertingForPreview(false);
     }
   };
 
@@ -400,7 +470,35 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
       }
     }
 
+    // For household or combined imports, check for ID conflicts
+    if ((targetType === 'household' || targetType === 'combined') && (columnMapping.id || columnMapping.householdId)) {
+      const conflicts = typeof detectHouseholdIdConflicts !== 'undefined' ? detectHouseholdIdConflicts(
+        rawTable.headers,
+        rawTable.rawRows,
+        columnMapping,
+        {
+          existingHouseholds,
+          targetTempleId,
+          temples,
+          conflictMode,
+        }
+      ) : [];
+      if (conflicts.length > 0) {
+        if (typeof setIdConflicts !== 'undefined') setIdConflicts(conflicts);
+        const resolutions = typeof householdConflictResolutions !== 'undefined' ? householdConflictResolutions : {};
+        const allResolved = conflicts.every(c => resolutions[c.conflictId]);
+        if (!allResolved) {
+          if (typeof setShowConflictModal !== 'undefined') setShowConflictModal(true);
+          return;
+        }
+      } else {
+        if (typeof setIdConflicts !== 'undefined') setIdConflicts([]);
+      }
+    }
+
     try {
+      if (typeof setIsConvertingForPreview !== 'undefined') setIsConvertingForPreview(true);
+      if (typeof setTimeout !== 'undefined') await new Promise(r => setTimeout(r, 20));
       const res = await convertForImport(
         targetType,
         rawTable.headers,
@@ -413,8 +511,9 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
           defaultHouseholdType,
           targetTempleId,
           temples,
-          templeInfo,
+          templeInfo: typeof templeInfo !== 'undefined' ? templeInfo : undefined,
           linkingDecisions,
+          householdConflictResolutions: typeof householdConflictResolutions !== 'undefined' ? householdConflictResolutions : undefined,
         }
       );
       setConversionResult(res);
@@ -422,6 +521,8 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     } catch (err: any) {
       setConversionResult(null);
       alert(`データ変換中にエラーが発生しました: ${err.message || err}`);
+    } finally {
+      if (typeof setIsConvertingForPreview !== 'undefined') setIsConvertingForPreview(false);
     }
   };
 
@@ -442,8 +543,9 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
             defaultHouseholdType,
             targetTempleId,
             temples,
-            templeInfo,
+            templeInfo: typeof templeInfo !== 'undefined' ? templeInfo : undefined,
             linkingDecisions,
+            householdConflictResolutions,
           }
         );
         setConversionResult(res);
@@ -534,6 +636,8 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
     setConversionResult(null);
     setErrorMessage(null);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto no-print">
@@ -973,6 +1077,43 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                   </select>
                 </div>
               </div>
+
+              {/* ID Conflicts Notice Banner in Step 2 */}
+              {detectedIdConflicts.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 shadow-xs">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold text-amber-900 flex items-center gap-2">
+                        <span>檀家IDの重複が {detectedIdConflicts.length} 件 検出されました</span>
+                        {detectedIdConflicts.every(c => householdConflictResolutions[c.conflictId]) ? (
+                          <span className="text-[11px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 font-bold">
+                            ✓ 解決設定完了
+                          </span>
+                        ) : (
+                          <span className="text-[11px] bg-amber-200/80 text-amber-900 border border-amber-400 px-1.5 py-0.2 font-bold">
+                            要設定（次へ進むと解決ダイアログが表示されます）
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                        兄弟・親子など同一墓地を共有する親族について、旧ID・過去帳を引き継ぐ「主」と、もう一方の「家族登録」または「新ID独立世帯化」を設定できます。
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIdConflicts(detectedIdConflicts);
+                      setShowConflictModal(true);
+                    }}
+                    className="px-3.5 py-1.5 bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 shadow-xs transition-colors"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>ID重複の解決設定を開く</span>
+                  </button>
+                </div>
+              )}
 
               {/* Interactive Column Mapping Table */}
               <div className="border border-[#D1CEC7] bg-white shadow-xs overflow-hidden">
@@ -1659,6 +1800,15 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                           <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-300 text-emerald-900 text-[11px] font-mono font-bold rounded-xs">
                             全 {totalItemsCount} 件
                           </span>
+                          {Boolean(conversionResult.stats.conflictsResolved) && (
+                            <span className="px-2 py-0.5 bg-amber-100 border border-amber-300 text-amber-900 text-[11px] font-bold rounded-xs flex items-center gap-1">
+                              <Users className="w-3 h-3 text-amber-700" />
+                              ID重複解決: {conversionResult.stats.conflictsResolved}件
+                              {Boolean(conversionResult.stats.familyMembersAdded) && (
+                                <span className="text-[10px] text-amber-700 font-normal">（家族統合: {conversionResult.stats.familyMembersAdded}件）</span>
+                              )}
+                            </span>
+                          )}
                         </div>
 
                         {/* Display Limit Selector */}
@@ -1910,6 +2060,21 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
                   </div>
                   <div className="text-[11px] text-[#555555] leading-relaxed">
                     今回取り込んだファイル内に含まれていた新規の地区・区分・勘定科目がマスタに登録されました。「設定 ＞ 区分・勘定科目マスタ」から確認・並べ替え・編集が可能です。
+                  </div>
+                </div>
+              )}
+
+              {Boolean(conversionResult?.stats?.conflictsResolved) && (
+                <div className="bg-amber-50 border border-amber-300 p-3 text-xs text-amber-950 max-w-lg mx-auto text-left space-y-1 shadow-2xs">
+                  <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>ID重複解決: {conversionResult.stats.conflictsResolved} 件を適切に処理しました</span>
+                  </div>
+                  <div className="text-[11px] text-amber-800 leading-relaxed">
+                    {Boolean(conversionResult.stats.familyMembersAdded) && (
+                      <p>・同一墓所・親族として <strong>{conversionResult.stats.familyMembersAdded} 名</strong> を主世帯の家族名簿へ登録しました。</p>
+                    )}
+                    <p>・主として選択された檀家が旧IDおよび過去帳データを継承しています。</p>
                   </div>
                 </div>
               )}
@@ -2166,6 +2331,39 @@ export const ExternalDataImportModal: React.FC<ExternalDataImportModalProps> = (
           temples={temples}
           onConfirmDecisions={handleLineageDecisionsConfirmed}
         />
+      )}
+
+      {/* Household ID Conflict Resolution Modal */}
+      {showConflictModal && (
+        <HouseholdIdConflictModal
+          isOpen={showConflictModal}
+          onClose={() => setShowConflictModal(false)}
+          conflicts={idConflicts}
+          initialResolutions={householdConflictResolutions}
+          onConfirm={handleHouseholdConflictsConfirmed}
+        />
+      )}
+
+      {/* Progress Dialog when converting data for preview */}
+      {isConvertingForPreview && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 no-print">
+          <div className="bg-[#FAF9F5] border-2 border-[#D4AF37] p-6 shadow-2xl max-w-md w-full text-center space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 mx-auto bg-[#D4AF37]/20 border border-[#D4AF37] flex items-center justify-center text-[#8C6B14]">
+              <Sparkles className="w-6 h-6 animate-spin" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold font-serif text-[#1A1A1A]">
+                プレビュー用データを生成中
+              </h3>
+              <p className="text-xs text-stone-600 mt-1">
+                照合結果とマッピングを反映してプレビューデータを構築しています...
+              </p>
+            </div>
+            <div className="w-full bg-stone-200 border border-stone-300 h-3 overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-amber-600 via-[#D4AF37] to-amber-400 animate-pulse w-full" />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
