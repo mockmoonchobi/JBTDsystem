@@ -397,6 +397,12 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       notes: '',
       burialLocation: currentIndividualHousehold.tombNumber || '',
     });
+    // 一番下の入力行までスクロール
+    setTimeout(() => {
+      if (pastRecordsScrollRef.current) {
+        pastRecordsScrollRef.current.scrollTop = pastRecordsScrollRef.current.scrollHeight;
+      }
+    }, 50);
   };
 
   const handleSaveNewPastRecordInline = () => {
@@ -3752,134 +3758,6 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                           </td>
                         </tr>
                       )}
-                      {/* NEW PAST RECORD INLINE ENTRY ROW */}
-                      {isAddingNewPastRecordInline && (
-                        <tr className="bg-[#FFFDF0] border-2 border-[#D4AF37] font-sans">
-                          {/* 年月日 */}
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.deathDate || ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                const autoNiibon = calculateNiibonFromDeathDate(val, templeInfo?.bonSeason || '8月盆');
-                                setNewPastRecordForm({
-                                  ...newPastRecordForm,
-                                  deathDate: val,
-                                  niibon: autoNiibon || newPastRecordForm.niibon
-                                });
-                              }}
-                              onFocus={(e) => e.target.select()}
-                              onBlur={(e) => {
-                                const normalized = normalizeDateInput(e.target.value, { mode: 'pastRecord' });
-                                if (normalized) {
-                                  setNewPastRecordForm({
-                                    ...newPastRecordForm,
-                                    deathDate: formatJapaneseEraDate(normalized, false),
-                                    niibon: calculateNiibonFromDeathDate(normalized, templeInfo?.bonSeason || '8月盆') || newPastRecordForm.niibon
-                                  });
-                                }
-                              }}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="例: 令和8年8月8日"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono font-bold"
-                            />
-                          </td>
-                          {/* 戒名 */}
-                          <td className="px-3 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.dharmaName || ''}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, dharmaName: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="戒名・法名 *"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-serif font-bold text-sm"
-                            />
-                          </td>
-                          {/* 新盆 */}
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.niibon || ''}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, niibon: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="新盆 (例: 令和8年新盆)"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#D4AF37]"
-                            />
-                          </td>
-                          {/* 当時の施主名（入力可能・初期値は現世帯主） */}
-                          <td className="px-2 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.householdHeadName !== undefined ? newPastRecordForm.householdHeadName : (currentIndividualHousehold.familyHead || '')}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, householdHeadName: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="当時の施主名"
-                              title="逝去当時の施主名（現在の世帯主と異なる場合は書き換えてください）"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#1A1A1A]"
-                            />
-                          </td>
-                          {/* 続柄 */}
-                          <td className="px-1 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.relationship || ''}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, relationship: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="続柄"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs text-center"
-                            />
-                          </td>
-                          {/* 俗名 */}
-                          <td className="px-1 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.secularName || ''}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, secularName: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="俗名"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
-                            />
-                          </td>
-                          {/* 享年 */}
-                          <td className="px-1 py-1.5">
-                            <input
-                              type="number"
-                              value={newPastRecordForm.ageAtDeath || ''}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, ageAtDeath: Number(e.target.value) })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono text-center"
-                            />
-                          </td>
-                          {/* 備考 */}
-                          <td className="px-1.5 py-1.5">
-                            <input
-                              type="text"
-                              value={newPastRecordForm.notes || ''}
-                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, notes: e.target.value })}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
-                              placeholder="備考メモ"
-                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
-                            />
-                          </td>
-                          {/* 操作 */}
-                          <td className="px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
-                            <button
-                              onClick={handleSaveNewPastRecordInline}
-                              className="px-3 py-1 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold text-xs inline-flex items-center space-x-1 shadow-sm"
-                            >
-                              <Save className="w-3.5 h-3.5" />
-                              <span>保存</span>
-                            </button>
-                            <button
-                              onClick={() => setIsAddingNewPastRecordInline(false)}
-                              className="px-2.5 py-1 bg-white border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs hover:bg-[#EBE7DF]"
-                            >
-                              <span>取消</span>
-                            </button>
-                          </td>
-                        </tr>
-                      )}
                       {currentHouseholdPastRecords.map((record, rIdx) => {
                         const isEditingThisRecord = editingPastRecordId === record.id && inlinePastRecordForm;
                         const headName = record.householdHeadName || currentIndividualHousehold.familyHead || '—';
@@ -4105,6 +3983,136 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                           </React.Fragment>
                         );
                       })}
+
+                      {/* NEW PAST RECORD INLINE ENTRY ROW (AT BOTTOM) */}
+                      {isAddingNewPastRecordInline && (
+                        <tr className="bg-[#FFFDF0] border-2 border-[#D4AF37] font-sans">
+                          {/* 年月日 */}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              autoFocus
+                              value={newPastRecordForm.deathDate || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const autoNiibon = calculateNiibonFromDeathDate(val, templeInfo?.bonSeason || '8月盆');
+                                setNewPastRecordForm({
+                                  ...newPastRecordForm,
+                                  deathDate: val,
+                                  niibon: autoNiibon || newPastRecordForm.niibon
+                                });
+                              }}
+                              onFocus={(e) => e.target.select()}
+                              onBlur={(e) => {
+                                const normalized = normalizeDateInput(e.target.value, { mode: 'pastRecord' });
+                                if (normalized) {
+                                  setNewPastRecordForm({
+                                    ...newPastRecordForm,
+                                    deathDate: formatJapaneseEraDate(normalized, false),
+                                    niibon: calculateNiibonFromDeathDate(normalized, templeInfo?.bonSeason || '8月盆') || newPastRecordForm.niibon
+                                  });
+                                }
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="例: 令和8年8月8日"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono font-bold"
+                            />
+                          </td>
+                          {/* 戒名 */}
+                          <td className="px-3 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.dharmaName || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, dharmaName: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="戒名・法名 *"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-serif font-bold text-sm"
+                            />
+                          </td>
+                          {/* 新盆 */}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.niibon || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, niibon: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="新盆 (例: 令和8年新盆)"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#D4AF37]"
+                            />
+                          </td>
+                          {/* 当時の施主名（入力可能・初期値は現世帯主） */}
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.householdHeadName !== undefined ? newPastRecordForm.householdHeadName : (currentIndividualHousehold.familyHead || '')}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, householdHeadName: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="当時の施主名"
+                              title="逝去当時の施主名（現在の世帯主と異なる場合は書き換えてください）"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold text-[#1A1A1A]"
+                            />
+                          </td>
+                          {/* 続柄 */}
+                          <td className="px-1 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.relationship || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, relationship: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="続柄"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs text-center"
+                            />
+                          </td>
+                          {/* 俗名 */}
+                          <td className="px-1 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.secularName || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, secularName: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="俗名"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
+                            />
+                          </td>
+                          {/* 享年 */}
+                          <td className="px-1 py-1.5">
+                            <input
+                              type="number"
+                              value={newPastRecordForm.ageAtDeath || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, ageAtDeath: Number(e.target.value) })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-mono text-center"
+                            />
+                          </td>
+                          {/* 備考 */}
+                          <td className="px-1.5 py-1.5">
+                            <input
+                              type="text"
+                              value={newPastRecordForm.notes || ''}
+                              onChange={(e) => setNewPastRecordForm({ ...newPastRecordForm, notes: e.target.value })}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewPastRecordInline(); }}
+                              placeholder="備考メモ"
+                              className="w-full bg-white border border-[#1A1A1A] p-1 text-xs"
+                            />
+                          </td>
+                          {/* 操作 */}
+                          <td className="px-2.5 py-1.5 text-right whitespace-nowrap space-x-1">
+                            <button
+                              onClick={handleSaveNewPastRecordInline}
+                              className="px-3 py-1 bg-[#D4AF37] hover:bg-[#c29f2f] text-[#1A1A1A] font-bold text-xs inline-flex items-center space-x-1 shadow-sm"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              <span>保存</span>
+                            </button>
+                            <button
+                              onClick={() => setIsAddingNewPastRecordInline(false)}
+                              className="px-2.5 py-1 bg-white border border-[#D1CEC7] text-[#1A1A1A] font-bold text-xs hover:bg-[#EBE7DF]"
+                            >
+                              <span>取消</span>
+                            </button>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
