@@ -18,12 +18,14 @@ export function directorySaveTables(before: Dataset | undefined, after: Dataset)
   }
   const oldTemples=new Map((before.temples||[]).map((t:any)=>[t.id,t]));
   for(const t of after.temples||[]) {
+    if(!t.isMain && (t.name === '新兼務寺院' || !t.name?.trim())) continue;
     const old:any=oldTemples.get(t.id), title=`マスタ_${t.shortName || t.name}`;
     if(!old || (old.shortName || old.name)!==(t.shortName || t.name) ||
       stableMergeValue(before.templeMasterOptionsMap?.[t.id])!==stableMergeValue(after.templeMasterOptionsMap?.[t.id])) tables.add(title);
   }
   // Legacy global masters can supply defaults to temples without their own map.
   if(changed('masterOptions')) for(const t of after.temples||[]) {
+    if(!t.isMain && (t.name === '新兼務寺院' || !t.name?.trim())) continue;
     if(!after.templeMasterOptionsMap?.[t.id]) tables.add(`マスタ_${t.shortName || t.name}`);
   }
   tables.add('操作・削除履歴');

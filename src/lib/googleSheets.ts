@@ -753,6 +753,7 @@ export async function ensureAllSheetsExist(
     if (temples && temples.length > 0) {
       temples.forEach((t) => {
         if (isIndividualExport && t.id !== exportOptions?.targetTempleId) return;
+        if (!t.isMain && (t.name === '新兼務寺院' || !t.name?.trim())) return;
         const sheetTitle = `マスタ_${t.shortName || t.name}`;
         if (!requiredTitles.includes(sheetTitle)) {
           requiredTitles.push(sheetTitle);
@@ -1874,6 +1875,7 @@ export async function exportToSheets(
     addChunkedUpdates(sheetName, [masterHeaders, ...makeMasterRows(templeMaster)]);
   } else {
     allTemples.forEach((t) => {
+      if (!t.isMain && (t.name === '新兼務寺院' || !t.name?.trim())) return;
       const tId = t.id || 'temple-main';
       const templeMaster = getTempleMasterOptions(tId, map, allTemples, currentMaster);
       const sheetName = `マスタ_${t.shortName || t.name}`;
@@ -3353,7 +3355,7 @@ async function importFromSheetsCore(
     };
   };
 
-  const masterSheetName = findSheet(['マスタ設定（総合）', 'マスタ設定', 'マスタ', 'マスター', '設定']);
+  const masterSheetName = findSheet(['マスタ設定（総合）', 'マスタ設定']);
   const { headers: masterHeaders, rows: masterRows } = getSheetDataByName(masterSheetName);
   let masterOptions: MasterOptions | undefined = parseMasterFromRows(masterHeaders, masterRows);
 
@@ -3365,21 +3367,27 @@ async function importFromSheetsCore(
       const { headers: tHeaders, rows: tRows } = getSheetDataByName(sheetName);
       const parsed = parseMasterFromRows(tHeaders, tRows);
       if (parsed) {
-        let matchedId = 'temple-main';
+        let matchedId: string | null = null;
         for (const [name, id] of templeNameToIdMap.entries()) {
-          if (tName.includes(name) || name.includes(tName)) {
+          if (tName === name || (name && (tName.includes(name) || name.includes(tName)))) {
             matchedId = id;
             break;
           }
         }
-        templeMasterOptionsMap[matchedId] = parsed;
+        if (matchedId) {
+          templeMasterOptionsMap[matchedId] = parsed;
+        }
       }
     }
   });
 
+  const mainTempleId = parsedTemples.find((t) => t.isMain)?.id || 'temple-main';
   if (!masterOptions) {
-    const mainKey = Object.keys(templeMasterOptionsMap)[0];
-    masterOptions = templeMasterOptionsMap['temple-main'] || (mainKey ? templeMasterOptionsMap[mainKey] : undefined);
+    masterOptions = templeMasterOptionsMap[mainTempleId] || templeMasterOptionsMap['temple-main'];
+    if (!masterOptions) {
+      const mainKey = Object.keys(templeMasterOptionsMap)[0];
+      masterOptions = mainKey ? templeMasterOptionsMap[mainKey] : undefined;
+    }
   }
 
   // 10. Parse Notice Templates (案内文テンプレート)

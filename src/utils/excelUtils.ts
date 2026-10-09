@@ -634,6 +634,7 @@ export function exportToExcel(
   } else {
     // All temples export: output dedicated master sheet for each temple
     allTemples.forEach((t) => {
+      if (!t.isMain && (t.name === '新兼務寺院' || !t.name?.trim())) return;
       const tId = t.id || 'temple-main';
       const tMaster = getTempleMasterOptions(tId, map, temples, masterOptions);
       const sheetName = `マスタ_${t.shortName || t.name}`.slice(0, 31);
@@ -2075,7 +2076,7 @@ export async function importFromExcel(
     };
   };
 
-  const masterSheetName = findSheet(['マスタ設定（総合）', 'マスタ設定', 'マスタ', 'マスター', '設定']);
+  const masterSheetName = findSheet(['マスタ設定（総合）', 'マスタ設定']);
   const { headers: masterHeaders, rows: masterRows } = getSheetDataByName(masterSheetName);
   let masterOptions: MasterOptions | undefined = parseMasterFromRows(masterHeaders, masterRows);
 
@@ -2087,21 +2088,27 @@ export async function importFromExcel(
       const { headers: tHeaders, rows: tRows } = getSheetDataByName(sheetName);
       const parsed = parseMasterFromRows(tHeaders, tRows);
       if (parsed) {
-        let matchedId = 'temple-main';
+        let matchedId: string | null = null;
         for (const [name, id] of templeNameToIdMap.entries()) {
-          if (tName.includes(name) || name.includes(tName)) {
+          if (tName === name || (name && (tName.includes(name) || name.includes(tName)))) {
             matchedId = id;
             break;
           }
         }
-        templeMasterOptionsMap[matchedId] = parsed;
+        if (matchedId) {
+          templeMasterOptionsMap[matchedId] = parsed;
+        }
       }
     }
   });
 
+  const mainTempleId = parsedTemples.find((t) => t.isMain)?.id || 'temple-main';
   if (!masterOptions) {
-    const mainKey = Object.keys(templeMasterOptionsMap)[0];
-    masterOptions = templeMasterOptionsMap['temple-main'] || (mainKey ? templeMasterOptionsMap[mainKey] : undefined);
+    masterOptions = templeMasterOptionsMap[mainTempleId] || templeMasterOptionsMap['temple-main'];
+    if (!masterOptions) {
+      const mainKey = Object.keys(templeMasterOptionsMap)[0];
+      masterOptions = mainKey ? templeMasterOptionsMap[mainKey] : undefined;
+    }
   }
 
   // 10. Parse Notice Templates (案内文テンプレート)
