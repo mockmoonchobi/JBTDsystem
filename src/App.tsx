@@ -101,8 +101,10 @@ import {
 } from './types';
 import {
   getSavedDisasterMemorialEvents,
-  saveDisasterMemorialEvents
+  saveDisasterMemorialEvents,
+  DEFAULT_DISASTER_MEMORIAL_EVENTS
 } from './utils/disasterMemorialUtils';
+import { clearAllStartupCaches } from './utils/startupCleanup';
 import {
   getSavedNoticeTemplates,
   getAllSavedNoticeTemplates,
@@ -286,8 +288,8 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [priests, setPriests] = useState<Priest[]>([]);
-  const [batchAccountingData, setBatchAccountingData] = useState<BatchAccountingData | null>(() => getSavedBatchAccountingData());
-  const [deletedRecords, setDeletedRecords] = useState<DeletedRecordEntry[]>(() => loadDeletedRecordsLog());
+  const [batchAccountingData, setBatchAccountingData] = useState<BatchAccountingData | null>(null);
+  const [deletedRecords, setDeletedRecords] = useState<DeletedRecordEntry[]>([]);
   const [disasterEvents, setDisasterEvents] = useState<DisasterMemorialEvent[]>(() => getSavedDisasterMemorialEvents());
   const [isHistoryMaintenanceOpen, setIsHistoryMaintenanceOpen] = useState(false);
   const [sheetHistoryCount, setSheetHistoryCount] = useState<number | null>(null);
@@ -308,6 +310,7 @@ export default function App() {
   }, []);
 
   const refreshDeletedRecords = useCallback(() => {
+    if (isStartupLauncherOpenRef.current) return;
     const logs = loadDeletedRecordsLog();
     setDeletedRecords(logs);
     if (syncStateRef.current) {
@@ -335,6 +338,7 @@ export default function App() {
 
   // 過去ログの旧「管理者」「寺院関係者」表記を、現在のGoogleアカウント名に自動更新（操作者を正しく判別可能にする）
   useEffect(() => {
+    if (isStartupLauncherOpenRef.current) return;
     const rawLogs = loadDeletedRecordsLog();
     const currentUser = getCurrentUser();
     const activeGoogleName = currentUser?.displayName?.trim() || currentUser?.email?.trim() || getActiveGoogleAccountName();
@@ -362,6 +366,7 @@ export default function App() {
 
   // ダミー檀家データの住所マイグレーション：丁目・番地は数字のまま、号をすべて「⚫️」に自動同期
   useEffect(() => {
+    if (isStartupLauncherOpenRef.current) return;
     const rawHouseholds = loadJsonState<Household[]>('temple_households', []);
     if (!rawHouseholds || rawHouseholds.length === 0) return;
 
@@ -926,7 +931,14 @@ export default function App() {
   // 起動画面（Startup Launcher） 4つの選択肢ハンドラー
   // ----------------------------------------------------
   // ① データ無しで立ち上げ（新規スタート）
-  const handleStartWithEmpty = () => {
+  const handleStartWithEmpty = async () => {
+    // 各立ち上げ時クリーンアップ：前回のキャッシュ、操作履歴、バックアップ、キューを完全消去
+    await clearAllStartupCaches();
+    clearHistory();
+    setDeletedRecords([]);
+    setBatchAccountingData(null);
+    setDisasterEvents([]);
+
     setTemples(EMPTY_TEMPLES);
     setTempleInfo(EMPTY_TEMPLE_INFO);
     setMasterOptions(EMPTY_MASTER_OPTIONS);
@@ -960,7 +972,6 @@ export default function App() {
       disasterEvents: [],
     };
 
-    idbClear().catch((e) => console.warn('IDB clear error:', e));
     saveJsonState('temple_profiles', EMPTY_TEMPLES);
     saveJsonState('temple_info', EMPTY_TEMPLE_INFO);
     saveJsonState('temple_master_options', EMPTY_MASTER_OPTIONS);
@@ -974,8 +985,8 @@ export default function App() {
     saveJsonState('temple_priests', []);
     saveNoticeTemplates({ higan: '', niibon: '' });
     saveDeletedRecordsLog([]);
-    safeStorage.removeItem('temple_safety_snapshot');
-    safeStorage.removeItem('temple_backup_before_sync');
+    saveDisasterMemorialEvents([], false);
+
     setSyncStatus('disconnected');
     setLastSyncTime(null);
     setSyncErrorMessage(null);
@@ -1010,6 +1021,7 @@ export default function App() {
   // 共有データ接続モードから安全に初期状態（ブラウザ更新・初期ランチャー）へ復帰する処理
   const handleResetToInitialStartup = async () => {
     try {
+      await clearAllStartupCaches();
       safeStorage.removeItem('temple_google_sheet_info');
       safeStorage.removeItem('temple_google_sheet_last_sync');
       safeStorage.removeItem('renge_shared_invite_sheet_id');
@@ -1031,7 +1043,17 @@ export default function App() {
   };
 
   // ② チュートリアルデータ（ダミーデータ）ありで立ち上げ
-  const handleStartWithTutorial = () => {
+  const handleStartWithTutorial = async () => {
+    // 各立ち上げ時クリーンアップ：前回の端末キャッシュ、操作履歴ログ、バックアップ、キューを完全消去
+    await clearAllStartupCaches();
+    clearHistory();
+    setDeletedRecords([]);
+    setBatchAccountingData(null);
+    if (syncStateRef.current) {
+      syncStateRef.current.deletedRecords = [];
+      syncStateRef.current.batchAccountingData = null;
+    }
+
     setIsSharedMode(false);
     try {
       sessionStorage.removeItem('renge_is_shared_mode');
@@ -1062,6 +1084,7 @@ export default function App() {
     setTransactions(cleanTx);
     setFamilyMembers(INITIAL_FAMILY_MEMBERS);
     setPriests(INITIAL_PRIESTS);
+    setDisasterEvents(DEFAULT_DISASTER_MEMORIAL_EVENTS);
     setActiveTempleId('temple-main');
 
     setSyncStatus('disconnected');
@@ -1081,8 +1104,10 @@ export default function App() {
     saveJsonState('temple_transactions', cleanTx);
     saveJsonState('temple_family_members', INITIAL_FAMILY_MEMBERS);
     saveJsonState('temple_priests', INITIAL_PRIESTS);
+    saveDisasterMemorialEvents(DEFAULT_DISASTER_MEMORIAL_EVENTS, false);
 
     setIsStartupLauncherOpen(false);
+    isStartupLauncherOpenRef.current = false;
     recordHistory('チュートリアルデータ（ダミーデータ）で立ち上げ');
   };
 
@@ -1091,6 +1116,22 @@ export default function App() {
     setIsStartupLoading(true);
     setStartupLoadingMsg(`${file.name} を解析・読み込み中...`);
     try {
+      // 各立ち上げ時クリーンアップ：前回の端末キャッシュ、操作履歴ログ、バックアップ等を完全消去
+      await clearAllStartupCaches();
+      clearHistory();
+      setDeletedRecords([]);
+      setBatchAccountingData(null);
+      if (syncStateRef.current) {
+        syncStateRef.current.deletedRecords = [];
+        syncStateRef.current.batchAccountingData = null;
+      }
+
+      setSyncStatus('disconnected');
+      setLastSyncTime(null);
+      setSyncErrorMessage(null);
+      safeStorage.removeItem('temple_google_sheet_info');
+      safeStorage.removeItem('temple_google_sheet_last_sync');
+
       const fileName = file.name.toLowerCase();
       if (fileName.endsWith('.json')) {
         const text = await file.text();
@@ -1149,7 +1190,18 @@ export default function App() {
         saveJsonState('temple_priests', importedPriests);
         saveNoticeTemplates(importedNotices);
 
+        if (parsed.deletedRecords && Array.isArray(parsed.deletedRecords) && parsed.deletedRecords.length > 0) {
+          saveDeletedRecordsLog(parsed.deletedRecords);
+          setDeletedRecords(parsed.deletedRecords);
+          if (syncStateRef.current) syncStateRef.current.deletedRecords = parsed.deletedRecords;
+        } else {
+          saveDeletedRecordsLog([]);
+          setDeletedRecords([]);
+          if (syncStateRef.current) syncStateRef.current.deletedRecords = [];
+        }
+
         setIsStartupLauncherOpen(false);
+        isStartupLauncherOpenRef.current = false;
         recordHistory(`PCバックアップファイル（${file.name}）から立ち上げ`);
       } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
         const defaultTemple = 'temple-main';
@@ -1171,12 +1223,18 @@ export default function App() {
         if (data.templeTodos) setTempleTodos(data.templeTodos);
         if (data.priests) setPriests(data.priests);
         if (data.templeMasterOptionsMap) setTempleMasterOptionsMap(data.templeMasterOptionsMap);
-        if (data.deletedRecords && data.deletedRecords.length > 0) {
+        if (data.deletedRecords && Array.isArray(data.deletedRecords) && data.deletedRecords.length > 0) {
           saveDeletedRecordsLog(data.deletedRecords);
           setDeletedRecords(data.deletedRecords);
+          if (syncStateRef.current) syncStateRef.current.deletedRecords = data.deletedRecords;
+        } else {
+          saveDeletedRecordsLog([]);
+          setDeletedRecords([]);
+          if (syncStateRef.current) syncStateRef.current.deletedRecords = [];
         }
 
         setIsStartupLauncherOpen(false);
+        isStartupLauncherOpenRef.current = false;
         recordHistory(`Excelファイル（${file.name}）から立ち上げ`);
       } else {
         throw new Error('サポートされていないファイル形式です（Excelファイル .xlsx / .xls を選択してください）。');
@@ -1210,6 +1268,14 @@ export default function App() {
     setIsStartupLoading(true);
     setStartupLoadingMsg('Googleアカウントでログイン中...');
     try {
+      // 1. 各立ち上げ時クリーンアップ：前回の端末キャッシュ・操作履歴・バックアップを完全消去してから連携
+      await clearAllStartupCaches();
+      clearHistory();
+      setDeletedRecords([]);
+      if (syncStateRef.current) {
+        syncStateRef.current.deletedRecords = [];
+      }
+
       const res = await googleSignIn();
       if (!res) {
         return;

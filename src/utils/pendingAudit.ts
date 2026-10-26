@@ -78,3 +78,13 @@ export async function currentPageAudit(): Promise<DeletedRecordEntry[]> {
   return (await idbGet<(DeletedRecordEntry & {__pendingOwner?:string})[]>(key) || [])
     .filter(e => e.__pendingOwner === owner).map(({__pendingOwner, ...entry}) => entry);
 }
+
+export async function clearPendingAudit(): Promise<void> {
+  await serialized(async () => {
+    failure = undefined;
+    await idbSet(key, []);
+    await idbSet('discarded-audit-v1', []);
+    entryRevisions.clear();
+    localAuditRevision = 0;
+  });
+}

@@ -19,8 +19,8 @@ import {
 
 interface StartupLauncherProps {
   isOpen: boolean;
-  onStartWithEmpty: () => void;
-  onStartWithTutorial: () => void;
+  onStartWithEmpty: () => Promise<void> | void;
+  onStartWithTutorial: () => Promise<void> | void;
   onStartWithFile: (file: File) => Promise<void>;
   onStartWithGoogleSheets: () => Promise<void> | void;
   onCancelLoading?: () => void;

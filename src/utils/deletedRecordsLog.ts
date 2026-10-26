@@ -78,6 +78,7 @@ export function saveDeletedRecordsLog(entries: DeletedRecordEntry[]): void {
  * Clears the deleted records log
  */
 export function clearDeletedRecordsLog(): void {
+  safeStorage.removeItem(STORAGE_KEY);
   saveJsonState(STORAGE_KEY, []);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('temple_deleted_records_changed', { detail: [] }));
