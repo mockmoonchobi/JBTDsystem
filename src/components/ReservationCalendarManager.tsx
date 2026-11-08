@@ -63,6 +63,8 @@ import {
   Priest
 } from '../types';
 import { safeStorage } from '../utils/storageUtils';
+import { getTempleMasterOptions } from '../utils/masterOptionsUtils';
+import { INITIAL_MASTER_OPTIONS } from '../data/initialData';
 import { TanagyoNoticeBoardPrintModal } from './TanagyoNoticeBoardPrintModal';
 import { TanagyoPatronMapModal } from './TanagyoPatronMapModal';
 import { TanagyoBatchAccountingModal } from './TanagyoBatchAccountingModal';
@@ -2278,13 +2280,94 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     return map;
   }, [households]);
 
+  // 所属寺院IDの解決（兼務寺院の檀家・過去帳情報、または指定寺院IDから正確に解決）
+  const getServiceResolvedTempleId = (s: MemorialService): string => {
+    let resolvedTempleId = s.templeId;
+    if (s.householdId) {
+      const hh = households.find((h) => h.id === s.householdId);
+      if (hh?.templeId) {
+        resolvedTempleId = hh.templeId;
+      }
+    }
+    if (!resolvedTempleId && s.deceasedId) {
+      const pr = pastRecords.find((r) => r.id === s.deceasedId);
+      if (pr?.templeId) {
+        resolvedTempleId = pr.templeId;
+      }
+    }
+    if (!resolvedTempleId) {
+      const serviceTempleMeta = getServiceTempleInfo(s);
+      resolvedTempleId = serviceTempleMeta.id;
+    }
+    const mainTemple = temples.find((t) => t.isMain) || temples[0];
+    const defaultTempleId = activeTempleId && activeTempleId !== 'ALL'
+      ? activeTempleId
+      : (mainTemple?.id || templeInfo?.id || 'temple-main');
+    return resolvedTempleId || defaultTempleId;
+  };
+
+  // 該当法要の寺院別マスタ設定（区分、勘定マスタ）を取得
+  const getTempleMasterForService = (s: MemorialService): MasterOptions => {
+    const tId = getServiceResolvedTempleId(s);
+    return getTempleMasterOptions(tId, templeMasterOptionsMap, temples, masterOptions);
+  };
+
+  // 該当法要の寺院別受取方法（決済方法）一覧を取得（区分、勘定マスタの登録値）
+  const getPaymentMethodsForService = (s: MemorialService): string[] => {
+    const tMaster = getTempleMasterForService(s);
+    const fromMaster = (tMaster?.paymentMethods || []).map((p) => p?.trim()).filter(Boolean);
+    if (fromMaster.length > 0) {
+      return fromMaster;
+    }
+    const fromGlobal = (masterOptions?.paymentMethods || []).map((p) => p?.trim()).filter(Boolean);
+    if (fromGlobal.length > 0) {
+      return fromGlobal;
+    }
+    return INITIAL_MASTER_OPTIONS.paymentMethods || ['現金受付', 'QR受付時', '銀行振込', '郵便振替', 'その他'];
+  };
+
+  // 該当法要の寺院別収入科目一覧を取得
+  const getIncomeCategoriesForService = (s: MemorialService): string[] => {
+    const tMaster = getTempleMasterForService(s);
+    const customCats = tMaster?.incomeCategories || tMaster?.accountingCategories || [];
+    const defaults = [
+      '法要布施',
+      '塔婆料',
+      '御車代・御膳料',
+      '開眼・納骨布施',
+      '読経料',
+      '志納金',
+      '護持会費',
+      '特別寄付',
+      '墓地管理費',
+      'その他'
+    ];
+    return Array.from(new Set([...customCats, ...defaults])).filter(Boolean);
+  };
+
   // Dynamic Accounting Modal State (法要予定一覧の会計入力ポップアップ・行の自由追加削除)
   const [accountingModalService, setAccountingModalService] = useState<MemorialService | null>(null);
   const [accountingItemRows, setAccountingItemRows] = useState<AccountingItemRow[]>([]);
-  const [accountingPaymentMethod, setAccountingPaymentMethod] = useState<'現金受付' | 'QR受付時' | '銀行振込' | '郵便振替' | 'その他'>('現金受付');
+  const [accountingPaymentMethod, setAccountingPaymentMethod] = useState<string>('現金受付');
   const [accountingReceivedDate, setAccountingReceivedDate] = useState<string>(todayStr);
   const [accountingCustomNote, setAccountingCustomNote] = useState<string>('');
   const [accountingHistoricalSourceInfo, setAccountingHistoricalSourceInfo] = useState<string | null>(null);
+
+  // 現在開いている会計モーダルの寺院別受取方法・収入科目一覧
+  const currentModalPaymentMethods = useMemo(() => {
+    if (!accountingModalService) return [];
+    return getPaymentMethodsForService(accountingModalService);
+  }, [accountingModalService, templeMasterOptionsMap, temples, masterOptions, households, pastRecords, activeTempleId, templeInfo]);
+
+  const currentModalIncomeCategories = useMemo(() => {
+    if (!accountingModalService) return availableIncomeCategories;
+    return getIncomeCategoriesForService(accountingModalService);
+  }, [accountingModalService, templeMasterOptionsMap, temples, masterOptions, households, pastRecords, availableIncomeCategories]);
+
+  const currentModalTempleInfo = useMemo(() => {
+    if (!accountingModalService) return null;
+    return getServiceTempleInfo(accountingModalService);
+  }, [accountingModalService, temples, households, pastRecords]);
 
   // Calculate accounting status for a service based on transactions
   const getServiceAccountingStatus = (service: MemorialService): {
@@ -2319,6 +2402,16 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     paymentMethod: string;
     notes: string;
   } | null>(null);
+
+  const recordModalPaymentMethods = useMemo(() => {
+    if (!recordAccountingModal?.service) return [];
+    return getPaymentMethodsForService(recordAccountingModal.service);
+  }, [recordAccountingModal, templeMasterOptionsMap, temples, masterOptions, households, pastRecords, activeTempleId, templeInfo]);
+
+  const recordModalIncomeCategories = useMemo(() => {
+    if (!recordAccountingModal?.service) return availableIncomeCategories;
+    return getIncomeCategoriesForService(recordAccountingModal.service);
+  }, [recordAccountingModal, templeMasterOptionsMap, temples, masterOptions, households, pastRecords, availableIncomeCategories]);
 
 
   // Month navigation
@@ -2575,6 +2668,10 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
     const normDate = normalizeDateInput(service.scheduledDate) || todayStr;
 
+    // 該当法要の寺院別マスタ設定（区分、勘定マスタ）から受取方法と収入科目を解決
+    const sPaymentMethods = getPaymentMethodsForService(service);
+    const sIncomeCategories = getIncomeCategoriesForService(service);
+
     // 予定の戒名と忌日を取得
     const dharmaInfo = getServiceEffectiveDharmaInfo(service, pastRecords, households);
     const dharmaName = (dharmaInfo?.dharmaName || service.dharmaName || '').trim();
@@ -2595,10 +2692,10 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
     const initialRows: AccountingItemRow[] = [];
 
-    // 基本科目: 「法要布施」または登録された収入科目
+    // 基本科目: 「法要布施」または該当寺院の区分・勘定マスタに登録された収入科目
     const defaultCategory =
-      availableIncomeCategories.find((c) => c === '法要布施' || c.includes('布施')) ||
-      availableIncomeCategories[0] ||
+      sIncomeCategories.find((c) => c === '法要布施' || c.includes('布施')) ||
+      sIncomeCategories[0] ||
       '法要布施';
 
     // 1行目: 金額は空欄 (0)、摘要には予定の戒名と忌日
@@ -2612,7 +2709,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     // 塔婆予約がある場合は塔婆料の行も用意（金額は空欄）
     if (service.tobaCount && service.tobaCount > 0) {
       const tobaCategory =
-        availableIncomeCategories.find((c) => c.includes('塔婆')) ||
+        sIncomeCategories.find((c) => c.includes('塔婆')) ||
         '塔婆料';
       const tobaNote = [defaultNotes, `塔婆${service.tobaCount}本`].filter(Boolean).join(' ');
       initialRows.push({
@@ -2625,7 +2722,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
     setAccountingItemRows(initialRows);
     setAccountingHistoricalSourceInfo(null);
-    setAccountingPaymentMethod('現金受付');
+    // 各寺院別の区分・勘定マスタに登録された受取方法の先頭を初期選択値に設定
+    setAccountingPaymentMethod(sPaymentMethods[0] || '現金受付');
     setAccountingReceivedDate(normDate);
     setAccountingCustomNote('');
     setAccountingModalService(service);
@@ -2641,11 +2739,15 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     const memorialType = (accountingModalService?.memorialType || '').trim();
     const defaultNotes = [dharmaName, memorialType].filter(Boolean).join(' ');
 
+    const sIncomeCategories = accountingModalService
+      ? getIncomeCategoriesForService(accountingModalService)
+      : availableIncomeCategories;
+
     setAccountingItemRows((prev) => [
       ...prev,
       {
         id: `ROW-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        category: availableIncomeCategories[0] || '法要布施',
+        category: sIncomeCategories[0] || '法要布施',
         amount: 0,
         notes: defaultNotes,
       },
@@ -2678,23 +2780,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     const s = accountingModalService;
 
     // 所属寺院IDの確実な解決（兼務寺の檀家の場合は確実に兼務寺院IDを設定）
-    let resolvedTempleId = s.templeId;
-    if (s.householdId) {
-      const hh = households.find((h) => h.id === s.householdId);
-      if (hh?.templeId) {
-        resolvedTempleId = hh.templeId;
-      }
-    }
-    if (!resolvedTempleId && s.deceasedId) {
-      const pr = pastRecords.find((r) => r.id === s.deceasedId);
-      if (pr?.templeId) {
-        resolvedTempleId = pr.templeId;
-      }
-    }
-    if (!resolvedTempleId) {
-      const serviceTempleMeta = getServiceTempleInfo(s);
-      resolvedTempleId = serviceTempleMeta.id;
-    }
+    const resolvedTempleId = getServiceResolvedTempleId(s);
 
     validRows.forEach((row, idx) => {
       const txId = `TX-${crypto.randomUUID()}`;
@@ -2769,23 +2855,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     const txId = `TX-${crypto.randomUUID()}`;
 
     // 所属寺院IDの確実な解決（兼務寺の檀家の場合は確実に兼務寺院IDを設定）
-    let resolvedTempleId = service.templeId;
-    if (service.householdId) {
-      const hh = households.find((h) => h.id === service.householdId);
-      if (hh?.templeId) {
-        resolvedTempleId = hh.templeId;
-      }
-    }
-    if (!resolvedTempleId && service.deceasedId) {
-      const pr = pastRecords.find((r) => r.id === service.deceasedId);
-      if (pr?.templeId) {
-        resolvedTempleId = pr.templeId;
-      }
-    }
-    if (!resolvedTempleId) {
-      const serviceTempleMeta = getServiceTempleInfo(service);
-      resolvedTempleId = serviceTempleMeta.id;
-    }
+    const resolvedTempleId = getServiceResolvedTempleId(service);
 
     const newTx: Transaction = {
       id: txId,
@@ -5708,12 +5778,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   required
                   className="w-full p-2 border border-[#D1CEC7] bg-white font-bold text-sm"
                 >
-                  {availableIncomeCategories.map((c) => (
+                  {recordModalIncomeCategories.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
-                  {!availableIncomeCategories.includes(recordAccountingModal.category) && (
+                  {!recordModalIncomeCategories.includes(recordAccountingModal.category) && (
                     <option value={recordAccountingModal.category}>{recordAccountingModal.category}</option>
                   )}
                 </select>
@@ -5740,12 +5810,14 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                   <select
                     value={recordAccountingModal.paymentMethod}
                     onChange={(e) => setRecordAccountingModal({ ...recordAccountingModal, paymentMethod: e.target.value })}
-                    className="w-full p-1.5 border border-[#D1CEC7] bg-white"
+                    className="w-full p-1.5 border border-[#D1CEC7] bg-white text-xs font-bold"
                   >
-                    <option value="現金受付">現金受付</option>
-                    <option value="銀行振込">銀行振込</option>
-                    <option value="郵便振替">郵便振替</option>
-                    <option value="その他">その他</option>
+                    {recordModalPaymentMethods.map((pm) => (
+                      <option key={pm} value={pm}>{pm}</option>
+                    ))}
+                    {!recordModalPaymentMethods.includes(recordAccountingModal.paymentMethod) && recordAccountingModal.paymentMethod && (
+                      <option value={recordAccountingModal.paymentMethod}>{recordAccountingModal.paymentMethod}</option>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -5808,8 +5880,13 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                 return (
                   <div className="p-3 bg-[#FAF7F0] border border-[#D4AF37]/40 rounded-xs space-y-1.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        施主: <strong className="text-black font-bold text-sm">{accountingModalService.chiefMourner} 様</strong>
+                      <div className="flex items-center gap-2">
+                        <span>施主: <strong className="text-black font-bold text-sm">{accountingModalService.chiefMourner} 様</strong></span>
+                        {currentModalTempleInfo?.name && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-xs font-bold bg-[#FAF2DE] text-[#8C2D19] border border-[#D4AF37]/50">
+                            {currentModalTempleInfo.name}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[#8C2D19] font-bold">
                         {accountingModalService.memorialType}（{accountingModalService.scheduledDate} {accountingModalService.scheduledTime}）
@@ -5969,12 +6046,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                               onChange={(e) => handleUpdateAccountingRow(row.id, 'category', e.target.value)}
                               className="w-full p-1.5 border border-[#D1CEC7] bg-white text-xs font-bold focus:border-[#8C2D19]"
                             >
-                              {availableIncomeCategories.map((cat) => (
+                              {currentModalIncomeCategories.map((cat) => (
                                 <option key={cat} value={cat}>
                                   {cat}
                                 </option>
                               ))}
-                              {!availableIncomeCategories.includes(row.category) && (
+                              {!currentModalIncomeCategories.includes(row.category) && (
                                 <option value={row.category}>{row.category}</option>
                               )}
                             </select>
@@ -6031,17 +6108,27 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                       />
                     </div>
                     <div>
-                      <label className="block font-bold text-[#333333] mb-1 text-[11px]">受取方法</label>
+                      <label className="block font-bold text-[#333333] mb-1 text-[11px] flex items-center justify-between">
+                        <span>受取方法</span>
+                        {currentModalTempleInfo?.name && (
+                          <span className="text-[10px] font-normal text-gray-500">
+                            ({currentModalTempleInfo.name}マスタ)
+                          </span>
+                        )}
+                      </label>
                       <select
                         value={accountingPaymentMethod}
-                        onChange={(e) => setAccountingPaymentMethod(e.target.value as any)}
-                        className="w-full p-1.5 border border-[#D1CEC7] bg-white font-bold text-xs"
+                        onChange={(e) => setAccountingPaymentMethod(e.target.value)}
+                        className="w-full p-1.5 border border-[#D1CEC7] bg-white font-bold text-xs focus:border-[#8C2D19]"
                       >
-                        <option value="現金受付">現金受付</option>
-                        <option value="QR受付時">QR受付時</option>
-                        <option value="銀行振込">銀行振込</option>
-                        <option value="郵便振替">郵便振替</option>
-                        <option value="その他">その他</option>
+                        {currentModalPaymentMethods.map((pm) => (
+                          <option key={pm} value={pm}>
+                            {pm}
+                          </option>
+                        ))}
+                        {!currentModalPaymentMethods.includes(accountingPaymentMethod) && accountingPaymentMethod && (
+                          <option value={accountingPaymentMethod}>{accountingPaymentMethod}</option>
+                        )}
                       </select>
                     </div>
                   </div>
