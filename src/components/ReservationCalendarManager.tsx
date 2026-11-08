@@ -463,10 +463,20 @@ export interface TobaLineItem {
   countInfo?: string;
 }
 
-// Cleans up a raw toba line string to produce "<戒名> <忌日/回忌> 志主 <名字 名前>"
-export const formatSingleTobaLine = (rawLine: string, fallbackMemorial?: string): string => {
+// Cleans up a raw toba line string to produce "<戒名> <忌日/回忌> 志主 <名字 名前>" and returns parsed details
+export const parseSingleTobaLine = (
+  rawLine: string,
+  fallbackMemorial?: string
+): {
+  formattedLine: string;
+  dharmaName: string;
+  memorialType: string;
+  sponsorName: string;
+} => {
   let line = (rawLine || '').trim();
-  if (!line) return '';
+  if (!line) {
+    return { formattedLine: '', dharmaName: '', memorialType: fallbackMemorial || '', sponsorName: '' };
+  }
 
   // 1. Strip leading numbering e.g. "1.", "1．", "1)", "1）", "1本目:", "[1本目]", "・", "- ", "* ", "🎋", "📝"
   line = line.replace(/^\s*\[?\d+[本目.．)）\]:]*\s*/, '');
@@ -483,7 +493,9 @@ export const formatSingleTobaLine = (rawLine: string, fallbackMemorial?: string)
   // 4. Replace punctuation, slashes, brackets, commas, quotes with spaces
   line = line.replace(/[:：/／\[\]［］()（）【】,，"']/g, ' ');
   line = line.replace(/[\s\u3000]+/g, ' ').trim();
-  if (!line) return '';
+  if (!line) {
+    return { formattedLine: '', dharmaName: '', memorialType: fallbackMemorial || '', sponsorName: '' };
+  }
 
   // 5. Extract memorialType (回忌・忌日) if present
   let memorialType = '';
@@ -566,8 +578,14 @@ export const formatSingleTobaLine = (rawLine: string, fallbackMemorial?: string)
   }
 
   if (!dharmaName && !sponsorName) {
-    return rawLine.trim();
+    return {
+      formattedLine: rawLine.trim(),
+      dharmaName: '',
+      memorialType: memorialType || fallbackMemorial || '',
+      sponsorName: '',
+    };
   }
+
   if (!dharmaName) {
     dharmaName = '先祖代々';
   }
@@ -587,7 +605,18 @@ export const formatSingleTobaLine = (rawLine: string, fallbackMemorial?: string)
     parts.push(`志主 ${sponsorName}`);
   }
 
-  return parts.join(' ').replace(/[\s\u3000]+/g, ' ').trim();
+  const formattedLine = parts.join(' ').replace(/[\s\u3000]+/g, ' ').trim();
+
+  return {
+    formattedLine,
+    dharmaName,
+    memorialType,
+    sponsorName,
+  };
+};
+
+export const formatSingleTobaLine = (rawLine: string, fallbackMemorial?: string): string => {
+  return parseSingleTobaLine(rawLine, fallbackMemorial).formattedLine;
 };
 
 export const extractTobaLines = (
@@ -625,14 +654,14 @@ export const extractTobaLines = (
     const detailLines = detailSection.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
     
     if (detailLines.length > 0) {
+      const fallbackMem = resolveSpiritMemorialType(service?.memorialType, service?.dharmaName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
       return detailLines.map((rawL) => {
-        const fallbackMem = resolveSpiritMemorialType(service?.memorialType, service?.dharmaName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
-        const formatted = formatSingleTobaLine(rawL, fallbackMem);
+        const parsed = parseSingleTobaLine(rawL, fallbackMem);
         return {
-          formattedLine: formatted,
-          dharmaName: '',
-          memorialType: fallbackMem,
-          sponsorName: '',
+          formattedLine: parsed.formattedLine,
+          dharmaName: parsed.dharmaName,
+          memorialType: parsed.memorialType || fallbackMem,
+          sponsorName: parsed.sponsorName,
         };
       });
     }
@@ -683,12 +712,15 @@ export const extractTobaLines = (
 
   if (candidateLines.length > 0 && candidateLines.some((l) => l.includes('志主') || l.includes('施主'))) {
     const fallbackMem = resolveSpiritMemorialType(service?.memorialType, service?.dharmaName, service?.deceasedId, pastRecords, service?.scheduledDate || todo.dueDate);
-    return candidateLines.map((rawL) => ({
-      formattedLine: formatSingleTobaLine(rawL, fallbackMem),
-      dharmaName: '',
-      memorialType: fallbackMem,
-      sponsorName: '',
-    }));
+    return candidateLines.map((rawL) => {
+      const parsed = parseSingleTobaLine(rawL, fallbackMem);
+      return {
+        formattedLine: parsed.formattedLine,
+        dharmaName: parsed.dharmaName,
+        memorialType: parsed.memorialType || fallbackMem,
+        sponsorName: parsed.sponsorName,
+      };
+    });
   }
 
   // 5. Fallback to single core info
@@ -713,7 +745,44 @@ export const extractServiceTobaLines = (
   templeTodos?: TempleTodo[],
   memorialServices?: MemorialService[]
 ): TobaLineItem[] => {
-  // 1. If templeTodos are provided, check if a corresponding ToDo exists and extract directly from it
+  // 1. If service has explicit tobaItems (highest accuracy, directly configured on service)
+  if (service.tobaItems && service.tobaItems.length > 0) {
+    return service.tobaItems.map((item) => {
+      const dName = item.dharmaName || item.tamegaki || service.dharmaName || '先祖代々';
+      const mType = resolveSpiritMemorialType(item.memorialType || service.memorialType, dName, service.deceasedId, pastRecords, service.scheduledDate);
+      const sName = (item.sponsorName || service.chiefMourner || '施主').replace(/(家|様)+$/g, '').trim();
+      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
+      return {
+        formattedLine: formatted,
+        dharmaName: dName,
+        memorialType: mType,
+        sponsorName: sName,
+      };
+    });
+  }
+
+  // 2. If service has tobaSponsors array (multiple sponsors directly configured on service)
+  if (service.tobaSponsors && service.tobaSponsors.length > 0) {
+    const mainDharma = service.dharmaName || (service.deceasedId && pastRecords?.find((p) => p.id === service.deceasedId)?.dharmaName) || (service.chiefMourner ? `${service.chiefMourner.replace(/(家|様)+$/g, '')}家先祖代々` : '先祖代々');
+    const mainMemorial = resolveSpiritMemorialType(service.memorialType, mainDharma, service.deceasedId, pastRecords, service.scheduledDate);
+    const addDeceased = service.additionalDeceased || [];
+
+    return service.tobaSponsors.map((sp, idx) => {
+      const targetDeceased = idx === 0 ? null : addDeceased[idx - 1];
+      const dName = targetDeceased?.dharmaName || mainDharma;
+      const mType = targetDeceased ? resolveSpiritMemorialType(targetDeceased.memorialType, dName, targetDeceased.id, pastRecords, service.scheduledDate) : mainMemorial;
+      const sName = sp.replace(/(家|様)+$/g, '').trim() || service.chiefMourner?.replace(/(家|様)+$/g, '').trim() || '施主';
+      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
+      return {
+        formattedLine: formatted,
+        dharmaName: dName,
+        memorialType: mType,
+        sponsorName: sName,
+      };
+    });
+  }
+
+  // 3. If templeTodos are provided, check if a corresponding ToDo exists and extract directly from it
   if (templeTodos && templeTodos.length > 0) {
     const matchedTodo = templeTodos.find((t) => {
       const isToba = t.category === '塔婆' || t.category === '塔婆揮毫' || (t.title && t.title.includes('塔婆')) || (t.notes && t.notes.includes('塔婆'));
@@ -735,19 +804,17 @@ export const extractServiceTobaLines = (
     }
   }
 
-  // 2. If no matching ToDo in templeTodos, only check service properties if toba was explicitly configured on the service
+  // 4. Check if service has any explicit toba indication
   const hasExplicitToba = (service.tobaCount && service.tobaCount > 0) ||
     service.memorialType === '塔婆供養' ||
     service.memorialType === '塔婆' ||
-    (service.tobaItems && service.tobaItems.length > 0) ||
-    (service.tobaSponsors && service.tobaSponsors.length > 0) ||
     (service.notes && service.notes.includes('【塔婆明細】'));
 
   if (!hasExplicitToba) {
     return [];
   }
 
-  // 3. Check notes for explicit 【塔婆明細】 section
+  // 5. Check notes for explicit 【塔婆明細】 section
   const rawNotes = service.notes || '';
   const tobaDetailIndex = rawNotes.indexOf('【塔婆明細】');
   if (tobaDetailIndex !== -1) {
@@ -758,50 +825,16 @@ export const extractServiceTobaLines = (
     
     if (detailLines.length > 0) {
       const fallbackMem = resolveSpiritMemorialType(service.memorialType, service.dharmaName, service.deceasedId, pastRecords, service.scheduledDate);
-      return detailLines.map((rawL) => ({
-        formattedLine: formatSingleTobaLine(rawL, fallbackMem),
-        dharmaName: '',
-        memorialType: fallbackMem,
-        sponsorName: '',
-      }));
+      return detailLines.map((rawL) => {
+        const parsed = parseSingleTobaLine(rawL, fallbackMem);
+        return {
+          formattedLine: parsed.formattedLine,
+          dharmaName: parsed.dharmaName,
+          memorialType: parsed.memorialType || fallbackMem,
+          sponsorName: parsed.sponsorName,
+        };
+      });
     }
-  }
-
-  // 4. If service has explicit tobaItems
-  if (service.tobaItems && service.tobaItems.length > 0) {
-    return service.tobaItems.map((item) => {
-      const dName = item.dharmaName || item.tamegaki || service.dharmaName || '先祖代々';
-      const mType = resolveSpiritMemorialType(item.memorialType || service.memorialType, dName, service.deceasedId, pastRecords, service.scheduledDate);
-      const sName = (item.sponsorName || service.chiefMourner || '施主').replace(/(家|様)+$/g, '').trim();
-      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
-      return {
-        formattedLine: formatted,
-        dharmaName: dName,
-        memorialType: mType,
-        sponsorName: sName,
-      };
-    });
-  }
-
-  // 5. If service has tobaSponsors array
-  if (service.tobaSponsors && service.tobaSponsors.length > 0) {
-    const mainDharma = service.dharmaName || (service.deceasedId && pastRecords?.find((p) => p.id === service.deceasedId)?.dharmaName) || (service.chiefMourner ? `${service.chiefMourner.replace(/(家|様)+$/g, '')}家先祖代々` : '先祖代々');
-    const mainMemorial = resolveSpiritMemorialType(service.memorialType, mainDharma, service.deceasedId, pastRecords, service.scheduledDate);
-    const addDeceased = service.additionalDeceased || [];
-
-    return service.tobaSponsors.map((sp, idx) => {
-      const targetDeceased = idx === 0 ? null : addDeceased[idx - 1];
-      const dName = targetDeceased?.dharmaName || mainDharma;
-      const mType = targetDeceased ? resolveSpiritMemorialType(targetDeceased.memorialType, dName, targetDeceased.id, pastRecords, service.scheduledDate) : mainMemorial;
-      const sName = sp.replace(/(家|様)+$/g, '').trim() || service.chiefMourner?.replace(/(家|様)+$/g, '').trim() || '施主';
-      const formatted = formatSingleTobaLine(`${dName} ${mType} 志主 ${sName}`, mType);
-      return {
-        formattedLine: formatted,
-        dharmaName: dName,
-        memorialType: mType,
-        sponsorName: sName,
-      };
-    });
   }
 
   // 6. Check notes for multi-line toba entries (e.g. 1.志主..., 2.志主...)
@@ -811,12 +844,15 @@ export const extractServiceTobaLines = (
 
   if (candidateLines.length > 0 && candidateLines.some((l) => l.includes('志主') || l.includes('施主'))) {
     const fallbackMem = resolveSpiritMemorialType(service.memorialType, service.dharmaName, service.deceasedId, pastRecords, service.scheduledDate);
-    return candidateLines.map((rawL) => ({
-      formattedLine: formatSingleTobaLine(rawL, fallbackMem),
-      dharmaName: '',
-      memorialType: fallbackMem,
-      sponsorName: '',
-    }));
+    return candidateLines.map((rawL) => {
+      const parsed = parseSingleTobaLine(rawL, fallbackMem);
+      return {
+        formattedLine: parsed.formattedLine,
+        dharmaName: parsed.dharmaName,
+        memorialType: parsed.memorialType || fallbackMem,
+        sponsorName: parsed.sponsorName,
+      };
+    });
   }
 
   // 7. If tobaCount > 0 or 塔婆供養, generate lines

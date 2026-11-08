@@ -72,7 +72,7 @@ function formatScheduledTimeKanji(timeStr?: string): string {
 
 /**
  * 日付を漢字の和暦表記に変換（ゼロ表記なし）
- * 写真二枚目の仕様に準拠: 「令和八年九月十一日」
+ * 「令和八年九月十一日」
  */
 function formatDateTitleKanji(dateStr: string): string {
   if (!dateStr) return '';
@@ -132,6 +132,124 @@ function getDeceasedFormattedName(
   return `（故　${cleaned}　様）`;
 }
 
+/**
+ * 法事（法要）のみを判定するヘルパー関数
+ * 「法事のみの印刷で良い」という要望に基づき、
+ * 葬儀（通夜・葬儀・枕経）、一般寺院行事・他寺院助法、会議、住職個人用務、
+ * 地域行事、来客、棚経、月参り、純粋な塔婆のみ（塔婆供養）等は除外し、
+ * 年忌法要（一周忌、三回忌、七回忌等）、忌日（四十九日等）、納骨法要、
+ * 命日法要、特別法要などの法事のみを対象とします。
+ */
+export function isHojiService(s: MemorialService): boolean {
+  const mType = (s.memorialType || '').trim();
+
+  // 1. 葬儀関連を除外
+  const funeralTypes = ['通夜', '葬儀', '枕経', '葬儀・枕経', '通夜・葬儀'];
+  if (funeralTypes.includes(mType)) return false;
+
+  // 2. 寺院行事・公務・個人用務・来客・棚経・月参りを除外
+  const nonHojiCategories = [
+    '寺院行事',
+    '他寺院助法・出向',
+    '会議・教区・公務',
+    '住職個人用務・私用',
+    '地域行事',
+    '来客・相談',
+    '会合',
+    '来客',
+    '法務その他',
+    '棚経',
+    '月参り',
+    '祈祷・厄除',
+  ];
+  if (nonHojiCategories.includes(mType)) return false;
+
+  // 3. 純粋な塔婆のみの依頼（法事ではない単独塔婆供養）を除外
+  if (mType === '塔婆供養' || mType === '塔婆' || mType === '塔婆依頼') {
+    return false;
+  }
+
+  // 4. 「その他」の場合、戒名や過去帳精霊・法要の詳細がない単なるメモ・予定は除外
+  if (mType === 'その他') {
+    const hasSpirit = Boolean(s.dharmaName?.trim() || s.deceasedName?.trim() || s.deceasedId);
+    if (!hasSpirit) return false;
+  }
+
+  return true;
+}
+
+/**
+ * 法事に申し込まれている全ての塔婆志主の名前を抽出
+ * （重複を除去し、志主氏名を整えて配列で返す）
+ */
+export function getServiceTobaSponsors(
+  s: MemorialService,
+  pastRecords: PastRecord[] = [],
+  templeTodos: TempleTodo[] = [],
+  services: MemorialService[] = []
+): string[] {
+  const sponsors: string[] = [];
+
+  const addSponsorName = (rawName?: string) => {
+    if (!rawName) return;
+    // 「、」「,」「・」「/」「\n」等で区切られた複数志主の分割にも対応
+    const tokens = rawName.split(/[、,・\n\r/]+/).map((t) => t.trim()).filter(Boolean);
+    tokens.forEach((tok) => {
+      let cleaned = tok
+        .replace(/^(塔婆志主|志主名|施主名|志主|施主)\s*[:：]?\s*/g, '')
+        .replace(/(家|様)+$/g, '')
+        .trim();
+      if (!cleaned) return;
+      cleaned = cleaned.replace(/\s+/g, '　');
+      if (!sponsors.includes(cleaned)) {
+        sponsors.push(cleaned);
+      }
+    });
+  };
+
+  // 1. service.tobaItems から志主名を抽出
+  if (s.tobaItems && s.tobaItems.length > 0) {
+    s.tobaItems.forEach((item) => {
+      addSponsorName(item.sponsorName);
+    });
+  }
+
+  // 2. service.tobaSponsors から志主名を抽出
+  if (s.tobaSponsors && s.tobaSponsors.length > 0) {
+    s.tobaSponsors.forEach((sp) => {
+      addSponsorName(sp);
+    });
+  }
+
+  // 3. extractServiceTobaLines から志主名を抽出
+  const lines = extractServiceTobaLines(s, pastRecords, templeTodos, services);
+  lines.forEach((l) => {
+    addSponsorName(l.sponsorName);
+  });
+
+  // 4. service.notes の志主記載を抽出
+  if (s.notes) {
+    const noteLines = s.notes.split('\n');
+    noteLines.forEach((nl) => {
+      const spMatch = nl.match(/(?:塔婆志主|志主名|志主)\s*[:：]?\s*(.*)$/);
+      if (spMatch && spMatch[1]) {
+        addSponsorName(spMatch[1]);
+      }
+    });
+  }
+
+  // 5. 塔婆の申込（tobaCount > 0 等）があるが、志主名が個別に指定されていない場合は施主名を志主とする
+  const hasToba = (s.tobaCount && s.tobaCount > 0) || lines.length > 0;
+  if (sponsors.length === 0 && hasToba) {
+    const fallbackChief = (s.chiefMourner || '').replace(/(家|様)+$/g, '').trim();
+    if (fallbackChief) {
+      addSponsorName(fallbackChief);
+    }
+  }
+
+  return sponsors.map((name) => `${name}様`);
+}
+
 export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
   isOpen,
   onClose,
@@ -143,39 +261,22 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
 }) => {
   const [fontSize, setFontSize] = useState<'normal' | 'large'>('normal');
 
-  // Filter services for the selected date
-  const dayServices = useMemo(() => {
-    return services.filter((s) => s.scheduledDate === targetDateStr);
-  }, [services, targetDateStr]);
-
-  // Separate timed services vs all-day services
-  const { timedServices, allDayServices } = useMemo(() => {
-    const timed: MemorialService[] = [];
-    const allDay: MemorialService[] = [];
-
-    dayServices.forEach((s) => {
-      const isAll =
-        s.scheduledTime === '終日' ||
-        s.isAllDay ||
-        s.memorialType === '塔婆供養' ||
-        s.memorialType === '塔婆';
-
-      if (isAll) {
-        allDay.push(s);
-      } else {
-        timed.push(s);
-      }
+  // Filter only 法事 (memorial services) for the selected date
+  const hojiServices = useMemo(() => {
+    const targetNorm = targetDateStr.replace(/[-/]/g, '/').trim();
+    const list = services.filter((s) => {
+      const sDateNorm = (s.scheduledDate || '').replace(/[-/]/g, '/').trim();
+      if (sDateNorm !== targetNorm) return false;
+      return isHojiService(s);
     });
 
-    // Sort timed services by time
-    timed.sort((a, b) => {
-      const tA = a.scheduledTime || '99:99';
-      const tB = b.scheduledTime || '99:99';
+    // 時間順にソート（時間未定または終日は後ろ）
+    return list.sort((a, b) => {
+      const tA = a.scheduledTime && a.scheduledTime !== '終日' && a.scheduledTime !== '未定' ? a.scheduledTime : '99:99';
+      const tB = b.scheduledTime && b.scheduledTime !== '終日' && b.scheduledTime !== '未定' ? b.scheduledTime : '99:99';
       return tA.localeCompare(tB);
     });
-
-    return { timedServices: timed, allDayServices: allDay };
-  }, [dayServices]);
+  }, [services, targetDateStr]);
 
   // Clean household & sponsor helper
   const getSponsorAndChief = (s: MemorialService) => {
@@ -305,6 +406,9 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
           <span className="text-xs text-gray-300">
             {formatDateTitleKanji(targetDateStr)}
           </span>
+          <span className="text-xs bg-[#2A2A2A] text-[#D4AF37] border border-[#555555] px-2 py-0.5 rounded-2xs">
+            法事のみ印刷 ({hojiServices.length}件)
+          </span>
         </div>
 
         <div className="flex items-center space-x-2 text-xs">
@@ -373,15 +477,15 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
             {formatDateTitleKanji(targetDateStr)}
           </div>
 
-          {/* 予定が1件もない場合 */}
-          {dayServices.length === 0 && (
+          {/* 法事予定が1件もない場合 */}
+          {hojiServices.length === 0 && (
             <div className="text-gray-600" style={{ marginLeft: '2rem', marginBlockEnd: '2rem' }}>
-              予定はありません
+              法事の予定はありません
             </div>
           )}
 
-          {/* 1. 時間指定のある予定 */}
-          {timedServices.map((s, idx) => {
+          {/* 法事の予定一覧 */}
+          {hojiServices.map((s, idx) => {
             const timeStr = formatScheduledTimeKanji(s.scheduledTime) || '';
             const chiefWithSama = getSponsorAndChief(s);
 
@@ -401,20 +505,12 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
             // 回忌・法要種別 (例: 三回忌, 一周忌, 四十九日忌)
             const memType = formatMemorialTypeKanji(s.memorialType?.trim());
 
-            // 塔婆明細の抽出
-            const tobaLines = extractServiceTobaLines(s, pastRecords, templeTodos, services);
-            // 塔婆志主名のリスト (重複を除去し、志主氏名を順に並べる)
-            const rawSponsors = tobaLines
-              .map((t) => (t.sponsorName || '').replace(/(家|様)+$/g, '').trim())
-              .filter((name) => Boolean(name))
-              .map((name) => name.replace(/\s+/g, '　'));
-            const uniqueSponsors = Array.from(new Set(rawSponsors));
-            const sponsorsList = uniqueSponsors.map((name) => `${name}様`);
+            // 塔婆志主名のリスト (申し込んでいる全ての志主名を取得)
+            const sponsorsList = getServiceTobaSponsors(s, pastRecords, templeTodos, services);
 
-            // 写真二枚目の配置: 「施主」「塔婆志主」の開始位置は時間の文字数分インデント
-            // 例: 「午前十一時　」は5文字+全角空白1文字 = 6文字分インデント
-            //     「午後三時　」は4文字+全角空白1文字 = 5文字分インデント
-            const timeIndentLength = timeStr ? timeStr.length + 1 : 0;
+            // 時間の文字数に応じたインデント（時間の直後から施主・志主を配置）
+            // 時間未定・空欄の場合は2文字分インデント
+            const timeIndentLength = timeStr ? timeStr.length + 1 : 2;
             const timeIndent = '　'.repeat(timeIndentLength);
 
             return (
@@ -466,14 +562,14 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
                   );
                 })}
 
-                {/* 2行目: 施主名（二枚目の写真通り、時間枠の直後から開始） */}
+                {/* 2行目: 施主名（時間枠の直後から開始） */}
                 {chiefWithSama && (
                   <div>
                     {timeIndent}施主　{chiefWithSama}
                   </div>
                 )}
 
-                {/* 3行目: 塔婆志主（二枚目の写真通り、施主と開始位置を揃える） */}
+                {/* 3行目以降: 塔婆志主（複数の志主が塔婆を申し込んでいる場合は全ての志主名を表示） */}
                 {sponsorsList.length > 0 && (
                   <>
                     {sponsorsList.map((sp, spIdx) => {
@@ -497,122 +593,6 @@ export const DaySchedulePrintModal: React.FC<DaySchedulePrintModalProps> = ({
               </div>
             );
           })}
-
-          {/* 2. 終日予定 */}
-          {allDayServices.length > 0 && (
-            <div
-              style={{ marginLeft: '2.5rem', marginBlockEnd: '2.5rem' }}
-            >
-              <div>終日予定</div>
-
-              {/* 終日予定の中の塔婆 */}
-              {(() => {
-                const tobaServices = allDayServices.filter(
-                  (s) =>
-                    s.memorialType === '塔婆供養' ||
-                    s.memorialType === '塔婆' ||
-                    (s.tobaCount && s.tobaCount > 0) ||
-                    (s.tobaItems && s.tobaItems.length > 0)
-                );
-
-                const nonTobaServices = allDayServices.filter(
-                  (s) => !tobaServices.includes(s)
-                );
-
-                return (
-                  <>
-                    {tobaServices.length > 0 && (
-                      <div className="my-1">
-                        <div>　　塔婆</div>
-                        {tobaServices.map((ts, tsIdx) => {
-                          const tobaLines = extractServiceTobaLines(
-                            ts,
-                            pastRecords,
-                            templeTodos,
-                            services
-                          );
-
-                          if (tobaLines.length > 0) {
-                            return tobaLines.map((line, lIdx) => {
-                              const hasDharma = Boolean(line.dharmaName || ts.dharmaName);
-                              const dName = line.dharmaName || ts.dharmaName || '先祖代々';
-                              const deceasedFormatted = hasDharma
-                                ? getDeceasedFormattedName(
-                                    ts.deceasedName,
-                                    ts.deceasedId,
-                                    dName,
-                                    pastRecords
-                                  )
-                                : '';
-                              const mType = formatMemorialTypeKanji(line.memorialType || ts.memorialType || '');
-                              const rawSName = (line.sponsorName || ts.chiefMourner || '志主')
-                                .replace(/(家|様)+$/g, '')
-                                .trim()
-                                .replace(/\s+/g, '　');
-                              return (
-                                <div key={`${tsIdx}-${lIdx}`}>
-                                  　　　{dName}
-                                  {deceasedFormatted && (
-                                    <span
-                                      className="font-normal opacity-90 inline-block align-middle"
-                                      style={{ fontSize: '0.78em' }}
-                                    >
-                                      {deceasedFormatted}
-                                    </span>
-                                  )}
-                                  {mType ? `　${mType}` : ''}　志主　{rawSName}様
-                                </div>
-                              );
-                            });
-                          }
-
-                          // fallback if no lines extracted
-                          const hasDharma = Boolean(ts.dharmaName);
-                          const dName = ts.dharmaName || (ts.deceasedName ? `${ts.deceasedName}儀` : '先祖代々');
-                          const deceasedFormatted = hasDharma
-                            ? getDeceasedFormattedName(ts.deceasedName, ts.deceasedId, ts.dharmaName, pastRecords)
-                            : '';
-                          const mType = formatMemorialTypeKanji(ts.memorialType || '');
-                          const rawSName = (ts.chiefMourner || '志主')
-                            .replace(/(家|様)+$/g, '')
-                            .trim()
-                            .replace(/\s+/g, '　');
-                          return (
-                            <div key={tsIdx}>
-                              　　　{dName}
-                              {deceasedFormatted && (
-                                <span
-                                  className="font-normal opacity-90 inline-block align-middle"
-                                  style={{ fontSize: '0.78em' }}
-                                >
-                                  {deceasedFormatted}
-                                </span>
-                              )}
-                              {mType ? `　${mType}` : ''}　志主　{rawSName}様
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* 塔婆以外の一般終日予定 */}
-                    {nonTobaServices.map((ns, nsIdx) => {
-                      const title =
-                        ns.chiefMourner ||
-                        ns.notes ||
-                        ns.memorialType ||
-                        '行事';
-                      return (
-                        <div key={nsIdx}>
-                          　　{title}
-                        </div>
-                      );
-                    })}
-                  </>
-                );
-              })()}
-            </div>
-          )}
         </div>
       </div>
     </div>
