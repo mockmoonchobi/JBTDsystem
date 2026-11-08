@@ -49,6 +49,7 @@ import {
 import { TempleProfile, TempleInfo, Household } from '../types';
 import { safeStorage, loadJsonState, saveJsonState } from '../utils/storageUtils';
 import { isTutorialDataRemaining } from '../utils/tutorialDetector';
+import { GoogleDriveEmptyConfirmModal } from './GoogleDriveEmptyConfirmModal';
 
 interface GoogleSheetsModalProps {
   isOpen: boolean;
@@ -137,6 +138,38 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
   const [showCleanWriteModal, setShowCleanWriteModal] = useState<boolean>(false);
   const [showTutorialWarningModal, setShowTutorialWarningModal] = useState<boolean>(false);
   const [showSharedDisconnectChoiceModal, setShowSharedDisconnectChoiceModal] = useState<boolean>(false);
+  const [showDriveEmptyModal, setShowDriveEmptyModal] = useState<boolean>(false);
+  const [pendingDriveEmptyToken, setPendingDriveEmptyToken] = useState<string | null>(null);
+
+  // Googleドライブにデータがない場合に、新たにファイルを作成して端末データを書き込む
+  const handleConfirmCreateDriveFile = async () => {
+    setShowDriveEmptyModal(false);
+    const token = pendingDriveEmptyToken;
+    if (!token) return;
+    setLoading(true);
+    setStatusMessage({ type: 'loading', text: '新規Googleスプレッドシートを作成し、端末データを書き込み中...' });
+    try {
+      if (onCleanWriteToSheets) {
+        const writeRes = await onCleanWriteToSheets(token);
+        if (writeRes?.sheetInfo) {
+          setSpreadsheetInfo(writeRes.sheetInfo);
+          loadPermissions(writeRes.sheetInfo.id);
+        }
+        setStatusMessage({
+          type: 'success',
+          text: `Googleドライブに新規ファイルを作成し、端末データ（${writeRes?.count ?? 0}件）を書き込んで連携を開始しました`,
+        });
+      } else {
+        throw new Error('初期化書き込みハンドラーが見つかりません。');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setStatusMessage({ type: 'error', text: `作成エラー: ${err.message || 'Googleシートの作成・書き込みに失敗しました。'}` });
+    } finally {
+      setLoading(false);
+      setPendingDriveEmptyToken(null);
+    }
+  };
 
   // チュートリアルデータ残置判定（寺院情報の一致、またはDA/D1かつ電話番号に●●●●混入）
   const checkTutorialRemaining = () => {
@@ -323,11 +356,21 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
       setUser(currentUser);
       setStatusMessage({ type: 'loading', text: 'GoogleDrive上のデータを確認・連携中...' });
 
-      // Auto-detect or create Google Sheet
+      // Auto-detect Google Sheet (do not create automatically without confirmation)
       const sheet = await findOrCreateSpreadsheet(token, false, {
         preferredSheetId: spreadsheetInfo?.id,
+        createIfNotFound: false,
         onProgress: (text) => setStatusMessage({ type: 'loading', text }),
       });
+
+      if (!sheet) {
+        setPendingDriveEmptyToken(token);
+        setShowDriveEmptyModal(true);
+        setStatusMessage(null);
+        setLoading(false);
+        return;
+      }
+
       setSpreadsheetInfo(sheet);
       saveJsonState('temple_google_sheet_info', sheet);
       
@@ -377,8 +420,16 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
             setUser(res.user);
             const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
               preferredSheetId: spreadsheetInfo?.id,
+              createIfNotFound: false,
               onProgress: (text) => setStatusMessage({ type: 'loading', text }),
             });
+            if (!sheet) {
+              setPendingDriveEmptyToken(res.accessToken);
+              setShowDriveEmptyModal(true);
+              setStatusMessage(null);
+              setLoading(false);
+              return;
+            }
             setSpreadsheetInfo(sheet);
             saveJsonState('temple_google_sheet_info', sheet);
             loadPermissions(sheet.id);
@@ -1930,6 +1981,18 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({
           </div>
         </div>
       )}
+
+      {/* Googleドライブにデータがない場合の新規作成確認モーダル */}
+      <GoogleDriveEmptyConfirmModal
+        isOpen={showDriveEmptyModal}
+        onClose={() => {
+          setShowDriveEmptyModal(false);
+          setPendingDriveEmptyToken(null);
+        }}
+        onConfirm={handleConfirmCreateDriveFile}
+        mode="inApp"
+        isLoading={loading}
+      />
     </div>
   );
 };

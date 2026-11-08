@@ -51,11 +51,13 @@ import {
   clearAllSpreadsheetData, 
   deleteAllExistingSpreadsheetsByName,
   createNewSpreadsheet,
+  createAndInitializeEmptySpreadsheet,
   SPREADSHEET_NAME,
   isNotFoundError,
   SheetsImportResult,
   fetchLatestOperationLogs 
 } from './lib/googleSheets';
+import { GoogleDriveEmptyConfirmModal } from './components/GoogleDriveEmptyConfirmModal';
 import { mergeDatasetsWithAuditPriority, MergedDatasetResult } from './utils/syncMergeUtils';
 import { exportToExcel, importFromExcel } from './utils/excelUtils';
 import { ImportTargetType } from './utils/externalImportUtils';
@@ -261,6 +263,9 @@ export default function App() {
   const [isStartupLauncherOpen, setIsStartupLauncherOpen] = useState<boolean>(true);
   const [isStartupLoading, setIsStartupLoading] = useState<boolean>(false);
   const [startupLoadingMsg, setStartupLoadingMsg] = useState<string>('データを読み込み中...');
+  const [showStartupDriveEmptyModal, setShowStartupDriveEmptyModal] = useState<boolean>(false);
+  const [startupDriveEmptyToken, setStartupDriveEmptyToken] = useState<string | null>(null);
+  const [isStartupDriveEmptyCreating, setIsStartupDriveEmptyCreating] = useState<boolean>(false);
 
   const isStartupLauncherOpenRef = useRef<boolean>(isStartupLauncherOpen);
   useEffect(() => {
@@ -1308,9 +1313,18 @@ export default function App() {
 
       const sheet = await findOrCreateSpreadsheet(res.accessToken, false, {
         preferredSheetId,
-        strictSheetIdOnly: !!preferredSheetId,
+        strictSheetIdOnly: isFromSharedInvite,
+        createIfNotFound: false,
         onProgress: (msg) => setStartupLoadingMsg(msg),
       });
+
+      if (!sheet) {
+        // ドライブに対象データが存在しないため、確認ダイアログを表示
+        setStartupDriveEmptyToken(res.accessToken);
+        setShowStartupDriveEmptyModal(true);
+        setIsStartupLoading(false);
+        return;
+      }
 
       // Keep the previous device snapshot until every remote table has been read.
       setStartupLoadingMsg('Googleシートからデータを読み込み中...');
@@ -1348,6 +1362,106 @@ export default function App() {
     } finally {
       setIsStartupLoading(false);
     }
+  };
+
+  // 起動時にGoogleドライブに対象ファイルがない場合、新たにデータ無しのGoogleシートを作成して立ち上げる
+  const handleConfirmStartupCreateEmpty = async () => {
+    const token = startupDriveEmptyToken;
+    if (!token) return;
+    setIsStartupDriveEmptyCreating(true);
+    setIsStartupLoading(true);
+    setStartupLoadingMsg('データ無しのGoogleシートを作成中...');
+    try {
+      // 1. 各立ち上げ時クリーンアップ
+      await clearAllStartupCaches();
+      clearHistory();
+      setDeletedRecords([]);
+      if (syncStateRef.current) {
+        syncStateRef.current.deletedRecords = [];
+      }
+
+      // 2. 新しいGoogleシートを作成し、全シートタブのヘッダーと基本設定を初期化
+      const newSheet = await createAndInitializeEmptySpreadsheet(token, (msg) => setStartupLoadingMsg(msg));
+      safeStorage.setItem('temple_google_sheet_info', JSON.stringify(newSheet));
+
+      // 3. 端末データを空データで初期化
+      setTemples(EMPTY_TEMPLES);
+      setTempleInfo(EMPTY_TEMPLE_INFO);
+      setHouseholds([]);
+      setPastRecords([]);
+      setMemorialServices([]);
+      setTempleTodos([]);
+      setTransactions([]);
+      setFamilyMembers([]);
+      setPriests([]);
+      setMasterOptions(EMPTY_MASTER_OPTIONS);
+      setTempleMasterOptionsMap({});
+      setNoticeTemplates({ higan: '', niibon: '' });
+      setActiveTempleId('temple-main');
+
+      syncStateRef.current = {
+        templeInfo: EMPTY_TEMPLE_INFO,
+        temples: EMPTY_TEMPLES,
+        households: [],
+        pastRecords: [],
+        memorialServices: [],
+        transactions: [],
+        familyMembers: [],
+        masterOptions: EMPTY_MASTER_OPTIONS,
+        noticeTemplates: { higan: '', niibon: '' },
+        templeTodos: [],
+        templeMasterOptionsMap: {},
+        priests: [],
+        batchAccountingData: null,
+        deletedRecords: [],
+        disasterEvents: [],
+      };
+
+      saveJsonState('temple_profiles', EMPTY_TEMPLES);
+      saveJsonState('temple_info', EMPTY_TEMPLE_INFO);
+      saveJsonState('temple_master_options', EMPTY_MASTER_OPTIONS);
+      saveJsonState('temple_master_options_map', {});
+      saveJsonState('temple_households', []);
+      saveJsonState('temple_past_records', []);
+      saveJsonState('temple_memorial_services', []);
+      saveJsonState('temple_todos', []);
+      saveJsonState('temple_transactions', []);
+      saveJsonState('temple_family_members', []);
+      saveJsonState('temple_priests', []);
+      saveNoticeTemplates({ higan: '', niibon: '' });
+      saveDeletedRecordsLog([]);
+      saveDisasterMemorialEvents([], false);
+
+      setStartupLoadingMsg('Googleシートから初期設定を接続中...');
+      // 4. 初期化したGoogleシートからデータを読込
+      await syncWithGoogleDrive(token, newSheet.id, true /* isCleanImport */);
+      clearHistory();
+
+      setShowStartupDriveEmptyModal(false);
+      setStartupDriveEmptyToken(null);
+      setIsStartupLauncherOpen(false);
+      isStartupLauncherOpenRef.current = false;
+      setIsInitialLoaded(true);
+
+      // データ無し新規立ち上げのため、寺院情報設定モーダルを開く
+      setActiveTab('households');
+      setTempleModalInitialTab('basic');
+      isFirstSetupAfterEmptyStartupRef.current = true;
+      setIsFirstSetupAfterEmptyStartup(true);
+      setIsTempleModalOpen(true);
+    } catch (err: any) {
+      console.error('Failed to create empty spreadsheet on startup:', err);
+      alert(`Googleシートの新規作成に失敗しました: ${err?.message || err}`);
+    } finally {
+      setIsStartupDriveEmptyCreating(false);
+      setIsStartupLoading(false);
+    }
+  };
+
+  const handleCloseStartupDriveEmptyModal = () => {
+    setShowStartupDriveEmptyModal(false);
+    setStartupDriveEmptyToken(null);
+    setIsStartupLoading(false);
   };
 
   // Sync to safe storage & IndexedDB
@@ -5280,6 +5394,15 @@ export default function App() {
         isOpen={showPostEmptyImportPrompt}
         onSelectImport={handleSelectPostEmptyImport}
         onSelectManual={handleSelectPostEmptyManual}
+      />
+
+      {/* Startup Google Drive Empty Confirm Modal */}
+      <GoogleDriveEmptyConfirmModal
+        isOpen={showStartupDriveEmptyModal}
+        onClose={handleCloseStartupDriveEmptyModal}
+        onConfirm={handleConfirmStartupCreateEmpty}
+        mode="startup"
+        isLoading={isStartupDriveEmptyCreating}
       />
     </div>
   );

@@ -276,8 +276,9 @@ export async function findOrCreateSpreadsheet(
     preferredSheetId?: string;
     strictSheetIdOnly?: boolean;
     onProgress?: (message: string) => void;
+    createIfNotFound?: boolean;
   }
-): Promise<{ id: string; url: string; isExisting: boolean }> {
+): Promise<{ id: string; url: string; isExisting: boolean } | null> {
   const onProgress = options?.onProgress;
 
 
@@ -308,18 +309,16 @@ export async function findOrCreateSpreadsheet(
 
   if (!forceCreateNew) {
     // 0. Fast-path: Check preferredSheetId or cached sheet info in localStorage (~200ms)
-    const preferredId = options?.preferredSheetId || (() => {
+    let preferredId = options?.preferredSheetId;
+    if (!preferredId && typeof window !== 'undefined') {
       try {
-        if (typeof window !== 'undefined') {
-          const raw = localStorage.getItem('temple_google_sheet_info');
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            return parsed?.id;
-          }
+        const raw = localStorage.getItem('temple_google_sheet_info');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          preferredId = parsed?.id;
         }
       } catch {}
-      return null;
-    })();
+    }
 
     if (preferredId) {
       try {
@@ -343,9 +342,17 @@ export async function findOrCreateSpreadsheet(
               isExisting: true,
             };
           }
+        } else if (testRes.status === 404 || testRes.status === 403) {
+          // If previously saved sheet was deleted or inaccessible, clear outdated cache and fall back to Drive search
+          if (typeof window !== 'undefined') {
+            try { localStorage.removeItem('temple_google_sheet_info'); } catch {}
+          }
         }
       } catch (err) {
         console.warn('Saved spreadsheet check failed or not found, falling back to Drive search:', err);
+        if (typeof window !== 'undefined') {
+          try { localStorage.removeItem('temple_google_sheet_info'); } catch {}
+        }
       }
     }
 
@@ -415,9 +422,44 @@ export async function findOrCreateSpreadsheet(
     }
   }
 
+  // If createIfNotFound is explicitly set to false, return null instead of creating
+  if (options?.createIfNotFound === false) {
+    return null;
+  }
+
   // 2. If not found or forced, create a new spreadsheet with all required sheet tabs
   if (onProgress) onProgress('新しい寺院データ用スプレッドシートを作成中...');
   return await createNewSpreadsheet(accessToken, SPREADSHEET_NAME);
+}
+
+// Create a new Google Spreadsheet and initialize all tabs with headers and empty base schema
+export async function createAndInitializeEmptySpreadsheet(
+  accessToken: string,
+  onProgress?: (message: string) => void
+): Promise<{ id: string; url: string; isExisting: boolean }> {
+  if (onProgress) onProgress('新しい寺院データ用スプレッドシートを作成中...');
+  const newSheet = await createNewSpreadsheet(accessToken, SPREADSHEET_NAME);
+
+  if (onProgress) onProgress('初期設定と項目名をシートに書き込み中...');
+  await exportToSheets(
+    accessToken,
+    newSheet.id,
+    INITIAL_TEMPLE_INFO,
+    [], // households
+    [], // pastRecords
+    [], // memorialServices
+    [], // transactions
+    INITIAL_MASTER_OPTIONS,
+    { higan: DEFAULT_HIGAN_TEMPLATE, niibon: DEFAULT_NIIBON_TEMPLATE },
+    [], // templeTodos
+    [], // temples
+    {
+      targetTempleId: 'ALL',
+      deletedRecords: [],
+    }
+  );
+
+  return newSheet;
 }
 
 // Delete a Google Drive file permanently or move to trash
