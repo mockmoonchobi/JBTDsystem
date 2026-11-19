@@ -19,7 +19,7 @@ import {
   Layers
 } from 'lucide-react';
 import { Transaction, Household, TransactionCategory, TempleInfo, MasterOptions, BatchAccountingData } from '../types';
-import { INITIAL_INCOME_CATEGORIES, INITIAL_EXPENSE_CATEGORIES, INITIAL_MASTER_OPTIONS } from '../data/initialData';
+import { EMPTY_MASTER_OPTIONS } from '../data/initialData';
 import { formatCurrency, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions } from '../utils/memorialCalculator';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { AccountingFiscalReportModal } from './AccountingFiscalReportModal';
@@ -39,6 +39,11 @@ import {
 import { ImportTargetType } from '../utils/externalImportUtils';
 import { NewTransactionRow } from './NewTransactionRow';
 import { InlineEditTransactionRow } from './InlineEditTransactionRow';
+import {
+  buildFilterCategoryOptions,
+  normalizeCategoryList,
+  resolveFiscalCategoryLabel,
+} from '../utils/accountingCategoryUtils';
 
 interface AccountingManagerProps {
   transactions: Transaction[];
@@ -69,10 +74,19 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
   onOpenImportModal,
   onSyncTransactions,
 }) => {
-  const incomeCategories = masterOptions?.incomeCategories || [];
-  const expenseCategories = masterOptions?.expenseCategories || [];
+  const incomeCategories = useMemo(
+    () => normalizeCategoryList(masterOptions?.incomeCategories),
+    [masterOptions?.incomeCategories]
+  );
+  const expenseCategories = useMemo(
+    () => normalizeCategoryList(masterOptions?.expenseCategories),
+    [masterOptions?.expenseCategories]
+  );
 
-  const paymentMethodOptions = masterOptions?.paymentMethods || [];
+  const paymentMethodOptions = useMemo(
+    () => normalizeCategoryList(masterOptions?.paymentMethods),
+    [masterOptions?.paymentMethods]
+  );
 
   // Clean raw transactions (strip any legacy auto-generated carryover records and normalize dates)
   const cleanTransactions = useMemo(() => {
@@ -114,6 +128,11 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'ALL' | '収入' | '支出'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+
+  const filterCategoryOptions = useMemo(
+    () => buildFilterCategoryOptions(cleanTransactions, incomeCategories, expenseCategories),
+    [cleanTransactions, incomeCategories, expenseCategories]
+  );
 
   // Default to CURRENT FISCAL YEAR (現行の会計年度) for best performance & direct focus
   const [fiscalYearFilter, setFiscalYearFilter] = useState<string>(() => String(currentFY));
@@ -265,8 +284,9 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
         (t.paymentMethod || '').toLowerCase().includes(searchLower) ||
         (t.date && t.date.includes(searchLower));
 
+      const resolvedCatLabel = resolveFiscalCategoryLabel(t.category, t.type);
       const matchesType = typeFilter === 'ALL' || t.type === typeFilter;
-      const matchesCategory = categoryFilter === 'ALL' || t.category === categoryFilter;
+      const matchesCategory = categoryFilter === 'ALL' || resolvedCatLabel === categoryFilter;
       const matchesFY = fiscalYearFilter === 'ALL' || isDateInFiscalYear(t.date, Number(fiscalYearFilter), templeInfo);
 
       return matchesSearch && matchesType && matchesCategory && matchesFY;
@@ -501,14 +521,14 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
               >
                 <option value="ALL">すべての勘定科目</option>
                 <optgroup label="【 収入の部 】">
-                  {incomeCategories.map((cat) => (
+                  {filterCategoryOptions.incomeCategories.map((cat) => (
                     <option key={`inc-${cat}`} value={cat}>
                       {cat}
                     </option>
                   ))}
                 </optgroup>
                 <optgroup label="【 支出の部 】">
-                  {expenseCategories.map((cat) => (
+                  {filterCategoryOptions.expenseCategories.map((cat) => (
                     <option key={`exp-${cat}`} value={cat}>
                       {cat}
                     </option>
@@ -660,7 +680,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
                             {t.type === '収入' ? '収入' : '支出'}
                           </span>
                           <span className="px-2 py-0.5 bg-[#F9F7F2] border border-[#D1CEC7] text-[#1A1A1A] font-serif text-sm font-bold inline-block whitespace-nowrap">
-                            {t.category}
+                            {resolveFiscalCategoryLabel(t.category, t.type)}
                           </span>
                         </div>
                       </td>
@@ -944,7 +964,7 @@ export const AccountingManager: React.FC<AccountingManagerProps> = ({
         onClose={() => setIsReportModalOpen(false)}
         transactions={transactions}
         templeInfo={templeInfo}
-        masterOptions={masterOptions || INITIAL_MASTER_OPTIONS}
+        masterOptions={masterOptions || EMPTY_MASTER_OPTIONS}
       />
 
       {/* Delete Confirmation Modal */}

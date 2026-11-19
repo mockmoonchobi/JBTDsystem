@@ -1,80 +1,125 @@
 import { BatchAccountingConfig, BatchAccountingData, Household, HouseholdBatchEntry, TempleInfo, TempleProfile } from '../types';
 import { safeStorage, loadJsonState, saveJsonState } from './storageUtils';
 import { formatJapaneseEraDate, getHouseholdSponsorName, getHouseholdSponsorInfo } from './memorialCalculator';
+import {
+  normalizeCategoryList,
+  resolveConfiguredCategory,
+  resolveKeywordConfiguredCategory,
+} from './accountingCategoryUtils';
 
 export const STORAGE_KEY_BATCH_ACCOUNTING = 'temple_batch_accounting_data';
 export const STORAGE_KEY_BATCH_ACCOUNTING_CONFIG = 'temple_batch_accounting_config';
 
 /**
  * 集金項目名から対応勘定科目を解決するヘルパー
+ * 必ずユーザーが設定した incomeCategories の範囲内から解決し、設定外の固定文言を返さない。
  */
 export function resolveCategoryForFeeItem(
   feeName: string,
   templeInfo?: TempleInfo,
-  incomeCategories: string[] = ['法要布施', '護持会費', '特別寄付', '墓地管理費']
+  incomeCategories?: string[]
 ): string {
-  if (!feeName) return '法要布施';
+  const configured = normalizeCategoryList(
+    incomeCategories !== undefined ? incomeCategories : templeInfo?.masterOptions?.incomeCategories
+  );
+  if (configured.length === 0) return '';
+  if (!feeName) return configured[0];
   const trimmed = feeName.trim();
-  if (templeInfo?.feeType1 === trimmed && templeInfo.feeType1Category) return templeInfo.feeType1Category;
-  if (templeInfo?.feeType2 === trimmed && templeInfo.feeType2Category) return templeInfo.feeType2Category;
-  if (templeInfo?.feeType3 === trimmed && templeInfo.feeType3Category) return templeInfo.feeType3Category;
-  if (templeInfo?.feeTypeMapping && templeInfo.feeTypeMapping[trimmed]) return templeInfo.feeTypeMapping[trimmed];
-  if (incomeCategories.includes(trimmed)) return trimmed;
-  if (trimmed.includes('護持') || trimmed.includes('会費')) return incomeCategories.find((c) => c.includes('護持') || c.includes('会費')) || '護持会費';
-  if (trimmed.includes('墓地') || trimmed.includes('管理')) return incomeCategories.find((c) => c.includes('墓地') || c.includes('管理')) || '墓地管理費';
-  if (trimmed.includes('寄付') || trimmed.includes('整備')) return incomeCategories.find((c) => c.includes('寄付')) || '特別寄付';
-  return '法要布施';
+  if (templeInfo?.feeType1 === trimmed && templeInfo.feeType1Category && configured.includes(templeInfo.feeType1Category.trim())) {
+    return templeInfo.feeType1Category.trim();
+  }
+  if (templeInfo?.feeType2 === trimmed && templeInfo.feeType2Category && configured.includes(templeInfo.feeType2Category.trim())) {
+    return templeInfo.feeType2Category.trim();
+  }
+  if (templeInfo?.feeType3 === trimmed && templeInfo.feeType3Category && configured.includes(templeInfo.feeType3Category.trim())) {
+    return templeInfo.feeType3Category.trim();
+  }
+  if (templeInfo?.feeTypeMapping && templeInfo.feeTypeMapping[trimmed] && configured.includes(templeInfo.feeTypeMapping[trimmed].trim())) {
+    return templeInfo.feeTypeMapping[trimmed].trim();
+  }
+  if (configured.includes(trimmed)) return trimmed;
+  if (trimmed.includes('護持') || trimmed.includes('会費')) {
+    return resolveKeywordConfiguredCategory(configured, ['護持', '会費'], 0);
+  }
+  if (trimmed.includes('墓地') || trimmed.includes('管理')) {
+    return resolveKeywordConfiguredCategory(configured, ['墓地', '管理'], 0);
+  }
+  if (trimmed.includes('寄付') || trimmed.includes('整備')) {
+    return resolveKeywordConfiguredCategory(configured, ['寄付', '整備'], 0);
+  }
+  return configured[0];
 }
 
 /**
  * 寺院設定に基づくデフォルトの一括会計設定（Config）を生成
+ * 必ず設定済み incomeCategories の範囲内のみを使用し、未設定の固定文字列を代入しない。
  */
-export function getDefaultBatchAccountingConfig(templeInfo?: TempleInfo): BatchAccountingConfig {
+export function getDefaultBatchAccountingConfig(
+  templeInfo?: TempleInfo,
+  incomeCategories?: string[]
+): BatchAccountingConfig {
   const todayEra = formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false);
+  const configured = normalizeCategoryList(
+    incomeCategories !== undefined ? incomeCategories : templeInfo?.masterOptions?.incomeCategories
+  );
   const tFee1 = templeInfo?.feeType1?.trim() || '';
   const tFee2 = templeInfo?.feeType2?.trim() || '';
   const tFee3 = templeInfo?.feeType3?.trim() || '';
   const toba1 = templeInfo?.tobaType1?.trim() || '';
 
+  const fallbackCat1 = configured[0] || '';
+  const fallbackCat2 = configured[1] || configured[0] || '';
+  const fallbackCat3 = configured[2] || configured[0] || '';
+
   // 項目1
   let notes1 = '';
-  let cat1 = '法要布施';
+  let cat1 = fallbackCat1;
   let defaultAmount1: number | '' = '';
   if (toba1) {
     notes1 = `${toba1}料`;
-    cat1 = '法要布施';
+    cat1 = resolveKeywordConfiguredCategory(configured, ['塔婆', '布施'], 0);
     defaultAmount1 = 3000;
   } else if (tFee1) {
     notes1 = tFee1;
-    cat1 = templeInfo?.feeType1Category || resolveCategoryForFeeItem(tFee1, templeInfo);
+    cat1 = templeInfo?.feeType1Category
+      ? resolveConfiguredCategory(templeInfo.feeType1Category, configured)
+      : resolveCategoryForFeeItem(tFee1, templeInfo, configured);
     defaultAmount1 = templeInfo?.feeType1DefaultAmount ?? 5000;
   }
 
   // 項目2
   let notes2 = '';
-  let cat2 = '護持会費';
+  let cat2 = fallbackCat2;
   let defaultAmount2: number | '' = '';
   if (toba1 && tFee1) {
     notes2 = tFee1;
-    cat2 = templeInfo?.feeType1Category || resolveCategoryForFeeItem(tFee1, templeInfo);
+    cat2 = templeInfo?.feeType1Category
+      ? resolveConfiguredCategory(templeInfo.feeType1Category, configured)
+      : resolveCategoryForFeeItem(tFee1, templeInfo, configured);
     defaultAmount2 = templeInfo?.feeType1DefaultAmount ?? 5000;
   } else if (tFee2) {
     notes2 = tFee2;
-    cat2 = templeInfo?.feeType2Category || resolveCategoryForFeeItem(tFee2, templeInfo);
+    cat2 = templeInfo?.feeType2Category
+      ? resolveConfiguredCategory(templeInfo.feeType2Category, configured)
+      : resolveCategoryForFeeItem(tFee2, templeInfo, configured);
     defaultAmount2 = templeInfo?.feeType2DefaultAmount ?? 3000;
   }
 
   // 項目3
   let notes3 = '';
-  let cat3 = '特別寄付';
+  let cat3 = fallbackCat3;
   let defaultAmount3: number | '' = '';
   if (toba1 && tFee1 && tFee2) {
     notes3 = tFee2;
-    cat3 = templeInfo?.feeType2Category || resolveCategoryForFeeItem(tFee2, templeInfo);
+    cat3 = templeInfo?.feeType2Category
+      ? resolveConfiguredCategory(templeInfo.feeType2Category, configured)
+      : resolveCategoryForFeeItem(tFee2, templeInfo, configured);
     defaultAmount3 = templeInfo?.feeType2DefaultAmount ?? 3000;
   } else if (tFee3) {
     notes3 = tFee3;
-    cat3 = templeInfo?.feeType3Category || resolveCategoryForFeeItem(tFee3, templeInfo);
+    cat3 = templeInfo?.feeType3Category
+      ? resolveConfiguredCategory(templeInfo.feeType3Category, configured)
+      : resolveCategoryForFeeItem(tFee3, templeInfo, configured);
     defaultAmount3 = templeInfo?.feeType3DefaultAmount ?? '';
   }
 
@@ -355,15 +400,15 @@ export function convertBatchAccountingConfigToRows(
 
   const targetTempleId = config?.templeId || getTempleId();
   const configDate = config?.configDate || formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false);
-  const cat1 = config?.cat1 || '法要布施';
+  const cat1 = config?.cat1 || '';
   const notes1 = config?.notes1 !== undefined ? config.notes1 : '';
   const defAmt1 = config?.defaultAmount1 !== undefined && config?.defaultAmount1 !== '' ? Number(config.defaultAmount1) : '';
   
-  const cat2 = config?.cat2 || '護持会費';
+  const cat2 = config?.cat2 || '';
   const notes2 = config?.notes2 !== undefined ? config.notes2 : '';
   const defAmt2 = config?.defaultAmount2 !== undefined && config?.defaultAmount2 !== '' ? Number(config.defaultAmount2) : '';
 
-  const cat3 = config?.cat3 || '特別寄付';
+  const cat3 = config?.cat3 || '';
   const notes3 = config?.notes3 !== undefined ? config.notes3 : '';
   const defAmt3 = config?.defaultAmount3 !== undefined && config?.defaultAmount3 !== '' ? Number(config.defaultAmount3) : '';
 
@@ -445,13 +490,13 @@ export function parseBatchAccountingConfigFromRows(rows: any[][]): BatchAccounti
   return {
     id: idCol !== -1 ? String(row[idCol] || '').trim() : undefined,
     configDate: dateCol !== -1 && row[dateCol] ? String(row[dateCol]).trim() : formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false),
-    cat1: cat1Col !== -1 && row[cat1Col] ? String(row[cat1Col]).trim() : '法要布施',
+    cat1: cat1Col !== -1 && row[cat1Col] ? String(row[cat1Col]).trim() : '',
     notes1: notes1Col !== -1 && row[notes1Col] !== undefined ? String(row[notes1Col]).trim() : '',
     defaultAmount1: defAmt1Col !== -1 ? parseNum(row[defAmt1Col]) : '',
-    cat2: cat2Col !== -1 && row[cat2Col] ? String(row[cat2Col]).trim() : '護持会費',
+    cat2: cat2Col !== -1 && row[cat2Col] ? String(row[cat2Col]).trim() : '',
     notes2: notes2Col !== -1 && row[notes2Col] !== undefined ? String(row[notes2Col]).trim() : '',
     defaultAmount2: defAmt2Col !== -1 ? parseNum(row[defAmt2Col]) : '',
-    cat3: cat3Col !== -1 && row[cat3Col] ? String(row[cat3Col]).trim() : '特別寄付',
+    cat3: cat3Col !== -1 && row[cat3Col] ? String(row[cat3Col]).trim() : '',
     notes3: notes3Col !== -1 && row[notes3Col] !== undefined ? String(row[notes3Col]).trim() : '',
     defaultAmount3: defAmt3Col !== -1 ? parseNum(row[defAmt3Col]) : '',
     appliedPreset: presetCol !== -1 && row[presetCol] ? String(row[presetCol]).trim() : 'default',
@@ -746,13 +791,13 @@ export function parseBatchAccountingFromRows(
   return {
     id: savedConfig?.id || `config-${detectedTempleId}`,
     configDate: savedConfig?.configDate || detectedConfigDate || formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false),
-    cat1: savedConfig?.cat1 || detectedCat1 || '法要布施',
+    cat1: savedConfig?.cat1 || detectedCat1 || '',
     notes1: savedConfig?.notes1 !== undefined ? savedConfig.notes1 : (detectedNotes1 !== undefined ? detectedNotes1 : ''),
     defaultAmount1: savedConfig?.defaultAmount1 !== undefined ? savedConfig.defaultAmount1 : (detectedDefaultAmt1 !== '' ? detectedDefaultAmt1 : ''),
-    cat2: savedConfig?.cat2 || detectedCat2 || '護持会費',
+    cat2: savedConfig?.cat2 || detectedCat2 || '',
     notes2: savedConfig?.notes2 !== undefined ? savedConfig.notes2 : (detectedNotes2 !== undefined ? detectedNotes2 : ''),
     defaultAmount2: savedConfig?.defaultAmount2 !== undefined ? savedConfig.defaultAmount2 : (detectedDefaultAmt2 !== '' ? detectedDefaultAmt2 : ''),
-    cat3: savedConfig?.cat3 || detectedCat3 || '特別寄付',
+    cat3: savedConfig?.cat3 || detectedCat3 || '',
     notes3: savedConfig?.notes3 !== undefined ? savedConfig.notes3 : (detectedNotes3 !== undefined ? detectedNotes3 : ''),
     defaultAmount3: savedConfig?.defaultAmount3 !== undefined ? savedConfig.defaultAmount3 : (detectedDefaultAmt3 !== '' ? detectedDefaultAmt3 : ''),
     appliedPreset: savedConfig?.appliedPreset || detectedPreset || 'default',

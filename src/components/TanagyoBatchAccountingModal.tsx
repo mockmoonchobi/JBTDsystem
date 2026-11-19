@@ -138,21 +138,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
     }
 
     const list = Array.from(catsSet).filter(Boolean);
-    if (list.length > 0) {
-      return list;
-    }
-
-    return INITIAL_INCOME_CATEGORIES || [
-      '法要布施',
-      '護持会費',
-      '墓地管理費',
-      '開眼・納骨布施',
-      '特別寄付',
-      '年間維持費',
-      '境内整備寄付',
-      '雑収入',
-      'その他収入'
-    ];
+    return list;
   }, [masterOptions, templeInfo, filterTemple, activeTempleId, templeMasterOptionsMap, temples]);
 
   // 寺院情報設定マスタから納入受取方法を解決
@@ -181,7 +167,7 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
   }, [masterOptions, templeInfo, filterTemple, activeTempleId, templeMasterOptionsMap]);
 
   // 一括設定項目
-  const [batchCategory, setBatchCategory] = useState<string>('お布施');
+  const [batchCategory, setBatchCategory] = useState<string>('');
   const [batchNotes, setBatchNotes] = useState<string>('お盆棚経供養料');
   const [dateMode, setDateMode] = useState<'visitDate' | 'fixedDate'>('visitDate');
   const [fixedDate, setFixedDate] = useState<string>(getTodayDateString());
@@ -277,14 +263,13 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
       return (a.familyHead || '').localeCompare(b.familyHead || '', 'ja');
     });
 
-    // 初期勘定科目を決定
-    const initialCategory = 
+    // 初期勘定科目を決定（設定済み incomeCategories のみから解決し、設定外の固定文言は使わない）
+    const initialCategory =
       incomeCategories.find((c) => c.includes('棚経') || c.includes('盆')) ||
       incomeCategories.find((c) => c.includes('供養')) ||
       incomeCategories.find((c) => c === 'お布施' || c.includes('布施')) ||
       incomeCategories[0] ||
-      batchCategory ||
-      'お布施';
+      '';
 
     // 4. 行状態の生成
     const initialRows: HouseholdRowState[] = sorted.map((h, idx) => {
@@ -425,6 +410,11 @@ export const TanagyoBatchAccountingModal: React.FC<TanagyoBatchAccountingModalPr
   const handleSubmitBatch = () => {
     if (selectedRows.length === 0) {
       alert('計上対象の世帯が1件も選択されていません。');
+      return;
+    }
+
+    if (selectedRows.some((r) => !(r.category || batchCategory || incomeCategories[0]))) {
+      alert('収入勘定科目が設定されていません。寺院設定から勘定科目を登録してください。');
       return;
     }
 

@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { Transaction, Household, TransactionCategory, TempleInfo } from '../types';
 import { formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions } from '../utils/memorialCalculator';
+import {
+  normalizeCategoryList,
+  parseTypedCategoryValue,
+  resolveConfiguredCategory,
+} from '../utils/accountingCategoryUtils';
 
 export interface NewTransactionRowProps {
   incomeCategories: string[];
@@ -30,24 +35,91 @@ export const NewTransactionRow: React.FC<NewTransactionRowProps> = React.memo(({
   householdMap,
   onAddTransaction,
 }) => {
-  const defaultCategory = incomeCategories[0] || '法要布施';
-  const defaultMethod = paymentMethodOptions[0] || '現金受付';
+  const normalizedIncomeCategories = useMemo(
+    () => normalizeCategoryList(incomeCategories),
+    [incomeCategories]
+  );
+  const normalizedExpenseCategories = useMemo(
+    () => normalizeCategoryList(expenseCategories),
+    [expenseCategories]
+  );
+  const normalizedPaymentMethods = useMemo(
+    () => normalizeCategoryList(paymentMethodOptions),
+    [paymentMethodOptions]
+  );
+
+  const defaultType: '収入' | '支出' =
+    normalizedIncomeCategories.length > 0
+      ? '収入'
+      : normalizedExpenseCategories.length > 0
+      ? '支出'
+      : '収入';
+  const defaultCategory =
+    defaultType === '収入'
+      ? (normalizedIncomeCategories[0] || '')
+      : (normalizedExpenseCategories[0] || '');
+  const defaultMethod = normalizedPaymentMethods[0] || '現金受付';
 
   const [form, setForm] = useState<Partial<Transaction>>(() => ({
     date: formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false),
     householdId: '',
     householdHeadName: '',
     category: defaultCategory,
-    type: '収入',
+    type: defaultType,
     amount: undefined,
     paymentMethod: defaultMethod,
     receiptNumber: `R-${Date.now().toString().slice(-6)}`,
     notes: '',
   }));
 
+  // 勘定科目マスタや寺院切替で選択肢が変わった場合、現在選択中の科目を最新マスタと同期
+  useEffect(() => {
+    setForm((prev) => {
+      const currentType: '収入' | '支出' = prev.type === '支出' ? '支出' : '収入';
+      const activeList = currentType === '収入' ? normalizedIncomeCategories : normalizedExpenseCategories;
+      const fallbackList = currentType === '収入' ? normalizedExpenseCategories : normalizedIncomeCategories;
+      const fallbackType: '収入' | '支出' = currentType === '収入' ? '支出' : '収入';
+
+      let nextType: '収入' | '支出' = currentType;
+      let nextCategory = '';
+
+      if (activeList.length > 0) {
+        nextCategory = resolveConfiguredCategory(prev.category, activeList);
+      } else if (fallbackList.length > 0) {
+        nextType = fallbackType;
+        nextCategory = fallbackList[0];
+      }
+
+      const nextMethod =
+        normalizedPaymentMethods.length > 0
+          ? (prev.paymentMethod && normalizedPaymentMethods.includes(prev.paymentMethod)
+              ? prev.paymentMethod
+              : normalizedPaymentMethods[0])
+          : (prev.paymentMethod || '現金受付');
+
+      if (prev.type === nextType && prev.category === nextCategory && prev.paymentMethod === nextMethod) {
+        return prev;
+      }
+      return {
+        ...prev,
+        type: nextType,
+        category: nextCategory,
+        paymentMethod: nextMethod as any,
+      };
+    });
+  }, [normalizedIncomeCategories, normalizedExpenseCategories, normalizedPaymentMethods]);
+
   const handleSave = () => {
     if (!form.amount || form.amount <= 0) {
       alert('出納の金額を入力してください。');
+      return;
+    }
+
+    const txType: '収入' | '支出' = form.type === '支出' ? '支出' : '収入';
+    const activeList = txType === '収入' ? normalizedIncomeCategories : normalizedExpenseCategories;
+    const resolvedCategory = resolveConfiguredCategory(form.category, activeList);
+    if (!resolvedCategory) {
+      alert('勘定科目が設定されていません。寺院設定から勘定科目を登録してください。');
       return;
     }
 
@@ -61,8 +133,8 @@ export const NewTransactionRow: React.FC<NewTransactionRowProps> = React.memo(({
       date: normalizedDate,
       householdId: form.householdId || '',
       householdHeadName: form.householdHeadName || '',
-      category: (form.category as TransactionCategory) || (defaultCategory as any),
-      type: form.type || '収入',
+      category: resolvedCategory as TransactionCategory,
+      type: txType,
       amount: Number(form.amount) || 0,
       paymentMethod: form.paymentMethod || defaultMethod,
       receiptNumber: form.receiptNumber || `R-${Date.now().toString().slice(-6)}`,
@@ -77,13 +149,16 @@ export const NewTransactionRow: React.FC<NewTransactionRowProps> = React.memo(({
       householdId: '',
       householdHeadName: '',
       category: defaultCategory,
-      type: '収入',
+      type: defaultType,
       amount: undefined,
       paymentMethod: defaultMethod,
       receiptNumber: `R-${Date.now().toString().slice(-6)}`,
       notes: '',
     });
   };
+
+  const hasAnyCategory = normalizedIncomeCategories.length > 0 || normalizedExpenseCategories.length > 0;
+  const selectValue = hasAnyCategory && form.category ? `${form.type || defaultType}:${form.category}` : '';
 
   return (
     <tr className="bg-[#FFFDF0] border-2 border-[#D4AF37] font-sans">
@@ -109,9 +184,10 @@ export const NewTransactionRow: React.FC<NewTransactionRowProps> = React.memo(({
       {/* 2. 勘定科目 (グループ化・1行表示) */}
       <td className="px-2 py-1.5">
         <select
-          value={`${form.type || '収入'}:${form.category || defaultCategory}`}
+          value={selectValue}
           onChange={(e) => {
-            const [newType, newCat] = e.target.value.split(':') as ['収入' | '支出', string];
+            if (!e.target.value) return;
+            const { type: newType, category: newCat } = parseTypedCategoryValue(e.target.value);
             setForm((prev) => ({
               ...prev,
               type: newType,
@@ -121,20 +197,27 @@ export const NewTransactionRow: React.FC<NewTransactionRowProps> = React.memo(({
           onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
           className="w-full bg-white border border-[#1A1A1A] px-1.5 py-1 text-sm font-bold whitespace-nowrap"
         >
-          <optgroup label="【 収入の部 】">
-            {incomeCategories.map((cat) => (
-              <option key={`収入:${cat}`} value={`収入:${cat}`}>
-                {cat}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label="【 支出の部 】">
-            {expenseCategories.map((cat) => (
-              <option key={`支出:${cat}`} value={`支出:${cat}`}>
-                {cat}
-              </option>
-            ))}
-          </optgroup>
+          {!hasAnyCategory && (
+            <option value="">勘定科目未設定</option>
+          )}
+          {normalizedIncomeCategories.length > 0 && (
+            <optgroup label="【 収入の部 】">
+              {normalizedIncomeCategories.map((cat) => (
+                <option key={`収入:${cat}`} value={`収入:${cat}`}>
+                  {cat}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {normalizedExpenseCategories.length > 0 && (
+            <optgroup label="【 支出の部 】">
+              {normalizedExpenseCategories.map((cat) => (
+                <option key={`支出:${cat}`} value={`支出:${cat}`}>
+                  {cat}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </td>
 

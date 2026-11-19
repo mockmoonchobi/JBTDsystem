@@ -22,6 +22,7 @@ import {
   PastRecord,
   TempleInfo,
   TempleProfile,
+  MasterOptions,
   Transaction,
   TransactionCategory,
   BatchAccountingConfig,
@@ -37,6 +38,9 @@ import {
   getSavedBatchAccountingConfig,
   getDefaultBatchAccountingConfig,
 } from '../../utils/batchAccountingUtils';
+import {
+  normalizeCategoryList,
+} from '../../utils/accountingCategoryUtils';
 import { KanaIndexFilter } from '../common/KanaIndexFilter';
 import { MobileQrScannerModal } from './MobileQrScannerModal';
 
@@ -47,6 +51,7 @@ interface MobileReceptionViewProps {
   templeInfo: TempleInfo;
   temples?: TempleProfile[];
   activeTempleId?: string;
+  masterOptions?: MasterOptions;
   onSelectTemple?: (templeId: string) => void;
   onAddTransaction: (transaction: Transaction) => void;
 }
@@ -65,6 +70,7 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
   templeInfo,
   temples = [],
   activeTempleId = 'temple-main',
+  masterOptions,
   onSelectTemple,
   onAddTransaction,
 }) => {
@@ -191,9 +197,17 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
     const today = new Date().toISOString().slice(0, 10);
     setReceptionDate(today);
 
+    const configuredIncomeCategories = normalizeCategoryList(
+      masterOptions?.incomeCategories ||
+      ('masterOptions' in selectedTemple ? selectedTemple.masterOptions?.incomeCategories : undefined) ||
+      templeInfo?.masterOptions?.incomeCategories ||
+      []
+    );
+
     // Retrieve saved Batch Accounting Config
     const config: BatchAccountingConfig =
-      getSavedBatchAccountingConfig(activeTempleId) || getDefaultBatchAccountingConfig(templeInfo);
+      getSavedBatchAccountingConfig(activeTempleId) ||
+      getDefaultBatchAccountingConfig(templeInfo, configuredIncomeCategories);
 
     const items: ReceptionFeeItem[] = [];
 
@@ -212,13 +226,22 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
       return defaultAmt !== '' ? Number(defaultAmt) : '';
     };
 
+    const resolveReceptionCat = (rawCat: string | undefined, fallbackIdx: number): string => {
+      if (configuredIncomeCategories.length > 0) {
+        const trimmed = (rawCat || '').trim();
+        if (trimmed && configuredIncomeCategories.includes(trimmed)) return trimmed;
+        return configuredIncomeCategories[fallbackIdx] || configuredIncomeCategories[0] || '';
+      }
+      return (rawCat || '').trim();
+    };
+
     // Item 1 (Only displayed if notes1 is defined and not empty)
     if (config?.notes1 && config.notes1.trim()) {
       const label = config.notes1.trim();
       items.push({
         index: 1,
         label,
-        category: config.cat1 || '法要布施',
+        category: resolveReceptionCat(config.cat1, 0),
         amount: getAmountForNote(label, config.defaultAmount1),
       });
     }
@@ -229,7 +252,7 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
       items.push({
         index: 2,
         label,
-        category: config.cat2 || '護持会費',
+        category: resolveReceptionCat(config.cat2, 1),
         amount: getAmountForNote(label, config.defaultAmount2),
       });
     }
@@ -240,7 +263,7 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
       items.push({
         index: 3,
         label,
-        category: config.cat3 || '特別寄付',
+        category: resolveReceptionCat(config.cat3, 2),
         amount: getAmountForNote(label, config.defaultAmount3),
       });
     }
@@ -312,6 +335,11 @@ export const MobileReceptionView: React.FC<MobileReceptionViewProps> = ({
 
     if (itemsToRecord.length === 0) {
       alert('金額が入力されていません。1項目以上の金額を入力してください。');
+      return;
+    }
+
+    if (itemsToRecord.some((item) => !item.category || !item.category.trim())) {
+      alert('収入勘定科目が設定されていません。寺院設定または一括会計設定を確認してください。');
       return;
     }
 

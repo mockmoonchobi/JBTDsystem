@@ -1978,7 +1978,7 @@ export async function importFromExcel(
 
       const rawType = String((typeIdx !== -1 ? row[typeIdx] : '') || '').trim();
       const type: '収入' | '支出' = rawType.includes('支') || amount < 0 ? '支出' : '収入';
-      const category = String((catIdx !== -1 ? row[catIdx] : '') || (type === '収入' ? '法要布施' : '管理費')).trim();
+      const category = String(catIdx !== -1 ? (row[catIdx] ?? '') : '').trim();
       const householdHeadName = String((headIdx !== -1 ? row[headIdx] : '') || '').trim();
       const paymentMethod = String((payIdx !== -1 ? row[payIdx] : '') || '現金受付').trim();
       const receiptNumber = String((receiptIdx !== -1 ? row[receiptIdx] : '') || '').trim();

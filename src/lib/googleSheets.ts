@@ -3327,7 +3327,7 @@ async function importFromSheetsCore(
         templeId,
         date: normalizeDateInput(dateIdx !== -1 ? row[dateIdx] : '') || new Date().toISOString().split('T')[0],
         type: ((typeIdx !== -1 ? row[typeIdx] : '収入') as '収入' | '支出') || '収入',
-        category: String((catIdx !== -1 ? row[catIdx] : '') || '法要布施'),
+        category: String(catIdx !== -1 ? (row[catIdx] ?? '') : '').trim(),
         amount: parseInt(String((amtIdx !== -1 ? row[amtIdx] : '0')).replace(/[^0-9-]/g, ''), 10) || 0,
         householdHeadName: String((nameIdx !== -1 ? row[nameIdx] : '') || ''),
         paymentMethod: (String((payIdx !== -1 ? row[payIdx] : '') || '現金受付') as any),

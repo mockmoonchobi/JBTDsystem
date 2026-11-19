@@ -1,7 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Save } from 'lucide-react';
 import { Transaction, TransactionCategory } from '../types';
 import { formatCurrency, formatJapaneseEraDate, normalizeDateInput, NormalizeDateOptions } from '../utils/memorialCalculator';
+import {
+  normalizeCategoryList,
+  normalizeCategoryName,
+  parseTypedCategoryValue,
+  UNSET_INCOME_CATEGORY,
+  UNSET_EXPENSE_CATEGORY,
+} from '../utils/accountingCategoryUtils';
 
 export interface InlineEditTransactionRowProps {
   transaction: Transaction & { runningBalance?: number };
@@ -31,11 +38,43 @@ export const InlineEditTransactionRow: React.FC<InlineEditTransactionRowProps> =
   onCancel,
   onDelete,
 }) => {
+  const normalizedIncomeCategories = useMemo(
+    () => normalizeCategoryList(incomeCategories),
+    [incomeCategories]
+  );
+  const normalizedExpenseCategories = useMemo(
+    () => normalizeCategoryList(expenseCategories),
+    [expenseCategories]
+  );
+
   const [form, setForm] = useState<Partial<Transaction>>(() => ({
     ...transaction,
+    category: normalizeCategoryName(transaction.category),
     date: formatJapaneseEraDate(transaction.date, false),
     notes: transaction.notes !== undefined && transaction.notes !== '' ? transaction.notes : (transaction.householdHeadName || ''),
   }));
+
+  const currentType: '収入' | '支出' = form.type === '支出' ? '支出' : '収入';
+  const currentCategory = normalizeCategoryName(form.category);
+  const originalType: '収入' | '支出' = transaction.type === '支出' ? '支出' : '収入';
+  const originalCategory = normalizeCategoryName(transaction.category);
+
+  // 既存レコードがマスタ外科目（例：削除済み・旧科目）を持っている場合、選択肢に含めて見た目と内部値を一致させる
+  const extraIncomeCategory =
+    originalType === '収入' && originalCategory && !normalizedIncomeCategories.includes(originalCategory)
+      ? originalCategory
+      : currentType === '収入' && currentCategory && !normalizedIncomeCategories.includes(currentCategory)
+      ? currentCategory
+      : null;
+
+  const extraExpenseCategory =
+    originalType === '支出' && originalCategory && !normalizedExpenseCategories.includes(originalCategory)
+      ? originalCategory
+      : currentType === '支出' && currentCategory && !normalizedExpenseCategories.includes(currentCategory)
+      ? currentCategory
+      : null;
+
+  const hasEmptyCurrentCategory = !currentCategory;
 
   const handleSave = () => {
     const normalizedDate = normalizeDateInput(form.date || '', accountingDateOptions) || transaction.date;
@@ -45,8 +84,8 @@ export const InlineEditTransactionRow: React.FC<InlineEditTransactionRowProps> =
       date: normalizedDate,
       householdId: form.householdId,
       householdHeadName: form.householdHeadName || '',
-      category: (form.category as TransactionCategory) || transaction.category,
-      type: form.type || transaction.type,
+      category: normalizeCategoryName(form.category) as TransactionCategory,
+      type: currentType,
       amount: Number(form.amount) || 0,
       paymentMethod: form.paymentMethod || transaction.paymentMethod,
       receiptNumber: form.receiptNumber || transaction.receiptNumber,
@@ -80,9 +119,9 @@ export const InlineEditTransactionRow: React.FC<InlineEditTransactionRowProps> =
       {/* 2. 勘定科目 (編集時) */}
       <td className="px-2 py-1.5">
         <select
-          value={`${form.type || '収入'}:${form.category || incomeCategories[0] || '法要布施'}`}
+          value={`${currentType}:${currentCategory}`}
           onChange={(e) => {
-            const [newType, newCat] = e.target.value.split(':') as ['収入' | '支出', string];
+            const { type: newType, category: newCat } = parseTypedCategoryValue(e.target.value);
             setForm((prev) => ({
               ...prev,
               type: newType,
@@ -92,15 +131,30 @@ export const InlineEditTransactionRow: React.FC<InlineEditTransactionRowProps> =
           onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
           className="w-full bg-white border border-[#1A1A1A] px-1.5 py-1 text-sm font-bold whitespace-nowrap"
         >
+          {hasEmptyCurrentCategory && (
+            <option value={`${currentType}:`}>
+              {currentType === '支出' ? UNSET_EXPENSE_CATEGORY : UNSET_INCOME_CATEGORY}
+            </option>
+          )}
           <optgroup label="【 収入の部 】">
-            {incomeCategories.map((cat) => (
+            {extraIncomeCategory && (
+              <option key={`収入:${extraIncomeCategory}`} value={`収入:${extraIncomeCategory}`}>
+                {extraIncomeCategory}（マスタ外）
+              </option>
+            )}
+            {normalizedIncomeCategories.map((cat) => (
               <option key={`収入:${cat}`} value={`収入:${cat}`}>
                 {cat}
               </option>
             ))}
           </optgroup>
           <optgroup label="【 支出の部 】">
-            {expenseCategories.map((cat) => (
+            {extraExpenseCategory && (
+              <option key={`支出:${extraExpenseCategory}`} value={`支出:${extraExpenseCategory}`}>
+                {extraExpenseCategory}（マスタ外）
+              </option>
+            )}
+            {normalizedExpenseCategories.map((cat) => (
               <option key={`支出:${cat}`} value={`支出:${cat}`}>
                 {cat}
               </option>

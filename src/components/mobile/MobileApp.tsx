@@ -319,6 +319,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
             templeInfo={templeInfo}
             temples={temples}
             activeTempleId={activeTempleId}
+            masterOptions={masterOptions}
             onSelectTemple={onSelectTemple}
             onAddTransaction={onAddTransaction}
           />

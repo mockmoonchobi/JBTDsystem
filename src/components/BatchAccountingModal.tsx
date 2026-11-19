@@ -43,6 +43,11 @@ import {
   getDefaultBatchAccountingConfig,
   resolveCategoryForFeeItem
 } from '../utils/batchAccountingUtils';
+import {
+  normalizeCategoryList,
+  resolveConfiguredCategory,
+  resolveKeywordConfiguredCategory,
+} from '../utils/accountingCategoryUtils';
 
 interface BatchAccountingModalProps {
   isOpen: boolean;
@@ -80,42 +85,61 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   onSaveBatchData,
 }) => {
   const incomeCategories = useMemo(() => {
-    const list = masterOptions?.incomeCategories || templeInfo?.masterOptions?.incomeCategories || ['法要布施', '護持会費', '特別寄付', '墓地管理費', '繰越金', '雑収入'];
-    return list.length > 0 ? list : ['法要布施', '護持会費', '特別寄付', '墓地管理費'];
+    return normalizeCategoryList(
+      masterOptions?.incomeCategories || templeInfo?.masterOptions?.incomeCategories || []
+    );
   }, [masterOptions, templeInfo]);
 
-  // Helper to map fee item name to corresponding income category
-  const resolveCategoryForFee = (feeName: string, fallback: string = '法要布施'): string => {
-    if (!feeName) return fallback;
+  // Helper to map fee item name to corresponding income category (strictly within configured incomeCategories)
+  const resolveCategoryForFee = useCallback((feeName: string, fallback?: string): string => {
+    if (incomeCategories.length === 0) return '';
+    const safeFallback = resolveConfiguredCategory(fallback, incomeCategories);
+    if (!feeName) return safeFallback;
     const trimmed = feeName.trim();
-    if (templeInfo?.feeType1 === trimmed && templeInfo.feeType1Category) return templeInfo.feeType1Category;
-    if (templeInfo?.feeType2 === trimmed && templeInfo.feeType2Category) return templeInfo.feeType2Category;
-    if (templeInfo?.feeType3 === trimmed && templeInfo.feeType3Category) return templeInfo.feeType3Category;
-    if (templeInfo?.feeTypeMapping && templeInfo.feeTypeMapping[trimmed]) return templeInfo.feeTypeMapping[trimmed];
-    if (masterOptions?.feeTypeMapping && masterOptions.feeTypeMapping[trimmed]) return masterOptions.feeTypeMapping[trimmed];
+    if (templeInfo?.feeType1 === trimmed && templeInfo.feeType1Category && incomeCategories.includes(templeInfo.feeType1Category.trim())) {
+      return templeInfo.feeType1Category.trim();
+    }
+    if (templeInfo?.feeType2 === trimmed && templeInfo.feeType2Category && incomeCategories.includes(templeInfo.feeType2Category.trim())) {
+      return templeInfo.feeType2Category.trim();
+    }
+    if (templeInfo?.feeType3 === trimmed && templeInfo.feeType3Category && incomeCategories.includes(templeInfo.feeType3Category.trim())) {
+      return templeInfo.feeType3Category.trim();
+    }
+    if (templeInfo?.feeTypeMapping && templeInfo.feeTypeMapping[trimmed] && incomeCategories.includes(templeInfo.feeTypeMapping[trimmed].trim())) {
+      return templeInfo.feeTypeMapping[trimmed].trim();
+    }
+    if (masterOptions?.feeTypeMapping && masterOptions.feeTypeMapping[trimmed] && incomeCategories.includes(masterOptions.feeTypeMapping[trimmed].trim())) {
+      return masterOptions.feeTypeMapping[trimmed].trim();
+    }
     if (incomeCategories.includes(trimmed)) return trimmed;
-    if (trimmed.includes('護持') || trimmed.includes('会費')) return incomeCategories.find((c) => c.includes('護持') || c.includes('会費')) || '護持会費';
-    if (trimmed.includes('墓地') || trimmed.includes('管理')) return incomeCategories.find((c) => c.includes('墓地') || c.includes('管理')) || '墓地管理費';
-    if (trimmed.includes('寄付') || trimmed.includes('整備')) return incomeCategories.find((c) => c.includes('寄付')) || '特別寄付';
-    return fallback;
-  };
+    if (trimmed.includes('護持') || trimmed.includes('会費')) {
+      return resolveKeywordConfiguredCategory(incomeCategories, ['護持', '会費'], 0);
+    }
+    if (trimmed.includes('墓地') || trimmed.includes('管理')) {
+      return resolveKeywordConfiguredCategory(incomeCategories, ['墓地', '管理'], 0);
+    }
+    if (trimmed.includes('寄付') || trimmed.includes('整備')) {
+      return resolveKeywordConfiguredCategory(incomeCategories, ['寄付', '整備'], 0);
+    }
+    return safeFallback;
+  }, [incomeCategories, templeInfo, masterOptions]);
 
   // 1. Top Settings Bar State: 1 Date, 3 Categories, 3 Provisos (Descriptions), 3 Default Amounts
   const todayEra = formatJapaneseEraDate(getTodayDateString(), false);
   const [configDate, setConfigDate] = useState<string>(todayEra);
 
   // Column 1
-  const [cat1, setCat1] = useState<string>('法要布施');
+  const [cat1, setCat1] = useState<string>(() => incomeCategories[0] || '');
   const [notes1, setNotes1] = useState<string>('');
   const [defaultAmount1, setDefaultAmount1] = useState<number | ''>('');
 
   // Column 2
-  const [cat2, setCat2] = useState<string>('護持会費');
+  const [cat2, setCat2] = useState<string>(() => incomeCategories[1] || incomeCategories[0] || '');
   const [notes2, setNotes2] = useState<string>('');
   const [defaultAmount2, setDefaultAmount2] = useState<number | ''>('');
 
   // Column 3
-  const [cat3, setCat3] = useState<string>('特別寄付');
+  const [cat3, setCat3] = useState<string>(() => incomeCategories[2] || incomeCategories[0] || '');
   const [notes3, setNotes3] = useState<string>('');
   const [defaultAmount3, setDefaultAmount3] = useState<number | ''>('');
 
@@ -158,18 +182,30 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         appliedPreset: savedData.appliedPreset,
         templeId: savedData.templeId,
         lastSavedAt: savedData.lastSavedAt,
-      } : null) || getDefaultBatchAccountingConfig(templeInfo);
+      } : null) || getDefaultBatchAccountingConfig(templeInfo, incomeCategories);
+
+      const fallback1 = incomeCategories[0] || '';
+      const fallback2 = incomeCategories[1] || incomeCategories[0] || '';
+      const fallback3 = incomeCategories[2] || incomeCategories[0] || '';
 
       if (configSource) {
-        if (configSource.cat1 !== undefined) setCat1(configSource.cat1 || '法要布施');
+        setCat1(resolveConfiguredCategory(configSource.cat1, incomeCategories) || fallback1);
         if (configSource.notes1 !== undefined) setNotes1(configSource.notes1);
         if (configSource.defaultAmount1 !== undefined) setDefaultAmount1(configSource.defaultAmount1);
 
-        if (configSource.cat2 !== undefined) setCat2(configSource.cat2 || '護持会費');
+        setCat2(
+          configSource.cat2 && incomeCategories.includes(configSource.cat2.trim())
+            ? configSource.cat2.trim()
+            : fallback2
+        );
         if (configSource.notes2 !== undefined) setNotes2(configSource.notes2);
         if (configSource.defaultAmount2 !== undefined) setDefaultAmount2(configSource.defaultAmount2);
 
-        if (configSource.cat3 !== undefined) setCat3(configSource.cat3 || '特別寄付');
+        setCat3(
+          configSource.cat3 && incomeCategories.includes(configSource.cat3.trim())
+            ? configSource.cat3.trim()
+            : fallback3
+        );
         if (configSource.notes3 !== undefined) setNotes3(configSource.notes3);
         if (configSource.defaultAmount3 !== undefined) setDefaultAmount3(configSource.defaultAmount3);
 
@@ -194,7 +230,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     } else {
       isLoadedRef.current = false;
     }
-  }, [isOpen, templeInfo, initialBatchData]);
+  }, [isOpen, templeInfo, initialBatchData, incomeCategories]);
 
   // Current batch state object constructor
   const getCurrentBatchData = useCallback((): BatchAccountingData => {
@@ -271,16 +307,20 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     const tFee2 = templeInfo?.feeType2?.trim() || '';
     const tFee3 = templeInfo?.feeType3?.trim() || '';
 
+    const fallback1 = incomeCategories[0] || '';
+    const fallback2 = incomeCategories[1] || incomeCategories[0] || '';
+    const fallback3 = incomeCategories[2] || incomeCategories[0] || '';
+
     setNotes1(tFee1);
-    setCat1(tFee1 ? (templeInfo?.feeType1Category || resolveCategoryForFee(tFee1, '護持会費')) : '法要布施');
+    setCat1(tFee1 ? resolveConfiguredCategory(templeInfo?.feeType1Category || resolveCategoryForFee(tFee1, fallback1), incomeCategories) : fallback1);
     setDefaultAmount1(tFee1 ? (templeInfo?.feeType1DefaultAmount ?? 5000) : '');
 
     setNotes2(tFee2);
-    setCat2(tFee2 ? (templeInfo?.feeType2Category || resolveCategoryForFee(tFee2, '護持会費')) : '護持会費');
+    setCat2(tFee2 ? resolveConfiguredCategory(templeInfo?.feeType2Category || resolveCategoryForFee(tFee2, fallback2), incomeCategories) : fallback2);
     setDefaultAmount2(tFee2 ? (templeInfo?.feeType2DefaultAmount ?? 3000) : '');
 
     setNotes3(tFee3);
-    setCat3(tFee3 ? (templeInfo?.feeType3Category || resolveCategoryForFee(tFee3, '特別寄付')) : '特別寄付');
+    setCat3(tFee3 ? resolveConfiguredCategory(templeInfo?.feeType3Category || resolveCategoryForFee(tFee3, fallback3), incomeCategories) : fallback3);
     setDefaultAmount3(tFee3 ? (templeInfo?.feeType3DefaultAmount ?? '') : '');
 
     setAppliedPreset('temple_fees');
@@ -292,16 +332,20 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
     const toba1 = templeInfo?.tobaType1?.trim() || '施餓鬼塔婆';
     const tFee1 = templeInfo?.feeType1?.trim() || '';
 
+    const fallback1 = resolveKeywordConfiguredCategory(incomeCategories, ['塔婆', '布施'], 0);
+    const fallback2 = resolveKeywordConfiguredCategory(incomeCategories, ['護持', '会費'], 1);
+    const fallback3 = resolveKeywordConfiguredCategory(incomeCategories, ['寄付', '特別'], 2);
+
     setNotes1(`${toba1}料`);
-    setCat1('法要布施');
+    setCat1(fallback1);
     setDefaultAmount1(3000);
 
     setNotes2(tFee1);
-    setCat2(tFee1 ? (templeInfo?.feeType1Category || resolveCategoryForFee(tFee1, '護持会費')) : '護持会費');
+    setCat2(tFee1 ? resolveConfiguredCategory(templeInfo?.feeType1Category || resolveCategoryForFee(tFee1, fallback2), incomeCategories) : fallback2);
     setDefaultAmount2(tFee1 ? (templeInfo?.feeType1DefaultAmount ?? 5000) : '');
 
     setNotes3('');
-    setCat3('特別寄付');
+    setCat3(fallback3);
     setDefaultAmount3('');
 
     setAppliedPreset('segaki');
@@ -312,16 +356,20 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
   const handleApplyHiganPreset = () => {
     const tFee1 = templeInfo?.feeType1?.trim() || '';
 
+    const fallback1 = resolveKeywordConfiguredCategory(incomeCategories, ['塔婆', '布施'], 0);
+    const fallback2 = resolveKeywordConfiguredCategory(incomeCategories, ['護持', '会費'], 1);
+    const fallback3 = resolveKeywordConfiguredCategory(incomeCategories, ['寄付', '特別'], 2);
+
     setNotes1('彼岸塔婆料');
-    setCat1('法要布施');
+    setCat1(fallback1);
     setDefaultAmount1(3000);
 
     setNotes2(tFee1);
-    setCat2(tFee1 ? (templeInfo?.feeType1Category || resolveCategoryForFee(tFee1, '護持会費')) : '護持会費');
+    setCat2(tFee1 ? resolveConfiguredCategory(templeInfo?.feeType1Category || resolveCategoryForFee(tFee1, fallback2), incomeCategories) : fallback2);
     setDefaultAmount2(tFee1 ? (templeInfo?.feeType1DefaultAmount ?? 5000) : '');
 
     setNotes3('');
-    setCat3('特別寄付');
+    setCat3(fallback3);
     setDefaultAmount3('');
 
     setAppliedPreset('higan');
@@ -867,7 +915,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         sum1 += entry.amount1;
         recordsToCreate.push({
           household: hh,
-          category: cat1 || '法要布施',
+          category: resolveConfiguredCategory(cat1, incomeCategories),
           notes: notes1.trim(),
           amount: entry.amount1,
         });
@@ -878,7 +926,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         sum2 += entry.amount2;
         recordsToCreate.push({
           household: hh,
-          category: cat2 || '護持会費',
+          category: resolveConfiguredCategory(cat2, incomeCategories),
           notes: notes2.trim(),
           amount: entry.amount2,
         });
@@ -889,7 +937,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
         sum3 += entry.amount3;
         recordsToCreate.push({
           household: hh,
-          category: cat3 || '特別寄付',
+          category: resolveConfiguredCategory(cat3, incomeCategories),
           notes: notes3.trim(),
           amount: entry.amount3,
         });
@@ -910,11 +958,16 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
       totalSum,
       recordsToCreate,
     };
-  }, [entries, households, cat1, notes1, cat2, notes2, cat3, notes3, isCol1Active, isCol2Active, isCol3Active]);
+  }, [entries, households, cat1, notes1, cat2, notes2, cat3, notes3, isCol1Active, isCol2Active, isCol3Active, incomeCategories]);
 
   // Execute Batch Creation directly without warning
   const handleExecuteBatch = () => {
     if (generatedRecordsSummary.recordsToCreate.length === 0) {
+      return;
+    }
+
+    if (generatedRecordsSummary.recordsToCreate.some((item) => !item.category)) {
+      alert('収入勘定科目が設定されていません。寺院設定から勘定科目を登録してください。');
       return;
     }
 
@@ -1101,7 +1154,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   科目１（勘定科目）
                 </label>
                 <select
-                  value={cat1}
+                  value={resolveConfiguredCategory(cat1, incomeCategories)}
                   onChange={(e) => {
                     setCat1(e.target.value);
                     setAppliedPreset('custom');
@@ -1109,9 +1162,13 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   }}
                   className="w-full bg-[#1A1A1A] border border-[#555] text-white px-1.5 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
                 >
-                  {incomeCategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {incomeCategories.length > 0 ? (
+                    incomeCategories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))
+                  ) : (
+                    <option value="">勘定科目未設定</option>
+                  )}
                 </select>
               </div>
 
@@ -1129,7 +1186,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                     setAppliedPreset('custom');
                     setHasUnsavedChanges(true);
                     const autoCat = resolveCategoryForFee(val, cat1);
-                    if (autoCat !== cat1) setCat1(autoCat);
+                    if (autoCat && autoCat !== cat1) setCat1(autoCat);
                   }}
                   placeholder="施餓鬼塔婆料（空欄で非表示）"
                   className="w-full bg-[#1A1A1A] border border-[#555] text-white px-2 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
@@ -1161,7 +1218,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   科目２（勘定科目）
                 </label>
                 <select
-                  value={cat2}
+                  value={resolveConfiguredCategory(cat2, incomeCategories)}
                   onChange={(e) => {
                     setCat2(e.target.value);
                     setAppliedPreset('custom');
@@ -1169,9 +1226,13 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   }}
                   className="w-full bg-[#1A1A1A] border border-[#555] text-white px-1.5 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
                 >
-                  {incomeCategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {incomeCategories.length > 0 ? (
+                    incomeCategories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))
+                  ) : (
+                    <option value="">勘定科目未設定</option>
+                  )}
                 </select>
               </div>
 
@@ -1189,7 +1250,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                     setAppliedPreset('custom');
                     setHasUnsavedChanges(true);
                     const autoCat = resolveCategoryForFee(val, cat2);
-                    if (autoCat !== cat2) setCat2(autoCat);
+                    if (autoCat && autoCat !== cat2) setCat2(autoCat);
                   }}
                   placeholder="護持会費（空欄で非表示）"
                   className="w-full bg-[#1A1A1A] border border-[#555] text-white px-2 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
@@ -1221,7 +1282,7 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   科目３（勘定科目）
                 </label>
                 <select
-                  value={cat3}
+                  value={resolveConfiguredCategory(cat3, incomeCategories)}
                   onChange={(e) => {
                     setCat3(e.target.value);
                     setAppliedPreset('custom');
@@ -1229,9 +1290,13 @@ export const BatchAccountingModal: React.FC<BatchAccountingModalProps> = ({
                   }}
                   className="w-full bg-[#1A1A1A] border border-[#555] text-white px-1.5 py-1.5 text-xs focus:border-[#D4AF37] focus:outline-none"
                 >
-                  {incomeCategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {incomeCategories.length > 0 ? (
+                    incomeCategories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))
+                  ) : (
+                    <option value="">勘定科目未設定</option>
+                  )}
                 </select>
               </div>
 

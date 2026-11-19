@@ -1,4 +1,12 @@
 import { CheckSlot, getCheckSlots, checkKey, matchExactHouseholdCheckSearch } from '../utils/householdChecks';
+import {
+  getEditCategoryOptions,
+  normalizeCategoryList,
+  normalizeCategoryName,
+  resolveConfiguredCategory,
+  resolveFiscalCategoryLabel,
+  UNSET_INCOME_CATEGORY,
+} from '../utils/accountingCategoryUtils';
 import { HouseholdChecks } from './HouseholdChecks';
 import { setTanagyoParticipation } from '../utils/tanagyoAssignment';
 import { showYagoInList } from '../utils/householdYago';
@@ -938,18 +946,40 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     setBookingTobaModal(null);
   };
 
+  // 寺院マスタで設定されている収入勘定科目一覧（固定値フォールバックなし）
+  const configuredIncomeCategories = useMemo(
+    () => normalizeCategoryList(masterOptions?.incomeCategories),
+    [masterOptions?.incomeCategories]
+  );
+  const defaultIncomeCategory = configuredIncomeCategories[0] || '';
+
   // Accounting Transaction Modal & Inline Entry State
-  const [newHouseholdTxForm, setNewHouseholdTxForm] = useState<Partial<Transaction>>({
+  const [newHouseholdTxForm, setNewHouseholdTxForm] = useState<Partial<Transaction>>(() => ({
     date: formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false),
-    category: '法要布施' as any,
+    category: defaultIncomeCategory as any,
     amount: undefined,
     notes: '',
-  });
+  }));
+
+  // マスタの収入勘定科目が変更・読込されたら新規入力行の初期科目を自動同期
+  useEffect(() => {
+    setNewHouseholdTxForm((prev) => {
+      const nextCat = resolveConfiguredCategory(prev.category, configuredIncomeCategories);
+      if ((prev.category || '') === nextCat) return prev;
+      return { ...prev, category: nextCat as any };
+    });
+  }, [configuredIncomeCategories]);
 
   const handleSaveNewHouseholdTx = () => {
     if (!currentIndividualHousehold) return;
     if (!newHouseholdTxForm.amount || Number(newHouseholdTxForm.amount) <= 0) {
       alert('会計出納の金額を入力してください。');
+      return;
+    }
+
+    const resolvedCategory = resolveConfiguredCategory(newHouseholdTxForm.category, configuredIncomeCategories);
+    if (!resolvedCategory) {
+      alert('収入勘定科目が設定されていません。寺院設定から勘定科目を登録してください。');
       return;
     }
 
@@ -961,7 +991,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       date: normalizedDate,
       householdId: currentIndividualHousehold.id,
       householdHeadName: `${currentIndividualHousehold.familyHead} 殿`,
-      category: (newHouseholdTxForm.category as TransactionCategory) || '法要布施',
+      category: resolvedCategory as TransactionCategory,
       type: '収入',
       amount: Number(newHouseholdTxForm.amount),
       paymentMethod: '現金受付',
@@ -975,7 +1005,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
 
     setNewHouseholdTxForm({
       date: formatJapaneseEraDate(new Date().toISOString().slice(0, 10), false),
-      category: '法要布施' as any,
+      category: defaultIncomeCategory as any,
       amount: undefined,
       notes: '',
     });
@@ -989,19 +1019,19 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
     householdHeadName: string;
     notes: string;
     paymentMethod: '現金受付' | 'QR受付時' | '銀行振込' | '郵便振替';
-  }>({
+  }>(() => ({
     date: new Date().toISOString().split('T')[0],
-    category: '法要布施',
+    category: defaultIncomeCategory as TransactionCategory,
     amount: '',
     householdHeadName: '',
     notes: '',
     paymentMethod: '現金受付',
-  });
+  }));
 
   const handleOpenAddTransaction = () => {
     setTransactionFormData({
       date: new Date().toISOString().split('T')[0],
-      category: '法要布施',
+      category: defaultIncomeCategory as TransactionCategory,
       amount: '',
       householdHeadName: currentIndividualHousehold ? `${currentIndividualHousehold.familyHead} 殿` : '',
       notes: '',
@@ -1018,13 +1048,19 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       return;
     }
 
+    const resolvedCategory = resolveConfiguredCategory(transactionFormData.category, configuredIncomeCategories);
+    if (!resolvedCategory) {
+      alert('収入勘定科目が設定されていません。寺院設定から勘定科目を登録してください。');
+      return;
+    }
+
     const newTx: Transaction = {
       id: `TX-${crypto.randomUUID()}`,
       templeId: currentIndividualHousehold.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples.find((t) => t.isMain)?.id || 'temple-main')),
       date: transactionFormData.date || new Date().toISOString().split('T')[0],
       householdId: currentIndividualHousehold.id,
       householdHeadName: transactionFormData.householdHeadName || currentIndividualHousehold.familyHead,
-      category: transactionFormData.category,
+      category: resolvedCategory as TransactionCategory,
       type: '収入',
       amount: Number(transactionFormData.amount),
       paymentMethod: transactionFormData.paymentMethod,
@@ -1556,11 +1592,13 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
       fiscalStartMonth: templeInfo?.fiscalYearStartMonth ?? 4
     }) || '2026/08/08';
     const updatedTx: Transaction = {
+      ...inlineTxForm,
       id: inlineTxForm.id,
+      templeId: inlineTxForm.templeId || currentIndividualHousehold?.templeId || (activeTempleId !== 'ALL' ? activeTempleId : (temples.find((t) => t.isMain)?.id || 'temple-main')),
       date: normalizedDate,
       householdId: inlineTxForm.householdId || currentIndividualHousehold?.id || '',
       householdHeadName: inlineTxForm.householdHeadName || currentIndividualHousehold?.familyHead || '',
-      category: inlineTxForm.category || '法要布施',
+      category: normalizeCategoryName(inlineTxForm.category) as TransactionCategory,
       type: inlineTxForm.type || '収入',
       amount: Number(inlineTxForm.amount) || 0,
       paymentMethod: inlineTxForm.paymentMethod || '現金受付',
@@ -4200,29 +4238,29 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                             </td>
                             {/* 科目 (編集時) */}
                             <td className="p-2">
-                              <select
-                                value={inlineTxForm.category || '法要布施'}
-                                onChange={(e) => setInlineTxForm({ ...inlineTxForm, category: e.target.value as any })}
-                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineTransaction(); }}
-                                className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold"
-                              >
-                                {masterOptions?.incomeCategories ? (
-                                  masterOptions.incomeCategories.map((c) => (
-                                    <option key={c} value={c}>
-                                      {c}
-                                    </option>
-                                  ))
-                                ) : (
-                                  <>
-                                    <option value="法要布施">法要布施</option>
-                                    <option value="護持会費">護持会費</option>
-                                    <option value="墓地管理費">墓地管理費</option>
-                                    <option value="開眼・納骨布施">開眼・納骨布施</option>
-                                    <option value="寄付金">寄付金</option>
-                                    <option value="その他">その他</option>
-                                  </>
-                                )}
-                              </select>
+                              {(() => {
+                                const { options: editOptions, currentValue, isExternal } = getEditCategoryOptions(
+                                  inlineTxForm.category,
+                                  configuredIncomeCategories
+                                );
+                                return (
+                                  <select
+                                    value={currentValue}
+                                    onChange={(e) => setInlineTxForm({ ...inlineTxForm, category: e.target.value as any })}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineTransaction(); }}
+                                    className="w-full bg-white border border-[#1A1A1A] p-1 text-xs font-bold"
+                                  >
+                                    {!currentValue && (
+                                      <option value="">{UNSET_INCOME_CATEGORY}</option>
+                                    )}
+                                    {editOptions.map((c) => (
+                                      <option key={c} value={c}>
+                                        {isExternal && c === currentValue ? `${c}（マスタ外）` : c}
+                                      </option>
+                                    ))}
+                                  </select>
+                                );
+                              })()}
                             </td>
                             {/* 備考 (編集時) */}
                             <td className="p-2">
@@ -4279,7 +4317,7 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                           {/* 科目 */}
                           <td className="p-3.5 font-bold text-[#1A1A1A] whitespace-nowrap">
                             <span className="px-2.5 py-0.5 bg-[#F9F7F2] border border-[#D1CEC7] text-[#1A1A1A] text-xs font-bold">
-                              {tx.category}
+                              {resolveFiscalCategoryLabel(tx.category, tx.type)}
                             </span>
                           </td>
                           {/* 備考 */}
@@ -4328,26 +4366,19 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
                       </td>
                       <td className="p-2">
                         <select
-                          value={newHouseholdTxForm.category || '法要布施'}
+                          value={resolveConfiguredCategory(newHouseholdTxForm.category, configuredIncomeCategories)}
                           onChange={(e) => setNewHouseholdTxForm({ ...newHouseholdTxForm, category: e.target.value as any })}
                           onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNewHouseholdTx(); }}
                           className="w-full bg-white border border-[#1A1A1A] p-1.5 text-xs font-bold"
                         >
-                          {masterOptions?.incomeCategories ? (
-                            masterOptions.incomeCategories.map((c) => (
+                          {configuredIncomeCategories.length > 0 ? (
+                            configuredIncomeCategories.map((c) => (
                               <option key={c} value={c}>
                                 {c}
                               </option>
                             ))
                           ) : (
-                            <>
-                              <option value="法要布施">法要布施</option>
-                              <option value="護持会費">護持会費</option>
-                              <option value="墓地管理費">墓地管理費</option>
-                              <option value="開眼・納骨布施">開眼・納骨布施</option>
-                              <option value="寄付金">寄付金</option>
-                              <option value="その他">その他</option>
-                            </>
+                            <option value="">勘定科目未設定</option>
                           )}
                         </select>
                       </td>
@@ -4513,18 +4544,19 @@ export const HouseholdList: React.FC<HouseholdListProps> = ({
               <div>
                 <label className="block font-bold text-[#1A1A1A] mb-1">勘定科目</label>
                 <select
-                  value={transactionFormData.category}
+                  value={resolveConfiguredCategory(transactionFormData.category, configuredIncomeCategories)}
                   onChange={(e) => setTransactionFormData({ ...transactionFormData, category: e.target.value as TransactionCategory })}
                   className="w-full bg-[#F9F7F2] border border-[#D1CEC7] p-2 text-xs focus:border-[#1A1A1A] focus:outline-none font-bold"
                 >
-                  <option value="法要布施">法要布施</option>
-                  <option value="護持会費">護持会費</option>
-                  <option value="墓地管理費">墓地管理費</option>
-                  <option value="開眼・納骨布施">開眼・納骨布施</option>
-                  <option value="特別寄付">特別寄付</option>
-                  <option value="年間維持費">年間維持費</option>
-                  <option value="境内整備費">境内整備費</option>
-                  <option value="その他">その他</option>
+                  {configuredIncomeCategories.length > 0 ? (
+                    configuredIncomeCategories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">勘定科目未設定</option>
+                  )}
                 </select>
               </div>
 

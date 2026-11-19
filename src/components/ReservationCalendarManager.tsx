@@ -1150,22 +1150,10 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
   onBatchUpdateHouseholds,
   onNavigateToYearlyMilestones,
 }) => {
-  // Available income categories from Master or Defaults
+  // Available income categories strictly from Master (no hardcoded defaults appended)
   const availableIncomeCategories = useMemo(() => {
-    const customCats = masterOptions?.incomeCategories || masterOptions?.accountingCategories || [];
-    const defaults = [
-      '法要布施',
-      '塔婆料',
-      '御車代・御膳料',
-      '開眼・納骨布施',
-      '読経料',
-      '志納金',
-      '護持会費',
-      '特別寄付',
-      '墓地管理費',
-      'その他'
-    ];
-    return Array.from(new Set([...customCats, ...defaults])).filter(Boolean);
+    const customCats = (masterOptions?.incomeCategories || []).map((c) => c?.trim()).filter(Boolean);
+    return Array.from(new Set(customCats));
   }, [masterOptions]);
 
   // Sub-tabs
@@ -2326,23 +2314,15 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     return INITIAL_MASTER_OPTIONS.paymentMethods || ['現金受付', 'QR受付時', '銀行振込', '郵便振替', 'その他'];
   };
 
-  // 該当法要の寺院別収入科目一覧を取得
+  // 該当法要の寺院別収入科目一覧を取得（ユーザー設定マスタのみを使用し、固定デフォルトを混入しない）
   const getIncomeCategoriesForService = (s: MemorialService): string[] => {
     const tMaster = getTempleMasterForService(s);
-    const customCats = tMaster?.incomeCategories || tMaster?.accountingCategories || [];
-    const defaults = [
-      '法要布施',
-      '塔婆料',
-      '御車代・御膳料',
-      '開眼・納骨布施',
-      '読経料',
-      '志納金',
-      '護持会費',
-      '特別寄付',
-      '墓地管理費',
-      'その他'
-    ];
-    return Array.from(new Set([...customCats, ...defaults])).filter(Boolean);
+    const fromTemple = (tMaster?.incomeCategories || []).map((c) => c?.trim()).filter(Boolean);
+    if (fromTemple.length > 0) {
+      return Array.from(new Set(fromTemple));
+    }
+    const fromGlobal = (masterOptions?.incomeCategories || []).map((c) => c?.trim()).filter(Boolean);
+    return Array.from(new Set(fromGlobal));
   };
 
   // Dynamic Accounting Modal State (法要予定一覧の会計入力ポップアップ・行の自由追加削除)
@@ -2692,11 +2672,11 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
 
     const initialRows: AccountingItemRow[] = [];
 
-    // 基本科目: 「法要布施」または該当寺院の区分・勘定マスタに登録された収入科目
+    // 基本科目: 該当寺院の区分・勘定マスタに登録された収入科目のみから選択（マスタ外の固定文言は使わない）
     const defaultCategory =
       sIncomeCategories.find((c) => c === '法要布施' || c.includes('布施')) ||
       sIncomeCategories[0] ||
-      '法要布施';
+      '';
 
     // 1行目: 金額は空欄 (0)、摘要には予定の戒名と忌日
     initialRows.push({
@@ -2710,7 +2690,8 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     if (service.tobaCount && service.tobaCount > 0) {
       const tobaCategory =
         sIncomeCategories.find((c) => c.includes('塔婆')) ||
-        '塔婆料';
+        sIncomeCategories[0] ||
+        '';
       const tobaNote = [defaultNotes, `塔婆${service.tobaCount}本`].filter(Boolean).join(' ');
       initialRows.push({
         id: `ROW-${Date.now()}-2`,
@@ -2747,7 +2728,7 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
       ...prev,
       {
         id: `ROW-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        category: sIncomeCategories[0] || '法要布施',
+        category: sIncomeCategories[0] || '',
         amount: 0,
         notes: defaultNotes,
       },
@@ -2772,6 +2753,12 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
     const validRows = accountingItemRows.filter((r) => Number(r.amount) > 0);
     if (validRows.length === 0) {
       alert('少なくとも1件の明細に1円以上の金額を入力してください。');
+      return;
+    }
+
+    const sIncomeCategories = getIncomeCategoriesForService(accountingModalService);
+    if (validRows.some((r) => !(r.category && r.category.trim()) && !sIncomeCategories[0])) {
+      alert('収入勘定科目が設定されていません。寺院設定から勘定科目を登録してください。');
       return;
     }
 
@@ -6042,17 +6029,20 @@ export const ReservationCalendarManager: React.FC<ReservationCalendarManagerProp
                           </span>
                           <div className="flex-1">
                             <select
-                              value={row.category}
+                              value={row.category || ''}
                               onChange={(e) => handleUpdateAccountingRow(row.id, 'category', e.target.value)}
                               className="w-full p-1.5 border border-[#D1CEC7] bg-white text-xs font-bold focus:border-[#8C2D19]"
                             >
+                              {currentModalIncomeCategories.length === 0 && !row.category && (
+                                <option value="">勘定科目未設定</option>
+                              )}
                               {currentModalIncomeCategories.map((cat) => (
                                 <option key={cat} value={cat}>
                                   {cat}
                                 </option>
                               ))}
-                              {!currentModalIncomeCategories.includes(row.category) && (
-                                <option value={row.category}>{row.category}</option>
+                              {row.category && !currentModalIncomeCategories.includes(row.category) && (
+                                <option value={row.category}>{row.category}（マスタ外）</option>
                               )}
                             </select>
                           </div>

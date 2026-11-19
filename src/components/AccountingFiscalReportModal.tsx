@@ -15,6 +15,10 @@ import {
   getJapaneseEra,
   FiscalYearInfo,
 } from '../utils/fiscalYearUtils';
+import {
+  buildFiscalCategorySummary,
+  resolveFiscalCategoryLabel,
+} from '../utils/accountingCategoryUtils';
 
 interface AccountingFiscalReportModalProps {
   isOpen: boolean;
@@ -67,40 +71,23 @@ export const AccountingFiscalReportModal: React.FC<AccountingFiscalReportModalPr
   }, [cleanTransactions, selectedFYYear, templeInfo]);
 
   // Financial calculations for Settlement (収支決算)
+  // 設定済み勘定科目に加え、レコードに記載されている全ての科目（マスタ外・未設定含む）を余すことなく集計・表示
   const settlementData = useMemo(() => {
-    const incomeCategoryTotals: Record<string, number> = {};
-    const expenseCategoryTotals: Record<string, number> = {};
-
-    incomeCategories.forEach((cat) => (incomeCategoryTotals[cat] = 0));
-    expenseCategories.forEach((cat) => (expenseCategoryTotals[cat] = 0));
-
-    let operationalIncome = 0;
-    let totalExpense = 0;
-
-    fyTransactions.forEach((t) => {
-      if (t.type === '収入') {
-        const cat = t.category || 'その他収入';
-        incomeCategoryTotals[cat] = (incomeCategoryTotals[cat] || 0) + (t.amount || 0);
-        operationalIncome += t.amount || 0;
-      } else if (t.type === '支出') {
-        const cat = t.category || 'その他支出';
-        expenseCategoryTotals[cat] = (expenseCategoryTotals[cat] || 0) + (t.amount || 0);
-        totalExpense += t.amount || 0;
-      }
-    });
+    const summary = buildFiscalCategorySummary(
+      fyTransactions,
+      incomeCategories,
+      expenseCategories
+    );
 
     const carryoverIncome = priorCarryover.priorBalance; // 前期繰越金 (動的計算)
-    const totalIncome = carryoverIncome + operationalIncome; // 収入の部合計（繰越金を含む）
-    const netPeriodBalance = operationalIncome - totalExpense; // 当期実質収支差額 (収入 - 支出)
+    const totalIncome = carryoverIncome + summary.operationalIncome; // 収入の部合計（繰越金を含む）
+    const netPeriodBalance = summary.operationalIncome - summary.totalExpense; // 当期実質収支差額 (収入 - 支出)
     const nextCarryoverBalance = carryoverIncome + netPeriodBalance; // 次期繰越金 (前期繰越 + 当期差額)
 
     return {
-      incomeCategoryTotals,
-      expenseCategoryTotals,
+      ...summary,
       carryoverIncome,
-      operationalIncome,
       totalIncome,
-      totalExpense,
       netPeriodBalance,
       nextCarryoverBalance,
     };
@@ -252,10 +239,10 @@ export const AccountingFiscalReportModal: React.FC<AccountingFiscalReportModalPr
                           </td>
                         </tr>
 
-                        {incomeCategories.map((cat) => {
+                        {settlementData.incomeDisplayCategories.map((cat) => {
                           const amount = settlementData.incomeCategoryTotals[cat] || 0;
                           return (
-                            <tr key={cat} className={amount > 0 ? 'font-bold text-[#1A1A1A]' : 'text-[#777777]'}>
+                            <tr key={`inc-${cat}`} className={amount > 0 ? 'font-bold text-[#1A1A1A]' : 'text-[#777777]'}>
                               <td className="py-0.5">{cat}</td>
                               <td className="py-0.5 text-right font-mono">
                                 {formatCurrency(amount)}
@@ -297,10 +284,10 @@ export const AccountingFiscalReportModal: React.FC<AccountingFiscalReportModalPr
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#D1CEC7]">
-                        {expenseCategories.map((cat) => {
+                        {settlementData.expenseDisplayCategories.map((cat) => {
                           const amount = settlementData.expenseCategoryTotals[cat] || 0;
                           return (
-                            <tr key={cat} className={amount > 0 ? 'font-bold text-[#1A1A1A]' : 'text-[#777777]'}>
+                            <tr key={`exp-${cat}`} className={amount > 0 ? 'font-bold text-[#1A1A1A]' : 'text-[#777777]'}>
                               <td className="py-0.5">{cat}</td>
                               <td className="py-0.5 text-right font-mono">
                                 {formatCurrency(amount)}
@@ -456,7 +443,7 @@ export const AccountingFiscalReportModal: React.FC<AccountingFiscalReportModalPr
                                 {formatJapaneseEraDate(tx.date, false)}
                               </td>
                               <td className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7] font-serif font-bold">
-                                {tx.category}
+                                {resolveFiscalCategoryLabel(tx.category, tx.type)}
                               </td>
                               <td className="p-2 print:py-1 print:px-1.5 border-r border-[#D1CEC7]">
                                 {tx.householdHeadName || tx.notes || '—'}
