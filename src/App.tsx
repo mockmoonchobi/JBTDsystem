@@ -2449,6 +2449,10 @@ export default function App() {
     };
   }, [templeInfo, temples, masterOptions, templeMasterOptionsMap, households, pastRecords, memorialServices, templeTodos, transactions, familyMembers, noticeTemplates, priests, batchAccountingData, deletedRecords, disasterEvents, isInitialLoaded, isSyncSettled, fiscalSyncTick]);
 
+  const resumeCheckRef = useRef({ busy: false, last: 0 });
+  const resumeStateRef = useRef({ syncStatus, syncErrorMessage, mergeSaving });
+  resumeStateRef.current = { syncStatus, syncErrorMessage, mergeSaving };
+
   // ★ バックグラウンド操作履歴監視（約10秒間隔で「操作・削除履歴」シートのみを軽量監視）
   // 画面に「データ連携処理中」を出さず、他スタッフ・別端末からのデータ更新が検出されたらサイレントに自動同期
   useEffect(() => {
@@ -2466,7 +2470,9 @@ export default function App() {
         isStartupLauncherOpenRef.current ||
         isCleanWritingRef.current ||
         isSyncInProgressRef.current ||
-        isImportingRef.current
+        isImportingRef.current ||
+        resumeCheckRef.current.busy ||
+        Date.now() - resumeCheckRef.current.last < 5000
       ) {
         return;
       }
@@ -2491,6 +2497,7 @@ export default function App() {
         const result = await fetchLatestOperationLogs(token, sheet.id, 25);
         if (isDisposed || isSyncInProgressRef.current || isCleanWritingRef.current || isImportingRef.current || safeStorage.getItem('temple_google_sheet_info') !== savedSheetInfo) return;
         if (!result) throw new Error('他の端末の更新を確認できません。同期を一時停止しています。');
+        resumeCheckRef.current.last = Date.now();
         if (isDisposed || !result.logs || result.logs.length === 0) {
           isChecking = false;
           return;
@@ -2597,22 +2604,26 @@ export default function App() {
     }
   };
 
-  const resumeCheckRef = useRef({ busy: false, last: 0 });
   useEffect(() => {
     let disposed = false;
-    const resumeVisibleSync = async () => {
+    const resumeVisibleSync = async (trigger: 'visibility' | 'focus' | 'online' = 'focus') => {
+      const { syncStatus: currentSyncStatus, syncErrorMessage: currentSyncErrorMessage, mergeSaving: isMergeSaving } = resumeStateRef.current;
       if (document.visibilityState !== 'visible' || navigator.onLine === false ||
-          isStartupLauncherOpenRef.current || dataLinkOpenRef.current || mergeSaving ||
+          isStartupLauncherOpenRef.current || dataLinkOpenRef.current || isMergeSaving ||
           maintenanceStopped() || manualSyncInProgressRef.current || isSyncInProgressRef.current ||
           isCleanWritingRef.current || isImportingRef.current || resumeCheckRef.current.busy) return;
       // Do not retry uncertain saves or data conflicts automatically.
-      if (syncStatus === 'error' && !/有効期限|再ログイン|通信|ネットワーク|タイムアウト|接続に失敗/.test(syncErrorMessage || '')) return;
+      if (currentSyncStatus === 'error' && !/有効期限|再ログイン|通信|ネットワーク|タイムアウト|接続に失敗/.test(currentSyncErrorMessage || '')) return;
       const sheet = loadJsonState<{id:string}>('temple_google_sheet_info', null);
-      if (!sheet?.id || Date.now() - resumeCheckRef.current.last < 30000) return;
-      resumeCheckRef.current = { busy: true, last: Date.now() };
+      const cooldownMs = trigger === 'focus' ? 30000 : 3000;
+      if (!sheet?.id || Date.now() - resumeCheckRef.current.last < cooldownMs) return;
+      resumeCheckRef.current.busy = true;
       try {
         const token = await getAccessToken();
+        if (disposed || isSyncInProgressRef.current || isCleanWritingRef.current || isImportingRef.current ||
+            loadJsonState<{id:string}>('temple_google_sheet_info', null)?.id !== sheet.id) return;
         if (!token) {
+          resumeCheckRef.current.last = Date.now();
           setSyncStatus('error');
           setSyncErrorMessage('接続の有効期限が切れました。「再接続」を押してください。未保存の編集は保持しています。');
           return;
@@ -2622,15 +2633,20 @@ export default function App() {
             loadJsonState<{id:string}>('temple_google_sheet_info', null)?.id !== sheet.id) return;
         if (!latest) throw new Error('通信状態を確認できません。再接続してください。');
         const baseline = await readMergeBaseline(sheet.id);
+        const pendingEntries = await currentPageAudit();
         if (disposed || isSyncInProgressRef.current || isCleanWritingRef.current || isImportingRef.current) return;
-        if (syncStatus !== 'error' && writeSafetyRef.current.canWrite(sheet.id) &&
-            hasOnlyIndependentPendingChanges(baseline, getSheetsPayload({ ...syncStateRef.current, deletedRecords: await currentPageAudit() }))) return;
+        resumeCheckRef.current.last = Date.now();
+        const latestStatus = resumeStateRef.current.syncStatus;
+        if (latestStatus !== 'error' && writeSafetyRef.current.canWrite(sheet.id) &&
+            hasOnlyIndependentPendingChanges(baseline, getSheetsPayload({ ...syncStateRef.current, deletedRecords: pendingEntries }))) return;
         const known = new Set((baseline?.remote.deletedRecords || []).map((entry: any) => entry.logId));
-        if (syncStatus !== 'synced' || latest.logs.some(entry => !entry.logId || !known.has(entry.logId))) {
+        if (latestStatus !== 'synced' || latest.logs.some(entry => !entry.logId || !known.has(entry.logId))) {
           await syncWithGoogleDriveRef.current(token, sheet.id);
+          resumeCheckRef.current.last = Date.now();
         }
       } catch (error: any) {
         if (disposed) return;
+        resumeCheckRef.current.last = Date.now();
         if (isAuthError(error)) {
           clearCachedAccessToken();
           setSyncStatus('error');
@@ -2641,12 +2657,14 @@ export default function App() {
         }
       } finally { resumeCheckRef.current.busy = false; }
     };
-    const wake = () => { void resumeVisibleSync(); };
-    document.addEventListener('visibilitychange', wake);
-    window.addEventListener('focus', wake);
-    window.addEventListener('online', wake);
-    return () => { disposed = true; document.removeEventListener('visibilitychange', wake); window.removeEventListener('focus', wake); window.removeEventListener('online', wake); };
-  }, [syncStatus, syncErrorMessage, mergeSaving]);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void resumeVisibleSync('visibility'); };
+    const onFocus = () => { void resumeVisibleSync('focus'); };
+    const onOnline = () => { void resumeVisibleSync('online'); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('online', onOnline);
+    return () => { disposed = true; document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('focus', onFocus); window.removeEventListener('online', onOnline); };
+  }, []);
 
   const handlePullFromSheets = async () => {
     const token = await getAccessToken();

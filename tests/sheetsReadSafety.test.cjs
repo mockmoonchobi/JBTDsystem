@@ -326,12 +326,12 @@ test('the 10-second monitor reads only recent history and pulls only on incoming
   visit(ast);
   for (const incoming of [false, true]) for (const deleting of [false, true]) {
     const timers = [], calls = [], gate = new SheetsWriteSafety(); gate.accept('sheet', 'ok');
-    const context = { autoSyncDueRef: {current:null}, maintenanceStopped: () => false,
+    const context = { autoSyncDueRef: {current:null}, resumeCheckRef: {current:{busy:false,last:0}}, maintenanceStopped: () => false,
       isInitialLoaded: true, syncStatus: 'synced', document: { visibilityState: 'visible' },
       isStartupLauncherOpenRef: { current: false }, isCleanWritingRef: { current: false }, isSyncInProgressRef: { current: false }, isImportingRef: { current: false },
       writeSafetyRef: { current: gate }, safeStorage: { getItem: () => '{"id":"sheet"}' }, getAccessToken: async () => 'token',
       loadDeletedRecordsLog: () => [{ logId: 'known' }, { logId: 'new' }],
-      currentPageAudit: async () => deleting ? Array.from({length:5},(_,i)=>({id:'H'+i,logId:'D'+i,entityType:'household',actionType:'delete'})) : [], hasOnlyIndependentPendingChanges: require('../src/utils/threeWaySheetsMerge.ts').hasOnlyIndependentPendingChanges, getSheetsPayload: v => v, syncStateRef: {current:{households:[]}}, readMergeBaseline: async () => ({local:{households:deleting ? Array.from({length:5},(_,i)=>({id:'H'+i})) : []},remote:{deletedRecords:[{logId:'known'}]}}),
+      currentPageAudit: async () => deleting ? Array.from({length:5},(_,i)=>({id:'H'+i,logId:'D'+i,entityType:'household',actionType:'delete'})) : [], hasOnlyIndependentPendingChanges: require('../src/utils/threeWaySheetsMerge.ts').hasOnlyIndependentPendingChanges, getSheetsPayload: v => v, syncStateRef: {current:{households:[]}}, readMergeBaseline: async () => ({local:{households:deleting ? Array.from({length:5},(_,i)=>({id:'H'+i})) : [],deletedRecords:[{logId:'known',id:'H0',actionType:'update'}]},remote:{deletedRecords:[{logId:'known'}]}}),
       fetchLatestOperationLogs: async (...args) => { calls.push(['history', ...args]); return { logs: [{ logId: incoming ? 'new' : 'known' }] }; },
       syncWithGoogleDriveRef: { current: async (...args) => calls.push(['pull', ...args]) },
       setTimeout: (callback, delay) => { timers.push({ callback, delay }); return timers.length; }, clearTimeout() {},

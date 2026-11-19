@@ -64,9 +64,25 @@ export function hasOnlyHouseholdEdits(base: MergeBaseline | null | undefined, lo
     removed.every(id=>logs.some((e:any)=>e.id===id && e.entityType==='household' && ['delete','batch_delete'].includes(e.actionType)));
 }
 export function hasOnlyIndependentPendingChanges(base: MergeBaseline | null | undefined, local: Dataset): boolean {
-  if (!base?.local) return true;
-  return hasOnlyNewAccounting(base, local) || hasOnlyHouseholdDeletions(base, local) || hasOnlyHouseholdEdits(base, local) ||
-    stableMergeValue(base.local) !== stableMergeValue(local);
+  if (!base?.local) return false;
+  if (hasOnlyNewAccounting(base, local) || hasOnlyHouseholdDeletions(base, local) || hasOnlyHouseholdEdits(base, local)) return true;
+  const { deletedRecords: baseLogs, ...baseBusiness } = base.local;
+  const { deletedRecords: localLogs, ...localBusiness } = local;
+  const oldLogIds = new Set((baseLogs || []).map((r: any) => r?.logId).filter(Boolean));
+  const newLogs = (localLogs || []).filter((r: any) => r?.logId && !oldLogIds.has(r.logId));
+  const businessChanged = stableMergeValue(baseBusiness) !== stableMergeValue(localBusiness);
+  if (!businessChanged) return newLogs.length > 0;
+  const baseHouseholds = base.local.households || [];
+  const localHouseholds = local.households || [];
+  const localIds = new Set(localHouseholds.map((r: any) => r?.id));
+  const removedHouseholds = baseHouseholds.filter((r: any) => r?.id && !localIds.has(r.id));
+  if (removedHouseholds.length > 0) {
+    const allRemovedProven = removedHouseholds.every((r: any) =>
+      newLogs.some((e: any) => e.id === r.id && e.entityType === 'household' && ['delete', 'batch_delete'].includes(e.actionType))
+    );
+    if (!allRemovedProven) return false;
+  }
+  return true;
 }
 export const mergeTableLabels: Record<string, string> = {
   households: '檀家', pastRecords: '過去帳', transactions: '会計', memorialServices: '法事予約',
